@@ -1,10 +1,6 @@
-/*
-Copyright © 2026 NAME HERE <EMAIL ADDRESS>
-
-*/
 package main
 
-import "flk/cmd"
+import "github.com/jy-eggroll/flk/cmd"
 
 func main() {
 	cmd.Execute()

@@ -1,34 +1,37 @@
-/*
-Copyright © 2026 NAME HERE <EMAIL ADDRESS>
-
-*/
 package cmd
 
 import (
 	"os"
 
+	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
+	// "github.com/spf13/viper"
 )
 
+var (
+	lang    string
+	logger  = pterm.DefaultLogger.WithLevel(pterm.LogLevelTrace) // 默认以 Trace 级别输出
+	cfgFile string
+)
 
-
-// rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "flk",
-	Short: "A brief description of your application",
-	Long: `A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "简短的描述，在哪里出现？",
+	Long: `flk
+的
+详细描述`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
-	// Run: func(cmd *cobra.Command, args []string) { },
+	Run: func(cmd *cobra.Command, args []string) {
+		logger.Trace("root 被调用了")
+		logger.Trace("此时 lang 的值为 " + lang)
+	},
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		logger.Trace("root 的前置函数被调用了")
+		logger.Trace("此时 lang 的值为 " + lang)
+	},
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
@@ -37,15 +40,8 @@ func Execute() {
 }
 
 func init() {
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.flk.yaml)")
-
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	rootCmd.PersistentFlags().StringVar(&lang, "lang", "", "选择语言")
+	logger.Trace("添加了语言选项")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "配置文件的路径")
+	logger.Trace("添加了配置文件选项")
 }
-
-

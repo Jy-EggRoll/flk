@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	// "github.com/spf13/viper"
 )
 
 // serverCmd represents the server command
@@ -21,20 +22,14 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("server called")
+		logger.Trace("server 命令被调用了")
+		logger.Trace("当前端口号为：" + fmt.Sprint(cmd.Flags().Lookup("port").Value))
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(serverCmd)
-
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// serverCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// serverCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	logger.Trace("添加了 server 命令")
+	serverCmd.Flags().IntP("port","p", 8999, "指定端口号")
+	logger.Trace("添加了端口选项")
 }

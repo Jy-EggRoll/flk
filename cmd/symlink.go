@@ -1,11 +1,12 @@
 /*
 Copyright © 2026 NAME HERE <EMAIL ADDRESS>
-
 */
 package cmd
 
 import (
 	"fmt"
+
+	"github.com/jy-eggroll/flk/internal/create/symlink"
 
 	"github.com/spf13/cobra"
 )
@@ -13,28 +14,37 @@ import (
 // symlinkCmd represents the symlink command
 var symlinkCmd = &cobra.Command{
 	Use:   "symlink",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("symlink called")
-	},
+	Short: "软链接文件或文件夹",
+	Long:  "创建一个指向真实文件或文件夹的软链接",
+	// Run: func(cmd *cobra.Command, args []string) {
+	// 	logger.Trace("软链接创建函数被调用了")
+	// },
+	RunE: Symlink,
 }
+
+var (
+	symlinkReal  string
+	symlinkFake  string
+	createForce  bool
+	createDevice string
+)
 
 func init() {
 	createCmd.AddCommand(symlinkCmd)
+	symlinkCmd.Flags().StringVarP(&symlinkReal, "real", "r", "", "真实文件路径")
+	symlinkCmd.Flags().StringVarP(&symlinkFake, "fake", "f", "", "链接文件路径")
+	symlinkCmd.Flags().BoolVar(&createForce, "force", false, "强制覆盖已存在的文件或文件夹")
+	symlinkCmd.Flags().StringVar(&createDevice, "device", "", "设备名称，用于后续设备过滤检查")
+	symlinkCmd.MarkFlagRequired("real")
+	symlinkCmd.MarkFlagRequired("fake")
+}
 
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// symlinkCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// symlinkCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+func Symlink(cmd *cobra.Command, args []string) error {
+	logger.Trace("软链接创建函数被调用了")
+	logger.Trace("真实文件路径：" + symlinkReal)
+	logger.Trace("链接文件路径：" + symlinkFake)
+	logger.Trace("强制覆盖选项：" + fmt.Sprint(createForce))
+	logger.Trace("设备名称：" + createDevice)
+	symlink.Create(symlinkReal, symlinkFake)
+	return nil
 }
