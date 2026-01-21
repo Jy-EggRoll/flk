@@ -8,6 +8,7 @@ import (
 
 	"github.com/jy-eggroll/flk/internal/create/symlink"
 	"github.com/jy-eggroll/flk/internal/logger"
+	"github.com/jy-eggroll/flk/internal/pathutil"
 
 	"github.com/spf13/cobra"
 )
@@ -28,7 +29,6 @@ var (
 )
 
 func init() {
-	logger.Init(nil)
 	createCmd.AddCommand(symlinkCmd)
 	symlinkCmd.Flags().StringVarP(&symlinkReal, "real", "r", "", "真实文件路径")
 	symlinkCmd.Flags().StringVarP(&symlinkFake, "fake", "f", "", "链接文件路径")
@@ -39,11 +39,24 @@ func init() {
 }
 
 func Symlink(cmd *cobra.Command, args []string) error {
+	logger.Init(nil)
 	logger.Debug("软链接创建函数被调用了")
 	logger.Debug("真实文件路径：" + symlinkReal)
+	normalizedReal, err := pathutil.NormalizePath(symlinkReal)
+	if err != nil {
+		logger.Debug("处理真实文件路径时出错: " + err.Error())
+	} else {
+		logger.Debug("经过处理的真实文件路径：" + normalizedReal)
+	}
 	logger.Debug("链接文件路径：" + symlinkFake)
+	normalizedFake, err := pathutil.NormalizePath(symlinkFake)
+	if err != nil {
+		logger.Debug("处理链接文件路径时出错: " + err.Error())
+	} else {
+		logger.Debug("经过处理的链接文件路径：" + normalizedFake)
+	}
 	logger.Debug("强制覆盖选项：" + fmt.Sprint(createForce))
 	logger.Debug("设备名称：" + createDevice)
-	symlink.Create(symlinkReal, symlinkFake)
+	symlink.Create(normalizedReal, normalizedFake, createForce)
 	return nil
 }

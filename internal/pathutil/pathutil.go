@@ -11,59 +11,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-
-	"github.com/pterm/pterm"
+	// "github.com/pterm/pterm"
 )
-
-var logger = pterm.DefaultLogger.WithLevel(pterm.LogLevelTrace).WithTimeFormat("2006-01-02 15:04:05.000000")
-
-// ExpandHome 将路径中的 ~ 展开为用户主目录
-// 例如: "~/documents" -> "/home/username/documents" (Linux)
-//
-//	"~/documents" -> "C:\Users\username\documents" (Windows)
-func ExpandHome(path string) (string, error) {
-	// 如果路径不以 ~ 开头，直接返回
-	if !strings.HasPrefix(path, "~") {
-		return path, nil
-	}
-
-	// 获取用户主目录
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("无法获取用户主目录: %w", err)
-	}
-
-	// 如果只是 ~，直接返回主目录
-	if path == "~" {
-		return home, nil
-	}
-
-	// 如果是 ~/... 格式，拼接路径
-	// 注意：这里使用 filepath.Join 自动处理不同操作系统的路径分隔符
-	if strings.HasPrefix(path, "~/") || strings.HasPrefix(path, "~\\") {
-		return filepath.Join(home, path[2:]), nil
-	}
-
-	// 其他情况（如 ~username）暂不支持
-	return "", fmt.Errorf("不支持的路径格式: %s", path)
-}
-
-func HandlePath(path string) (string, error) {
-	if !strings.HasPrefix(path, "~") {
-		return path, nil
-	}
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		logger.Error("无法获取用户主目录")
-		return path, err
-	}
-
-	if path == "~" {
-		return home, nil
-	}
-	return filepath.Join(home, path[2:]), nil
-}
 
 // ToAbsolute 将路径转换为绝对路径
 // basePath: 基准路径（通常是当前工作目录或 file-link-manager-links.json 所在目录）
@@ -125,22 +74,41 @@ func ToRelative(basePath, targetPath string) (string, error) {
 	return filepath.ToSlash(relPath), nil
 }
 
-// NormalizePath 规范化路径
-// 主要功能：
-// 1. 展开波浪号
-// 2. 清理路径（去除冗余的 . 和 ..）
-// 3. 转换为当前操作系统的路径分隔符
-func NormalizePath(path string) (string, error) {
-	// 展开波浪号
-	expanded, err := ExpandHome(path)
-	if err != nil {
-		return "", err
+func ExpandHome(path string) (string, error) { // 定义ExpandHome函数，接收字符串类型的路径参数，返回处理后的路径字符串和错误对象
+	// 如果路径不以 ~ 开头，直接返回
+	if !strings.HasPrefix(path, "~") { // 判断输入的路径字符串是否不以波浪号(~)开头，strings.HasPrefix用于检测字符串前缀
+		return path, nil // 若路径不以~开头，直接返回原路径和nil（表示无错误）
 	}
 
-	// 清理路径
-	cleaned := filepath.Clean(expanded)
+	// 获取用户主目录
+	home, err := os.UserHomeDir() // 调用 os 包的 UserHomeDir 函数获取当前用户的主目录路径，返回主目录字符串和错误对象
+	if err != nil {               // 判断获取用户主目录的操作是否产生错误
+		return "", err // 若获取主目录出错，返回空字符串和该错误对象
+	}
 
-	return cleaned, nil
+	// 如果只是 ~，直接返回主目录
+	if path == "~" { // 判断输入的路径是否严格等于单个波浪号（~）
+		return home, nil // 若路径仅为 ~，返回获取到的用户主目录和 nil（表示无错误）
+	}
+
+	// 如果是 ~/... 格式，拼接路径
+	// filepath.Join 自动处理不同操作系统的路径分隔符，但是不会将路径清理到最简形态
+	if strings.HasPrefix(path, "~/") || strings.HasPrefix(path, "~\\") { // 判断路径是否以~/（Unix/Linux/Mac系统）或~\（Windows系统）开头
+		return filepath.Join(home, path[2:]), nil // 使用filepath.Join拼接主目录和~后的路径（path[2:]截取从索引2开始的子串，去掉~和分隔符），返回拼接后的路径和nil（表示无错误）
+	}
+
+	return "", err // 若以上条件都不满足（如~后接非分隔符的情况），返回空字符串和错误对象
+}
+
+func NormalizePath(path string) (string, error) { // 定义NormalizePath函数，接收字符串类型的路径参数，返回规范化后的路径字符串和错误对象
+	expanded, err := ExpandHome(path) // 调用ExpandHome函数展开路径中的波浪号（~），接收展开后的路径和错误对象
+	if err != nil {                   // 判断展开波浪号的操作是否产生错误
+		return "", err // 若展开波浪号出错，返回空字符串和该错误对象
+	}
+
+	cleaned := filepath.Clean(expanded) // 调用filepath.Clean函数清理展开后的路径，解析路径中的.和..、合并冗余分隔符，生成最简路径
+
+	return cleaned, nil // 返回清理后的规范化路径和nil（表示无错误）
 }
 
 // GetCurrentOS 返回当前操作系统类型

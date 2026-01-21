@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/jy-eggroll/flk/internal/logger"
+	"github.com/pterm/pterm"
 
 	// "github.com/pterm/pterm"
 	"github.com/spf13/cobra"
@@ -22,10 +23,12 @@ var rootCmd = &cobra.Command{
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	Run: func(cmd *cobra.Command, args []string) {
+		logger.SetLevel(pterm.LogLevelInfo)
 		logger.Debug("root 被调用了")
 		logger.Debug("此时 lang 的值为 " + lang)
 	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		logger.SetLevel(pterm.LogLevelInfo)
 		logger.Debug("root 的前置函数被调用了")
 		logger.Debug("此时 lang 的值为 " + lang)
 	},
@@ -40,6 +43,7 @@ func Execute() {
 
 func init() {
 	logger.Init(nil)
+	logger.SetLevel(pterm.LogLevelInfo)
 	rootCmd.PersistentFlags().StringVar(&lang, "lang", "", "选择语言")
 	logger.Debug("添加了语言选项")
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "配置文件的路径")

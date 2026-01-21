@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/jy-eggroll/flk/internal/logger"
+	"github.com/pterm/pterm"
 
 	"github.com/spf13/cobra"
 )
@@ -28,6 +29,7 @@ to quickly create a Cobra application.`,
 
 func init() {
 	logger.Init(nil)
+	logger.SetLevel(pterm.LogLevelInfo)
 	rootCmd.AddCommand(serverCmd)
 	logger.Debug("添加了 server 命令")
 	serverCmd.Flags().IntP("port", "p", 8999, "指定端口号")
