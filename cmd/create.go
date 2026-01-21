@@ -6,6 +6,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	createForce  bool
+	createDevice string
+)
+
 var createCmd = &cobra.Command{
 	Use:   "create",
 	Short: "创建链接",

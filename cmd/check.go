@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 
 	"github.com/jy-eggroll/flk/internal/logger"
@@ -19,7 +18,6 @@ var checkCmd = &cobra.Command{
 
 func init() {
 	logger.Init(nil)
-	logger.SetLevel(pterm.LogLevelInfo)
 	rootCmd.AddCommand(checkCmd)
 	logger.Debug("添加了 check 命令")
 }

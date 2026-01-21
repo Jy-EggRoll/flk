@@ -16,16 +16,14 @@ import (
 // symlinkCmd represents the symlink command
 var symlinkCmd = &cobra.Command{
 	Use:   "symlink",
-	Short: "软链接文件或文件夹",
-	Long:  "创建一个指向真实文件或文件夹的软链接",
+	Short: "创建符号链接（支持文件和文件夹）",
+	Long:  "创建符号链接（支持文件和文件夹）",
 	RunE:  Symlink,
 }
 
 var (
 	symlinkReal  string
 	symlinkFake  string
-	createForce  bool
-	createDevice string
 )
 
 func init() {
@@ -57,6 +55,8 @@ func Symlink(cmd *cobra.Command, args []string) error {
 	}
 	logger.Debug("强制覆盖选项：" + fmt.Sprint(createForce))
 	logger.Debug("设备名称：" + createDevice)
-	symlink.Create(normalizedReal, normalizedFake, createForce)
+	if err := symlink.Create(normalizedReal, normalizedFake, createForce); err != nil {
+		logger.Error("错误：" + err.Error())
+	}
 	return nil
 }
