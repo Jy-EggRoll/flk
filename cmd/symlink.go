@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/jy-eggroll/flk/internal/create/symlink"
+	"github.com/jy-eggroll/flk/internal/logger"
 
 	"github.com/spf13/cobra"
 )
@@ -16,10 +17,7 @@ var symlinkCmd = &cobra.Command{
 	Use:   "symlink",
 	Short: "软链接文件或文件夹",
 	Long:  "创建一个指向真实文件或文件夹的软链接",
-	// Run: func(cmd *cobra.Command, args []string) {
-	// 	logger.Trace("软链接创建函数被调用了")
-	// },
-	RunE: Symlink,
+	RunE:  Symlink,
 }
 
 var (
@@ -30,6 +28,7 @@ var (
 )
 
 func init() {
+	logger.Init(nil)
 	createCmd.AddCommand(symlinkCmd)
 	symlinkCmd.Flags().StringVarP(&symlinkReal, "real", "r", "", "真实文件路径")
 	symlinkCmd.Flags().StringVarP(&symlinkFake, "fake", "f", "", "链接文件路径")
@@ -40,11 +39,11 @@ func init() {
 }
 
 func Symlink(cmd *cobra.Command, args []string) error {
-	logger.Trace("软链接创建函数被调用了")
-	logger.Trace("真实文件路径：" + symlinkReal)
-	logger.Trace("链接文件路径：" + symlinkFake)
-	logger.Trace("强制覆盖选项：" + fmt.Sprint(createForce))
-	logger.Trace("设备名称：" + createDevice)
+	logger.Debug("软链接创建函数被调用了")
+	logger.Debug("真实文件路径：" + symlinkReal)
+	logger.Debug("链接文件路径：" + symlinkFake)
+	logger.Debug("强制覆盖选项：" + fmt.Sprint(createForce))
+	logger.Debug("设备名称：" + createDevice)
 	symlink.Create(symlinkReal, symlinkFake)
 	return nil
 }
