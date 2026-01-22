@@ -1,18 +1,29 @@
-// Package pathutil 提供跨平台的路径处理工具
-// 主要功能包括：
-// 1. 波浪号（~）展开为用户主目录
-// 2. 相对路径与绝对路径转换
-// 3. 路径规范化处理
 package pathutil
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
+
+	// "runtime"
 	"strings"
-	// "github.com/pterm/pterm"
 )
+
+type ExistsButNotDirectoryError struct {
+	Path string
+}
+
+func (e *ExistsButNotDirectoryError) Error() string {
+	return fmt.Sprintf("路径 %s 存在但不是目录，如果使用 --force 将会删除存在的文件，并将其顶替为一个中间目录。", e.Path)
+}
+
+func (e *ExistsButNotDirectoryError) Is(target error) bool {
+	_, ok := target.(*ExistsButNotDirectoryError)
+	if !ok {
+		return false
+	}
+	return true
+}
 
 // ToAbsolute 将路径转换为绝对路径
 // basePath: 基准路径（通常是当前工作目录或 file-link-manager-links.json 所在目录）
@@ -111,15 +122,7 @@ func NormalizePath(path string) (string, error) { // 定义NormalizePath函数�
 	return cleaned, nil // 返回清理后的规范化路径和nil（表示无错误）
 }
 
-// GetCurrentOS 返回当前操作系统类型
-// 返回值直接使用 runtime.GOOS 的值：
-// "windows", "linux", "darwin" 等
-func GetCurrentOS() string {
-	return runtime.GOOS
-}
-
 // EnsureDirExists 确保目录存在，如果不存在则创建
-// 这个函数在创建链接前很有用，确保目标目录存在
 func EnsureDirExists(path string) error {
 	// 获取目录路径（如果 path 是文件路径，则获取其父目录）
 	dir := filepath.Dir(path)
@@ -129,20 +132,15 @@ func EnsureDirExists(path string) error {
 	if err == nil {
 		// 路径存在，检查是否为目录
 		if !info.IsDir() {
-			return fmt.Errorf("路径存在但不是目录: %s", dir)
+			return &ExistsButNotDirectoryError{Path: dir}
 		}
 		return nil
 	}
 
-	// 如果错误不是"不存在"，则返回错误
-	if !os.IsNotExist(err) {
-		return fmt.Errorf("检查目录失败: %w", err)
-	}
-
 	// 目录不存在，创建目录（包括所有必要的父目录）
-	// 0755 权限：所有者可读写执行，组和其他用户可读执行
+	// 0755 权限：所有者可读写执行，组和其他用户可读执行，属于泛用权限
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("创建目录失败：%w", err)
+		return err
 	}
 
 	return nil

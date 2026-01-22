@@ -51,7 +51,7 @@ func Hardlink(cmd *cobra.Command, args []string) error {
 	logger.Debug("强制覆盖选项：" + fmt.Sprint(createForce))
 	logger.Debug("设备名称：" + createDevice)
 	if err := hardlink.Create(normalizedReal, normalizedFake, createForce); err != nil {
-		logger.Error("错误：" + err.Error())
+		logger.Error("硬链接创建失败：" + err.Error() + fmt.Sprintf("错误类型是：%T", err))
 	}
 	return nil
 }

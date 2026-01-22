@@ -1,6 +1,3 @@
-/*
-Copyright © 2026 NAME HERE <EMAIL ADDRESS>
-*/
 package cmd
 
 import (
@@ -9,22 +6,20 @@ import (
 	"github.com/jy-eggroll/flk/internal/create/symlink"
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
-
 	"github.com/spf13/cobra"
 )
 
-// symlinkCmd represents the symlink command
+var (
+	symlinkReal  string
+	symlinkFake  string
+)
+
 var symlinkCmd = &cobra.Command{
 	Use:   "symlink",
 	Short: "创建符号链接（支持文件和文件夹）",
 	Long:  "创建符号链接（支持文件和文件夹）",
 	RunE:  Symlink,
 }
-
-var (
-	symlinkReal  string
-	symlinkFake  string
-)
 
 func init() {
 	createCmd.AddCommand(symlinkCmd)
@@ -38,7 +33,7 @@ func init() {
 
 func Symlink(cmd *cobra.Command, args []string) error {
 	logger.Init(nil)
-	logger.Debug("软链接创建函数被调用了")
+	logger.Debug("符号链接创建函数被调用了")
 	logger.Debug("真实文件路径：" + symlinkReal)
 	normalizedReal, err := pathutil.NormalizePath(symlinkReal)
 	if err != nil {
@@ -56,7 +51,7 @@ func Symlink(cmd *cobra.Command, args []string) error {
 	logger.Debug("强制覆盖选项：" + fmt.Sprint(createForce))
 	logger.Debug("设备名称：" + createDevice)
 	if err := symlink.Create(normalizedReal, normalizedFake, createForce); err != nil {
-		logger.Error("错误：" + err.Error())
+		logger.Error("符号链接创建失败：" + err.Error() + fmt.Sprintf("错误类型是：%T", err))
 	}
 	return nil
 }
