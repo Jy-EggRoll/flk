@@ -12,7 +12,7 @@ import (
 
 var (
 	lang    string
-	cfgFile string
+	configFile string
 )
 
 var rootCmd = &cobra.Command{
@@ -39,5 +39,5 @@ func Execute() {
 func init() {
 	logger.Init(nil)
 	rootCmd.PersistentFlags().StringVar(&lang, "lang", "", "选择语言")
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "配置文件的路径")
+	rootCmd.PersistentFlags().StringVar(&configFile, "config", "", "配置文件的路径")
 }
