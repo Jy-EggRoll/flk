@@ -53,6 +53,7 @@ func Hardlink(cmd *cobra.Command, args []string) error {
 	logger.Debug("设备名称：" + createDevice)
 	if err := hardlink.Create(normalizedPrim, normalizedSeco, createForce); err != nil {
 		logger.Error("硬链接创建失败：" + err.Error() + fmt.Sprintf("错误类型是：%T", err))
+		return nil
 	}
 	logger.Info("硬链接创建成功")
 	// 使用全局存储管理器，确保数据是基于现有存储的追加而非覆写
