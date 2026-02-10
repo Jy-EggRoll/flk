@@ -55,15 +55,25 @@ func Hardlink(cmd *cobra.Command, args []string) error {
 		logger.Error("硬链接创建失败：" + err.Error() + fmt.Sprintf("错误类型是：%T", err))
 	}
 	logger.Info("硬链接创建成功")
-	manager := &store.Manager{
-		Data: make(store.RootConfig), // 初始化最外层的RootConfig map，避免调用方法时空指针
+	// 使用全局存储管理器，确保数据是基于现有存储的追加而非覆写
+	if store.GlobalManager == nil {
+		// 尝试初始化全局存储
+		if err := store.InitStore(store.StorePath); err != nil {
+			logger.Error("初始化存储失败：" + err.Error())
+		}
 	}
-	absSecoPath, _ := pathutil.ToAbsolute(normalizedSeco)
-	fields := map[string]string{ // 要存储的字段键值对（路径类值会被自动折叠）
-		"prim": normalizedPrim,
-		"seco": absSecoPath,
+	mgr := store.GlobalManager
+	if mgr != nil {
+		absSecoPath, _ := pathutil.ToAbsolute(normalizedSeco)
+		fields := map[string]string{ // 要存储的字段键值对（路径类值会被自动折叠）
+			"prim": normalizedPrim,
+			"seco": absSecoPath,
+		}
+		parentPath, _ := os.Getwd()
+		mgr.AddRecord(createDevice, "hardlink", parentPath, fields)
+		if err := mgr.Save(store.StorePath); err != nil {
+			logger.Error("持久化失败：" + err.Error())
+		}
 	}
-	parentPath, _ := os.Getwd()
-	manager.AddRecord(createDevice, "hardlink", parentPath, fields)
 	return nil
 }

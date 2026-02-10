@@ -4,7 +4,9 @@ import ( // 导入代码依赖的外部包，采用分组导入的方式提升�
 
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/user" // 导入 os/user 包，用于获取当前操作系统用户的信息（如用户主目录路径）
+	"path/filepath"
 	"runtime" // 导入 runtime 包，用于获取程序运行时的环境信息（如操作系统类型）
 	"strings" // 导入 strings 包，用于执行字符串的各类操作（如前缀判断、子串替换）
 
@@ -32,6 +34,10 @@ func foldPath(path string) string { // 定义 foldPath 函数，接收原始路�
 }
 
 func (m *Manager) AddRecord(device, linkType, parentPath string, fields map[string]string) { // 定义 Manager 的 AddRecord 方法，用于添加一条存储记录，参数依次为设备标识、链接类型、父路径、字段键值对
+	// 如果未指定设备，默认使用 all，确保聚合在同一分组下
+	if device == "" {
+		device = "all"
+	}
 	platform := runtime.GOOS // 获取当前程序运行的操作系统平台标识（如 linux/darwin/windows），赋值给变量 platform
 
 	// 初始化层级（防御性编程）
@@ -65,4 +71,86 @@ func (m *Manager) AddRecord(device, linkType, parentPath string, fields map[stri
 func (m *Manager) ToJSON() string {
 	jsonResult, _ := json.MarshalIndent(m.Data, "", "    ")
 	return string(jsonResult)
+}
+
+// DefaultStorePath 指定默认的持久化存储路径（不展开 JSON 中的 ~，由写入时展开实际文件系统路径）
+const DefaultStorePath = "~/.config/flk/flk-store.json"
+
+// StorePath 用于 Cobra 参数绑定，默认值为 DefaultStorePath
+var StorePath = DefaultStorePath
+
+// GlobalManager 是全局共享的 Manager 实例，用于在启动阶段加载现有数据并在命令之间共享状态
+var GlobalManager *Manager
+
+// InitStore 初始化全局存储，若目标文件存在则加载，否则创建一个空的存储结构
+func InitStore(storePath string) error {
+	// 尝试从文件加载
+	m, err := LoadFromFile(storePath)
+	if err != nil {
+		// 如果文件不存在，初始化空数据结构
+		if os.IsNotExist(err) {
+			m = &Manager{Data: make(RootConfig)}
+		} else {
+			return err
+		}
+	}
+	GlobalManager = m
+	return nil
+}
+
+// expandStorePath 将 ~ 展开为用户主目录，用于文件系统操作。
+func expandStorePath(p string) (string, error) {
+	if strings.HasPrefix(p, "~") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		if p == "~" {
+			return home, nil
+		}
+		if strings.HasPrefix(p, "~/") || strings.HasPrefix(p, "~\\") {
+			return filepath.Join(home, p[2:]), nil
+		}
+	}
+	return p, nil
+}
+
+// Save 将当前 Manager 的数据持久化到指定文件路径（保留 ~，不在 JSON 中展开）。
+func (m *Manager) Save(filePath string) error {
+	data, err := json.MarshalIndent(m.Data, "", "    ")
+	if err != nil {
+		return err
+	}
+	expanded, err := expandStorePath(filePath)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(expanded), 0755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(expanded, data, 0644); err != nil {
+		return err
+	}
+	return nil
+}
+
+// LoadFromFile 从指定路径加载并返回一个 Manager 实例（路径中可包含 ~，会被展开）。
+func LoadFromFile(filePath string) (*Manager, error) {
+	expanded, err := expandStorePath(filePath)
+	if err != nil {
+		return nil, err
+	}
+	b, err := os.ReadFile(expanded)
+	if err != nil {
+		return nil, err
+	}
+	var data RootConfig
+	if len(b) > 0 {
+		if err := json.Unmarshal(b, &data); err != nil {
+			return nil, err
+		}
+	} else {
+		data = make(RootConfig)
+	}
+	return &Manager{Data: data}, nil
 }

@@ -2,16 +2,18 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/jy-eggroll/flk/internal/create/symlink"
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
+	store "github.com/jy-eggroll/flk/internal/store"
 	"github.com/spf13/cobra"
 )
 
 var (
-	symlinkReal  string
-	symlinkFake  string
+	symlinkReal string
+	symlinkFake string
 )
 
 var symlinkCmd = &cobra.Command{
@@ -52,6 +54,27 @@ func Symlink(cmd *cobra.Command, args []string) error {
 	logger.Debug("设备名称：" + createDevice)
 	if err := symlink.Create(normalizedReal, normalizedFake, createForce); err != nil {
 		logger.Error("符号链接创建失败：" + err.Error() + fmt.Sprintf("错误类型是：%T", err))
+		return nil
+	}
+	logger.Info("符号链接创建成功")
+	// 持久化数据：追加写入现有 store 数据，1:1 同步硬链接逻辑
+	if store.GlobalManager == nil {
+		if err := store.InitStore(store.StorePath); err != nil {
+			logger.Error("初始化存储失败：" + err.Error())
+		}
+	}
+	mgr := store.GlobalManager
+	if mgr != nil {
+		absFakePath, _ := pathutil.ToAbsolute(normalizedFake)
+		fields := map[string]string{
+			"prim": normalizedReal,
+			"seco": absFakePath,
+		}
+		parentPath, _ := os.Getwd()
+		mgr.AddRecord(createDevice, "symlink", parentPath, fields)
+		if err := mgr.Save(store.StorePath); err != nil {
+			logger.Error("持久化失败：" + err.Error())
+		}
 	}
 	return nil
 }

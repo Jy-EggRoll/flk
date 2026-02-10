@@ -4,14 +4,14 @@ import (
 	"os"
 
 	"github.com/jy-eggroll/flk/internal/logger"
-
+	storeconfig "github.com/jy-eggroll/flk/internal/store"
 	// "github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 	// "github.com/spf13/viper"
 )
 
 var (
-	lang    string
+	lang       string
 	configFile string
 )
 
@@ -25,7 +25,10 @@ var rootCmd = &cobra.Command{
 
 	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-
+		// 在命令执行前初始化持久化存储，使用当前 storePath 配置
+		if err := storeconfig.InitStore(storeconfig.StorePath); err != nil {
+			logger.Error("初始化存储失败：" + err.Error())
+		}
 	},
 }
 
@@ -40,4 +43,11 @@ func init() {
 	logger.Init(nil)
 	rootCmd.PersistentFlags().StringVar(&lang, "lang", "", "选择语言")
 	rootCmd.PersistentFlags().StringVar(&configFile, "config", "", "配置文件的路径")
+	// 追加一个 storePath 参数来控制默认存储文件位置
+	rootCmd.PersistentFlags().StringVar(
+		&storeconfig.StorePath,
+		"storePath",
+		storeconfig.DefaultStorePath,
+		"用于存放 flk-store.json 的路径（支持 ~ 展开）",
+	)
 }
