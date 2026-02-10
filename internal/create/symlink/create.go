@@ -59,7 +59,5 @@ func Create(realPath, fakePath string, force bool) error {
 	if err := os.Symlink(realPath, fakePath); err != nil {
 		return err
 	}
-
-	logger.Info("符号链接创建成功")
 	return nil
 }

@@ -59,7 +59,5 @@ func Create(primPath, secoPath string, force bool) error {
 	if err := os.Link(primPath, secoPath); err != nil {
 		return err
 	}
-
-	logger.Info("硬链接创建成功")
 	return nil
 }
