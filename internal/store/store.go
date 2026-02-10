@@ -1,207 +1,68 @@
-package store
+package store // 声明当前代码所属的包名为 store，用于封装存储相关的核心逻辑
 
-import (
+import ( // 导入代码依赖的外部包，采用分组导入的方式提升代码整洁性
+
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
-	"runtime"
-	"sort"
-	"strings"
+	"os/user" // 导入 os/user 包，用于获取当前操作系统用户的信息（如用户主目录路径）
+	"runtime" // 导入 runtime 包，用于获取程序运行时的环境信息（如操作系统类型）
+	"strings" // 导入 strings 包，用于执行字符串的各类操作（如前缀判断、子串替换）
+
+	"github.com/jy-eggroll/flk/internal/logger"
 )
 
-type SymEntry struct {
-	Real string `json:"real"`
-	Fake string `json:"fake"`
+// BaseEntry 用于承载通用的 JSON 序列化逻辑
+type Entry map[string]string           // 定义 Entry 类型，底层为键值对映射结构，作为基础数据单元承载可 JSON 序列化的通用数据
+type PathGroup map[string][]Entry      // 定义 PathGroup 类型，按路径字符串为键，存储对应路径下的多个 Entry 实例切片
+type TypeGroup map[string]PathGroup    // 定义 TypeGroup 类型，按链接类型字符串为键，存储对应类型下的多个 PathGroup 实例
+type DeviceGroup map[string]TypeGroup  // 定义 DeviceGroup 类型，按设备标识字符串为键，存储对应设备下的多个 TypeGroup 实例
+type RootConfig map[string]DeviceGroup // 定义 RootConfig 类型，按操作系统平台字符串为键，存储对应平台下的多个 DeviceGroup 实例
+
+type Manager struct { // 定义 Manager 结构体，作为存储数据的核心管理对象
+	Data RootConfig // Manager 的核心数据字段，存储按平台-设备-类型-路径层级组织的所有 Entry 数据
 }
 
-type HardEntry struct {
-	Prim string `json:"prim"`
-	Seco string `json:"seco"`
+func foldPath(path string) string { // 定义 foldPath 函数，接收原始路径字符串，返回将用户主目录替换为~的简化路径
+	u, _ := user.Current()             // 获取当前系统用户信息，忽略返回的错误（简化场景下的处理方式），赋值给变量 u
+	home := u.HomeDir                  // 从当前用户信息中提取用户主目录的绝对路径，赋值给变量 home
+	if strings.HasPrefix(path, home) { // 判断传入的原始路径是否以用户主目录路径为前缀
+		return strings.Replace(path, home, "~", 1) // 若路径包含主目录前缀，将第一个主目录子串替换为~后返回
+	}
+	return path // 若路径不包含主目录前缀，直接返回原始路径字符串
 }
 
-func DefaultConfigPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
+func (m *Manager) AddRecord(device, linkType, parentPath string, fields map[string]string) { // 定义 Manager 的 AddRecord 方法，用于添加一条存储记录，参数依次为设备标识、链接类型、父路径、字段键值对
+	platform := runtime.GOOS // 获取当前程序运行的操作系统平台标识（如 linux/darwin/windows），赋值给变量 platform
+
+	// 初始化层级（防御性编程）
+	if m.Data[platform] == nil { // 检查当前平台对应的 DeviceGroup 是否未初始化（nil）
+		m.Data[platform] = make(DeviceGroup) // 初始化 DeviceGroup 类型的映射，避免后续操作出现空指针异常
 	}
-	return filepath.Join(home, ".config", "flk", "flk-store.json"), nil
+	if m.Data[platform][device] == nil { // 检查当前设备对应的 TypeGroup 是否未初始化（nil）
+		m.Data[platform][device] = make(TypeGroup) // 初始化 TypeGroup 类型的映射，保证层级数据结构的完整性
+	}
+
+	foldedParent := foldPath(parentPath)           // 调用 foldPath 函数处理父路径，将其中的用户主目录替换为~符号
+	if m.Data[platform][device][linkType] == nil { // 检查当前链接类型对应的 PathGroup 是否未初始化（nil）
+		m.Data[platform][device][linkType] = make(PathGroup) // 初始化 PathGroup 类型的映射，确保路径层级可正常存储数据
+	}
+
+	// 处理内部字段的路径折叠
+	processedEntry := make(Entry) // 初始化 Entry 类型的映射，用于存储处理后的字段键值对
+	for k, v := range fields {    // 遍历传入的原始字段键值对，k 为字段名，v 为字段原始值
+		processedEntry[k] = foldPath(v) // 对每个字段值执行路径简化处理，将结果存入 processedEntry
+	}
+
+	m.Data[platform][device][linkType][foldedParent] = append( // 调用 append 函数，将处理后的 Entry 添加到对应层级的切片中
+		m.Data[platform][device][linkType][foldedParent], // 目标切片：当前平台-设备-类型-简化路径对应的 Entry 切片
+		processedEntry, // 待追加的元素：处理完成的 Entry 实例
+	)
+
+	logger.Debug("结构创建成功")
+	fmt.Print(m.ToJSON())
 }
 
-func LinkToFile(platform, device, ltype, REALorPRIM, FAKEorSECO string) error {
-	// 默认值
-	if platform == "" {
-		platform = runtime.GOOS
-	}
-	if device == "" {
-		device = "all"
-	}
-	if ltype == "" {
-		return fmt.Errorf("必须指定链接类型")
-	}
-
-	// 先把路径缩写 home 为 ~，以满足你的存储约定
-	REALorPRIM = shrinkHome(REALorPRIM)
-	FAKEorSECO = shrinkHome(FAKEorSECO)
-
-	path, err := DefaultConfigPath()
-	if err != nil {
-		return fmt.Errorf("获取默认路径失败：%w", err)
-	}
-
-
-var data 
-
-    if ltype == "symlink" {
-        // 读取现有文件（若不存在则从空结构开始）
-        data = make(map[string]map[string]map[string][]SymEntry)
-        raw, err := os.ReadFile(path)
-        if err != nil {
-            if !os.IsNotExist(err) {
-                return fmt.Errorf("读取文件失败：%w", err)
-            }
-            // 文件不存在：继续用空 data
-        } else if len(raw) > 0 {
-            if err := json.Unmarshal(raw, &data); err != nil {
-                return fmt.Errorf("解析 JSON 失败：%w", err)
-            }
-        }
-        if data[platform] == nil {
-            data[platform] = make(map[string]map[string][]SymEntry)
-        }
-        if data[platform][device] == nil {
-            data[platform][device] = make(map[string][]SymEntry)
-        }
-        if data[platform][device][ltype] == nil {
-            data[platform][device][ltype] = []SymEntry{}
-        }
-    } else {
-        // 读取现有文件（若不存在则从空结构开始）
-        data = make(map[string]map[string]map[string][]HardEntry)
-        raw, err := os.ReadFile(path)
-        if err != nil {
-            if !os.IsNotExist(err) {
-                return fmt.Errorf("读取文件失败：%w", err)
-            }
-            // 文件不存在：继续用空 data
-        } else if len(raw) > 0 {
-            if err := json.Unmarshal(raw, &data); err != nil {
-                return fmt.Errorf("解析 JSON 失败：%w", err)
-            }
-        }
-        if data[platform] == nil {
-            data[platform] = make(map[string]map[string][]HardEntry)
-        }
-        if data[platform][device] == nil {
-            data[platform][device] = make(map[string][]HardEntry)
-        }
-        if data[platform][device][ltype] == nil {
-            data[platform][device][ltype] = []HardEntry{}
-        }
-    }
-
-
-	// 合并：保证 real 唯一，存在则更新 fake，否则 append
-	entries := data[platform][device][ltype]
-	updated := false
-
-	if ltype == "symlink" {
-		for i := range entries {
-			if entries[i].Real == REALorPRIM {
-				entries[i].Fake = FAKEorSECO
-				updated = true
-				break
-			}
-		}
-		if !updated {
-			entries = append(entries, SymEntry{Real: REALorPRIM, Fake: FAKEorSECO})
-		}
-
-		// 去重（以防已有重复），并按 Real 排序，保持稳定输出
-		m := make(map[string]SymEntry, len(entries))
-		for _, e := range entries {
-			m[e.Real] = e // 保证以最后一次为准
-		}
-		uniq := make([]SymEntry, 0, len(m))
-		for _, e := range m {
-			uniq = append(uniq, e)
-		}
-		sort.Slice(uniq, func(i, j int) bool { return uniq[i].Real < uniq[j].Real })
-
-		data[platform][device][ltype] = uniq
-	} else {
-        for i := range entries {
-			if entries[i].Prim == REALorPRIM {
-				entries[i].Seco = FAKEorSECO
-				updated = true
-				break
-			}
-		}
-		if !updated {
-			entries = append(entries, SymEntry{Real: REALorPRIM, Fake: FAKEorSECO})
-		}
-
-		// 去重（以防已有重复），并按 Real 排序，保持稳定输出
-		m := make(map[string]SymEntry, len(entries))
-		for _, e := range entries {
-			m[e.Real] = e // 保证以最后一次为准
-		}
-		uniq := make([]SymEntry, 0, len(m))
-		for _, e := range m {
-			uniq = append(uniq, e)
-		}
-		sort.Slice(uniq, func(i, j int) bool { return uniq[i].Real < uniq[j].Real })
-
-		data[platform][device][ltype] = uniq
-    }
-
-	// 确保目录存在
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("创建目录失败：%w", err)
-	}
-
-	// MarshalIndent 保持文件可读，写临时文件然后重命名
-	out, err := json.MarshalIndent(data, "", "  ")
-	if err != nil {
-		return fmt.Errorf("JSON 序列化失败：%w", err)
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, out, 0o600); err != nil {
-		return fmt.Errorf("写入临时文件失败：%w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("重命名临时文件失败：%w", err)
-	}
-	return nil
-}
-
-// 如果路径以用户主目录为前缀，则用 ~ 替换（只在前缀匹配时替换）
-func shrinkHome(p string) string {
-	if p == "" {
-		return p
-	}
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return p
-	}
-	home = filepath.Clean(home)
-	cp := filepath.Clean(p)
-
-	// Windows: 比较不区分大小写
-	if runtime.GOOS == "windows" {
-		home = strings.ToLower(home)
-		cp = strings.ToLower(cp)
-	}
-
-	if cp == home {
-		return "~"
-	}
-	sep := string(os.PathSeparator)
-	if strings.HasPrefix(cp, home+sep) {
-		// 恢复原始路径切片以保持分隔符风格
-		orig := filepath.Clean(p)
-		return "~" + orig[len(home):]
-	}
-	return p
+func (m *Manager) ToJSON() string {
+	jsonResult, _ := json.MarshalIndent(m.Data, "", "    ")
+	return string(jsonResult)
 }
