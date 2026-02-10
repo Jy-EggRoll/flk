@@ -17,7 +17,5 @@ var serverCmd = &cobra.Command{
 func init() {
 	logger.Init(nil)
 	rootCmd.AddCommand(serverCmd)
-	logger.Debug("添加了 server 命令")
 	serverCmd.Flags().IntP("port", "p", 8999, "指定端口号")
-	logger.Debug("添加了端口选项")
 }

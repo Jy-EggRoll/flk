@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/jy-eggroll/flk/internal/create/hardlink"
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
+	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -26,32 +28,42 @@ func init() {
 	hardlinkCmd.Flags().StringVarP(&hardlinkPrim, "prim", "p", "", "主要文件路径")
 	hardlinkCmd.Flags().StringVarP(&hardlinkSeco, "seco", "s", "", "次要文件路径")
 	hardlinkCmd.Flags().BoolVar(&createForce, "force", false, "强制覆盖已存在的文件或文件夹")
-	hardlinkCmd.Flags().StringVar(&createDevice, "device", "", "设备名称，用于后续设备过滤检查")
+	hardlinkCmd.Flags().StringVarP(&createDevice, "device", "d", "", "设备名称，用于后续设备过滤检查")
 	hardlinkCmd.MarkFlagRequired("prim")
 	hardlinkCmd.MarkFlagRequired("seco")
 }
 
 func Hardlink(cmd *cobra.Command, args []string) error {
 	logger.Init(nil)
-	logger.Debug("硬链接创建函数被调用了")
-	logger.Debug("主要文件路径：" + hardlinkPrim)
-	normalizedReal, err := pathutil.NormalizePath(hardlinkPrim)
+
+	normalizedPrim, err := pathutil.NormalizePath(hardlinkPrim)
 	if err != nil {
 		logger.Debug("处理主要文件路径时出错: " + err.Error())
 	} else {
-		logger.Debug("经过处理的主要文件路径：" + normalizedReal)
+		logger.Debug("经过处理的主要文件路径：" + normalizedPrim)
 	}
-	logger.Debug("次要文件路径：" + hardlinkSeco)
-	normalizedFake, err := pathutil.NormalizePath(hardlinkSeco)
+
+	normalizedSeco, err := pathutil.NormalizePath(hardlinkSeco)
 	if err != nil {
 		logger.Debug("处理次要文件路径时出错: " + err.Error())
 	} else {
-		logger.Debug("经过处理的次要文件路径：" + normalizedFake)
+		logger.Debug("经过处理的次要文件路径：" + normalizedSeco)
 	}
 	logger.Debug("强制覆盖选项：" + fmt.Sprint(createForce))
 	logger.Debug("设备名称：" + createDevice)
-	if err := hardlink.Create(normalizedReal, normalizedFake, createForce); err != nil {
+	if err := hardlink.Create(normalizedPrim, normalizedSeco, createForce); err != nil {
 		logger.Error("硬链接创建失败：" + err.Error() + fmt.Sprintf("错误类型是：%T", err))
 	}
+	logger.Info("硬链接创建成功")
+	manager := &store.Manager{
+		Data: make(store.RootConfig), // 初始化最外层的RootConfig map，避免调用方法时空指针
+	}
+	absSecoPath, _ := pathutil.ToAbsolute(normalizedSeco)
+	fields := map[string]string{ // 要存储的字段键值对（路径类值会被自动折叠）
+		"prim": normalizedPrim,
+		"seco": absSecoPath,
+	}
+	parentPath, _ := os.Getwd()
+	manager.AddRecord(createDevice, "hardlink", parentPath, fields)
 	return nil
 }

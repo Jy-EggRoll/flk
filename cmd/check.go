@@ -19,5 +19,4 @@ var checkCmd = &cobra.Command{
 func init() {
 	logger.Init(nil)
 	rootCmd.AddCommand(checkCmd)
-	logger.Debug("添加了 check 命令")
 }

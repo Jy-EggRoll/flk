@@ -39,7 +39,5 @@ func Execute() {
 func init() {
 	logger.Init(nil)
 	rootCmd.PersistentFlags().StringVar(&lang, "lang", "", "选择语言")
-	logger.Debug("添加了语言选项")
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "配置文件的路径")
-	logger.Debug("添加了配置文件选项")
 }
