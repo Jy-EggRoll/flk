@@ -28,19 +28,22 @@ func Create(realPath, fakePath string, force bool) error {
 		return err
 	}
 	if force {
-		logger.Info("检测到 force 选项，尝试删除已存在的链接文件或冲突的非目录文件")
-		if _, err := os.Stat(fakePath); err == nil { // 文件存在
-			logger.Debug("fakePath 对应的文件存在")
+		logger.Info("检测到 force 选项，将会尝试删除已存在的链接文件或冲突的非目录文件")
+		// 使用 Lstat 而不是 Stat，因为 Stat 会跟随符号链接
+		if _, err := os.Lstat(fakePath); err == nil { // 文件/链接存在
+			logger.Debug("fakePath 存在")
 			if err := os.Remove(fakePath); err == nil {
-				logger.Info("已成功删除 fakePath 对应的文件")
+				logger.Info("已成功删除 fakePath")
 			} else {
-				logger.Error("删除失败" + err.Error())
+				logger.Error("删除失败：" + err.Error())
+				return err
 			}
 		} else {
-			logger.Debug("fakePath 对应的文件不存在，无需删除")
+			logger.Debug("fakePath 不存在，无需删除，错误: " + err.Error())
 		}
 		if err := pathutil.EnsureDirExists(fakePath); err != nil {
 			if errors.Is(err, &pathutil.ExistsButNotDirectoryError{}) {
+				// fakePath 的父路径存在但不是目录（是文件），删除它
 				if removeErr := os.Remove(filepath.Dir(fakePath)); removeErr == nil {
 					logger.Info("已成功删除非目录文件")
 				} else {
