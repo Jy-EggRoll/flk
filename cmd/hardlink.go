@@ -28,7 +28,7 @@ func init() {
 	hardlinkCmd.Flags().StringVarP(&hardlinkPrim, "prim", "p", "", "主要文件路径")
 	hardlinkCmd.Flags().StringVarP(&hardlinkSeco, "seco", "s", "", "次要文件路径")
 	hardlinkCmd.Flags().BoolVar(&createForce, "force", false, "强制覆盖已存在的文件或文件夹")
-	hardlinkCmd.Flags().StringVarP(&createDevice, "device", "d", "", "设备名称，用于后续设备过滤检查")
+	hardlinkCmd.Flags().StringVarP(&createDevice, "device", "d", "all", "设备名称，用于后续设备过滤检查")
 	hardlinkCmd.MarkFlagRequired("prim")
 	hardlinkCmd.MarkFlagRequired("seco")
 }

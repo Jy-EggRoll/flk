@@ -11,6 +11,7 @@ import ( // 导入代码依赖的外部包，采用分组导入的方式提升�
 	"strings" // 导入 strings 包，用于执行字符串的各类操作（如前缀判断、子串替换）
 
 	"github.com/jy-eggroll/flk/internal/logger"
+	"github.com/jy-eggroll/flk/internal/pathutil"
 )
 
 // BaseEntry 用于承载通用的 JSON 序列化逻辑
@@ -34,10 +35,6 @@ func foldPath(path string) string { // 定义 foldPath 函数，接收原始路�
 }
 
 func (m *Manager) AddRecord(device, linkType, parentPath string, fields map[string]string) { // 定义 Manager 的 AddRecord 方法，用于添加一条存储记录，参数依次为设备标识、链接类型、父路径、字段键值对
-	// 如果未指定设备，默认使用 all，确保聚合在同一分组下
-	if device == "" {
-		device = "all"
-	}
 	platform := runtime.GOOS // 获取当前程序运行的操作系统平台标识（如 linux/darwin/windows），赋值给变量 platform
 
 	// 初始化层级（防御性编程）
@@ -98,30 +95,13 @@ func InitStore(storePath string) error {
 	return nil
 }
 
-// expandStorePath 将 ~ 展开为用户主目录，用于文件系统操作。
-func expandStorePath(p string) (string, error) {
-	if strings.HasPrefix(p, "~") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		if p == "~" {
-			return home, nil
-		}
-		if strings.HasPrefix(p, "~/") || strings.HasPrefix(p, "~\\") {
-			return filepath.Join(home, p[2:]), nil
-		}
-	}
-	return p, nil
-}
-
-// Save 将当前 Manager 的数据持久化到指定文件路径（保留 ~，不在 JSON 中展开）。
+// Save 将当前 Manager 的数据持久化到指定文件路径
 func (m *Manager) Save(filePath string) error {
 	data, err := json.MarshalIndent(m.Data, "", "    ")
 	if err != nil {
 		return err
 	}
-	expanded, err := expandStorePath(filePath)
+	expanded, err := pathutil.NormalizePath(filePath)
 	if err != nil {
 		return err
 	}
@@ -134,9 +114,9 @@ func (m *Manager) Save(filePath string) error {
 	return nil
 }
 
-// LoadFromFile 从指定路径加载并返回一个 Manager 实例（路径中可包含 ~，会被展开）。
+// LoadFromFile 从指定路径加载并返回一个 Manager 实例
 func LoadFromFile(filePath string) (*Manager, error) {
-	expanded, err := expandStorePath(filePath)
+	expanded, err := pathutil.NormalizePath(filePath)
 	if err != nil {
 		return nil, err
 	}

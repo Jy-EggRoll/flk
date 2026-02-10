@@ -7,7 +7,7 @@ import (
 	"github.com/jy-eggroll/flk/internal/create/symlink"
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
-	store "github.com/jy-eggroll/flk/internal/store"
+	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -28,7 +28,7 @@ func init() {
 	symlinkCmd.Flags().StringVarP(&symlinkReal, "real", "r", "", "真实文件路径")
 	symlinkCmd.Flags().StringVarP(&symlinkFake, "fake", "f", "", "链接文件路径")
 	symlinkCmd.Flags().BoolVar(&createForce, "force", false, "强制覆盖已存在的文件或文件夹")
-	symlinkCmd.Flags().StringVar(&createDevice, "device", "", "设备名称，用于后续设备过滤检查")
+	symlinkCmd.Flags().StringVar(&createDevice, "device", "all", "设备名称，用于后续设备过滤检查")
 	symlinkCmd.MarkFlagRequired("real")
 	symlinkCmd.MarkFlagRequired("fake")
 }
@@ -57,7 +57,7 @@ func Symlink(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 	logger.Info("符号链接创建成功")
-	// 持久化数据：追加写入现有 store 数据，1:1 同步硬链接逻辑
+	// 持久化数据：追加写入现有 store 数据
 	if store.GlobalManager == nil {
 		if err := store.InitStore(store.StorePath); err != nil {
 			logger.Error("初始化存储失败：" + err.Error())
@@ -67,8 +67,8 @@ func Symlink(cmd *cobra.Command, args []string) error {
 	if mgr != nil {
 		absFakePath, _ := pathutil.ToAbsolute(normalizedFake)
 		fields := map[string]string{
-			"prim": normalizedReal,
-			"seco": absFakePath,
+			"real": normalizedReal,
+			"fake": absFakePath,
 		}
 		parentPath, _ := os.Getwd()
 		mgr.AddRecord(createDevice, "symlink", parentPath, fields)
