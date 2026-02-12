@@ -1,11 +1,11 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/jy-eggroll/flk/internal/create/hardlink"
 	"github.com/jy-eggroll/flk/internal/logger"
+	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/spf13/cobra"
@@ -34,47 +34,47 @@ func init() {
 }
 
 func Hardlink(cmd *cobra.Command, args []string) error {
-	logger.Init(nil)
+	format := output.OutputFormat(outputFormat)
 
 	normalizedPrim, err := pathutil.NormalizePath(hardlinkPrim)
 	if err != nil {
-		logger.Debug("处理主要文件路径时出错: " + err.Error())
-	} else {
-		logger.Debug("经过处理的主要文件路径：" + normalizedPrim)
+		result := output.CreateResult{Success: false, Type: "硬链接", Error: "主要文件路径标准化失败: " + err.Error()}
+		output.PrintCreateResult(format, result)
+		return nil
 	}
 
 	normalizedSeco, err := pathutil.NormalizePath(hardlinkSeco)
 	if err != nil {
-		logger.Debug("处理次要文件路径时出错: " + err.Error())
-	} else {
-		logger.Debug("经过处理的次要文件路径：" + normalizedSeco)
-	}
-	logger.Debug("强制覆盖选项：" + fmt.Sprint(createForce))
-	logger.Debug("设备名称：" + createDevice)
-	if err := hardlink.Create(normalizedPrim, normalizedSeco, createForce); err != nil {
-		logger.Error("硬链接创建失败：" + err.Error() + fmt.Sprintf("错误类型是：%T", err))
+		result := output.CreateResult{Success: false, Type: "硬链接", Error: "次要文件路径标准化失败: " + err.Error()}
+		output.PrintCreateResult(format, result)
 		return nil
 	}
-	logger.Info("硬链接创建成功")
-	// 使用全局存储管理器，确保数据是基于现有存储的追加而非覆写
-	if store.GlobalManager == nil {
-		// 尝试初始化全局存储
-		if err := store.InitStore(store.StorePath); err != nil {
-			logger.Error("初始化存储失败：" + err.Error())
+
+	var result output.CreateResult
+	if err := hardlink.Create(normalizedPrim, normalizedSeco, createForce); err != nil {
+		result = output.CreateResult{Success: false, Type: "硬链接", Error: err.Error()}
+	} else {
+		result = output.CreateResult{Success: true, Type: "硬链接", Message: "创建成功"}
+		// 存储逻辑
+		if store.GlobalManager == nil {
+			if err := store.InitStore(store.StorePath); err != nil {
+				logger.Error("初始化存储失败：" + err.Error())
+			}
+		}
+		mgr := store.GlobalManager
+		if mgr != nil {
+			absSecoPath, _ := pathutil.ToAbsolute(normalizedSeco)
+			fields := map[string]string{
+				"prim": normalizedPrim,
+				"seco": absSecoPath,
+			}
+			parentPath, _ := os.Getwd()
+			mgr.AddRecord(createDevice, "hardlink", parentPath, fields)
+			if err := mgr.Save(store.StorePath); err != nil {
+				logger.Error("持久化失败：" + err.Error())
+			}
 		}
 	}
-	mgr := store.GlobalManager
-	if mgr != nil {
-		absSecoPath, _ := pathutil.ToAbsolute(normalizedSeco)
-		fields := map[string]string{ // 要存储的字段键值对（路径类值会被自动折叠）
-			"prim": normalizedPrim,
-			"seco": absSecoPath,
-		}
-		parentPath, _ := os.Getwd()
-		mgr.AddRecord(createDevice, "hardlink", parentPath, fields)
-		if err := mgr.Save(store.StorePath); err != nil {
-			logger.Error("持久化失败：" + err.Error())
-		}
-	}
+	output.PrintCreateResult(format, result)
 	return nil
 }

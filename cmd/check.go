@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jy-eggroll/flk/internal/logger"
+	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	storeconfig "github.com/jy-eggroll/flk/internal/store"
 	"github.com/spf13/cobra"
@@ -27,7 +27,7 @@ func init() {
 	checkCmd.Flags().StringVar(&checkDevice, "device", "", "设备名称，用于过滤检查")
 	checkCmd.Flags().BoolVar(&checkSymlink, "symlink", false, "仅检查符号链接")
 	checkCmd.Flags().BoolVar(&checkHardlink, "hardlink", false, "仅检查硬链接")
-	checkCmd.Flags().StringVar(&checkDir, "check-dir", "", "仅检查包含该路径的记录")
+	checkCmd.Flags().StringVar(&checkDir, "dir", "", "仅检查包含该路径的记录")
 }
 
 var (
@@ -38,19 +38,9 @@ var (
 )
 
 // CheckResult 单个链接的检查结果
-type CheckResult struct {
-	Type   string `json:"type"`
-	Device string `json:"device"`
-	Path   string `json:"path"`
-	Real   string `json:"real,omitempty"`
-	Fake   string `json:"fake,omitempty"`
-	Prim   string `json:"prim,omitempty"`
-	Seco   string `json:"seco,omitempty"`
-	Valid  bool   `json:"valid"`
-	Error  string `json:"error,omitempty"`
-}
+type CheckResult = output.CheckResult
 
-// RunCheck 执行链接检查并输出 JSON 结果
+// RunCheck 执行链接检查并输出结果
 func RunCheck(cmd *cobra.Command, args []string) {
 	logger.Info("开始检查链接状态...")
 
@@ -65,13 +55,12 @@ func RunCheck(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	output, err := json.MarshalIndent(results, "", "    ")
-	if err != nil {
-		logger.Error("JSON 序列化失败：" + err.Error())
+	format := output.OutputFormat(outputFormat)
+	if err := output.PrintCheckResults(format, results); err != nil {
+		logger.Error("输出失败：" + err.Error())
 		return
 	}
 
-	fmt.Println(string(output))
 	logger.Info("检查完成")
 }
 
@@ -83,7 +72,7 @@ type CheckOptions struct {
 	CheckDir      string
 }
 
-func performCheck(options CheckOptions) ([]CheckResult, error) {
+func performCheck(options CheckOptions) ([]output.CheckResult, error) {
 	platform := runtime.GOOS
 	var results []CheckResult
 
@@ -124,7 +113,7 @@ func performCheck(options CheckOptions) ([]CheckResult, error) {
 				}
 
 				for _, entry := range entries {
-					result := CheckResult{
+					result := output.CheckResult{
 						Type:   linkType,
 						Device: device,
 						Path:   path,
@@ -133,11 +122,11 @@ func performCheck(options CheckOptions) ([]CheckResult, error) {
 					if linkType == "symlink" {
 						result.Real = entry["real"]
 						result.Fake = entry["fake"]
-						result.Valid, result.Error = checkSymlinkValid(result.Real, result.Fake, basePath)
+						result.Valid, result.Error, result.ErrorType = checkSymlinkValid(result.Real, result.Fake, basePath)
 					} else if linkType == "hardlink" {
 						result.Prim = entry["prim"]
 						result.Seco = entry["seco"]
-						result.Valid, result.Error = checkHardlinkValid(result.Prim, result.Seco, basePath)
+						result.Valid, result.Error, result.ErrorType = checkHardlinkValid(result.Prim, result.Seco, basePath)
 					}
 
 					results = append(results, result)
@@ -149,27 +138,27 @@ func performCheck(options CheckOptions) ([]CheckResult, error) {
 	return results, nil
 }
 
-func checkSymlinkValid(real, fake, basePath string) (bool, string) {
+func checkSymlinkValid(real, fake, basePath string) (bool, string, string) {
 	expandedFake, err := pathutil.NormalizePath(fake)
 	if err != nil {
-		return false, fmt.Sprintf("无法展开符号链接路径 %s: %v", fake, err)
+		return false, fmt.Sprintf("无法展开符号链接路径 %s: %v", fake, err), "PATH_EXPAND_FAIL"
 	}
 
 	fakeInfo, err := os.Lstat(expandedFake)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return false, fmt.Sprintf("符号链接文件 %s 不存在", fake)
+			return false, fmt.Sprintf("符号链接文件 %s 不存在", fake), "LINK_MISSING"
 		}
-		return false, fmt.Sprintf("无法访问符号链接文件 %s: %v", fake, err)
+		return false, fmt.Sprintf("无法访问符号链接文件 %s: %v", fake, err), "LINK_ACCESS_FAIL"
 	}
 
 	if fakeInfo.Mode()&os.ModeSymlink == 0 {
-		return false, fmt.Sprintf("%s 存在但不是符号链接", fake)
+		return false, fmt.Sprintf("%s 存在但不是符号链接", fake), "NOT_SYMLINK"
 	}
 
 	target, err := os.Readlink(expandedFake)
 	if err != nil {
-		return false, fmt.Sprintf("无法读取符号链接 %s 的目标: %v", fake, err)
+		return false, fmt.Sprintf("无法读取符号链接 %s 的目标: %v", fake, err), "READLINK_FAIL"
 	}
 
 	var targetAbs string
@@ -192,27 +181,27 @@ func checkSymlinkValid(real, fake, basePath string) (bool, string) {
 	targetInfo, err := os.Stat(targetAbs)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return false, fmt.Sprintf("符号链接的目标文件 %s 不存在", targetAbs)
+			return false, fmt.Sprintf("符号链接的目标文件 %s 不存在", targetAbs), "TARGET_MISSING"
 		}
-		return false, fmt.Sprintf("无法访问符号链接的目标文件 %s: %v", targetAbs, err)
+		return false, fmt.Sprintf("无法访问符号链接的目标文件 %s: %v", targetAbs, err), "TARGET_ACCESS_FAIL"
 	}
 
 	expectedInfo, err := os.Stat(expectedAbs)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return false, fmt.Sprintf("期望的目标文件 %s 不存在", expectedAbs)
+			return false, fmt.Sprintf("期望的目标文件 %s 不存在", expectedAbs), "EXPECTED_MISSING"
 		}
-		return false, fmt.Sprintf("无法访问期望的目标文件 %s: %v", expectedAbs, err)
+		return false, fmt.Sprintf("无法访问期望的目标文件 %s: %v", expectedAbs, err), "EXPECTED_ACCESS_FAIL"
 	}
 
 	if !os.SameFile(targetInfo, expectedInfo) {
-		return false, fmt.Sprintf("符号链接 %s 指向的文件与期望的文件 %s 不一致", fake, real)
+		return false, fmt.Sprintf("符号链接 %s 指向的文件与期望的文件 %s 不一致", fake, real), "TARGET_MISMATCH"
 	}
 
-	return true, ""
+	return true, "", ""
 }
 
-func checkHardlinkValid(prim, seco, basePath string) (bool, string) {
+func checkHardlinkValid(prim, seco, basePath string) (bool, string, string) {
 	var expandedPrim string
 	if filepath.IsAbs(prim) {
 		expandedPrim = prim
@@ -225,22 +214,22 @@ func checkHardlinkValid(prim, seco, basePath string) (bool, string) {
 	primInfo, err := os.Stat(expandedPrim)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return false, fmt.Sprintf("主文件 %s 不存在", prim)
+			return false, fmt.Sprintf("主文件 %s 不存在", prim), "PRIM_MISSING"
 		}
-		return false, fmt.Sprintf("无法访问主文件 %s: %v", prim, err)
+		return false, fmt.Sprintf("无法访问主文件 %s: %v", prim, err), "PRIM_ACCESS_FAIL"
 	}
 
 	secoInfo, err := os.Stat(expandedSeco)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return false, fmt.Sprintf("硬链接文件 %s 不存在", seco)
+			return false, fmt.Sprintf("硬链接文件 %s 不存在", seco), "SECO_MISSING"
 		}
-		return false, fmt.Sprintf("无法访问硬链接文件 %s: %v", seco, err)
+		return false, fmt.Sprintf("无法访问硬链接文件 %s: %v", seco, err), "SECO_ACCESS_FAIL"
 	}
 
 	if !os.SameFile(primInfo, secoInfo) {
-		return false, fmt.Sprintf("%s 和 %s 不是同一个文件的硬链接", seco, prim)
+		return false, fmt.Sprintf("%s 和 %s 不是同一个文件的硬链接", seco, prim), "NOT_SAME_FILE"
 	}
 
-	return true, ""
+	return true, "", ""
 }

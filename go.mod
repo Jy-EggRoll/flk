@@ -1,6 +1,6 @@
 module github.com/jy-eggroll/flk
 
-go 1.24.13
+go 1.26.0
 
 require (
 	github.com/pterm/pterm v0.12.82

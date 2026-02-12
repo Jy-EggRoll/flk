@@ -12,8 +12,7 @@ import (
 )
 
 var (
-	lang       string
-	configFile string
+	outputFormat string
 )
 
 var rootCmd = &cobra.Command{
@@ -42,8 +41,6 @@ func Execute() {
 
 func init() {
 	logger.Init(nil)
-	rootCmd.PersistentFlags().StringVar(&lang, "lang", "", "选择语言")
-	rootCmd.PersistentFlags().StringVar(&configFile, "config", "", "配置文件的路径")
 	// 追加一个 storePath 参数来控制默认存储文件位置
 	rootCmd.PersistentFlags().StringVar(
 		&storeconfig.StorePath,
@@ -51,4 +48,5 @@ func init() {
 		storeconfig.DefaultStorePath,
 		"用于存放 flk-store.json 的路径（支持 ~ 展开）",
 	)
+	rootCmd.PersistentFlags().StringVar(&outputFormat, "output", "table", "输出格式：json/table")
 }
