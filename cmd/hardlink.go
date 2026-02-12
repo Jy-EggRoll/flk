@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"os"
 
 	"github.com/jy-eggroll/flk/internal/create/hardlink"
@@ -76,5 +77,8 @@ func Hardlink(cmd *cobra.Command, args []string) error {
 		}
 	}
 	output.PrintCreateResult(format, result)
-	return nil
+	if result.Success {
+		return nil
+	}
+	return errors.New(result.Error)
 }

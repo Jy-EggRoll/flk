@@ -21,6 +21,7 @@ type CheckResult struct {
 	Type      string `json:"type"`
 	Device    string `json:"device"`
 	Path      string `json:"path"`
+	BasePath  string `json:"base_path,omitempty"`
 	Real      string `json:"real,omitempty"`
 	Fake      string `json:"fake,omitempty"`
 	Prim      string `json:"prim,omitempty"`
@@ -81,8 +82,9 @@ func PrintCheckResults(format OutputFormat, results []CheckResult) error {
 		fmt.Println(string(data))
 	case Table:
 		// 动态调整列宽，截断长路径
-		table := pterm.TableData{{"类型", "设备", "路径", "相对路径", "绝对路径", "有效", "错误类型"}}
-		for _, r := range results {
+		table := pterm.TableData{{"#", "类型", "设备", "路径", "相对路径", "绝对路径", "有效", "错误类型"}}
+		for i, r := range results {
+			num := fmt.Sprintf("%d", i+1)
 			valid := "是"
 			if !r.Valid {
 				valid = "否"
@@ -95,11 +97,12 @@ func PrintCheckResults(format OutputFormat, results []CheckResult) error {
 			if absPath == "" {
 				absPath = truncatePath(r.Seco, 30)
 			}
-			row := []string{r.Type, r.Device, truncatePath(r.Path, 20), relPath, absPath, valid, r.ErrorType}
+			row := []string{num, r.Type, r.Device, truncatePath(r.Path, 20), relPath, absPath, valid, r.ErrorType}
 			if r.Valid {
 				table = append(table, row)
 			} else {
 				table = append(table, []string{
+					num,
 					pterm.Red(r.Type),
 					pterm.Red(r.Device),
 					pterm.Red(truncatePath(r.Path, 20)),

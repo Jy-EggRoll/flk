@@ -1,7 +1,13 @@
 package cmd
 
 import (
+	"errors"
+	"fmt"
+	"io"
 	"os"
+	"os/exec"
+	"runtime"
+	"strings"
 
 	"github.com/jy-eggroll/flk/internal/create/symlink"
 	"github.com/jy-eggroll/flk/internal/logger"
@@ -9,6 +15,7 @@ import (
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/spf13/cobra"
+	"golang.org/x/sys/windows"
 )
 
 var (
@@ -40,14 +47,23 @@ func Symlink(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		result := output.CreateResult{Success: false, Type: "符号链接", Error: "真实文件路径标准化失败: " + err.Error()}
 		output.PrintCreateResult(format, result)
-		return nil
+		return errors.New(result.Error)
 	}
 
-	normalizedFake, err := pathutil.NormalizePath(symlinkFake)
+	var normalizedFake string
+	normalizedFake, err = pathutil.NormalizePath(symlinkFake)
 	if err != nil {
 		result := output.CreateResult{Success: false, Type: "符号链接", Error: "链接文件路径标准化失败: " + err.Error()}
 		output.PrintCreateResult(format, result)
-		return nil
+		return errors.New(result.Error)
+	}
+
+	logger.Info("创建符号链接: real=" + normalizedReal + ", fake=" + normalizedFake)
+
+	// 如果Windows且不是管理员，提权
+	if runtime.GOOS == "windows" && !isAdminOnWindowsForCreate() {
+		logger.Info("使用提权创建符号链接")
+		return runElevatedSymlinkForCreate()
 	}
 
 	var result output.CreateResult
@@ -76,5 +92,71 @@ func Symlink(cmd *cobra.Command, args []string) error {
 		}
 	}
 	output.PrintCreateResult(format, result)
-	return nil
+	if result.Success {
+		return nil
+	}
+	return errors.New(result.Error)
+}
+
+func runElevatedSymlinkForCreate() error {
+	// 检查是否已经是管理员
+	if isAdminOnWindowsForCreate() {
+		return Symlink(nil, nil)
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("获取可执行文件路径失败: %w", err)
+	}
+
+	// 如果是 go run 临时文件，复制到新位置避免清理冲突
+	if strings.Contains(exe, "go-build") {
+		tempExe, err := copyToTempForCreate(exe)
+		if err != nil {
+			return fmt.Errorf("复制 exe 到临时位置失败: %w", err)
+		}
+		defer os.Remove(tempExe) // 清理临时文件
+		exe = tempExe
+	}
+
+	// 获取当前工作目录
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("获取工作目录失败: %w", err)
+	}
+
+	// 使用 PowerShell 提权
+	command := fmt.Sprintf("Start-Process -Verb RunAs -FilePath '%s' -ArgumentList \"create symlink --real '%s' --fake '%s' --force --device '%s'\" -Wait -WindowStyle Hidden -WorkingDirectory '%s'", exe, symlinkReal, symlinkFake, createDevice, cwd)
+	cmd := exec.Command("powershell.exe", "-Command", command)
+	return cmd.Run()
+}
+
+func copyToTempForCreate(src string) (string, error) {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return "", err
+	}
+	defer srcFile.Close()
+
+	tempFile, err := os.CreateTemp("", "flk-elevated-*.exe")
+	if err != nil {
+		return "", err
+	}
+	defer tempFile.Close()
+
+	_, err = io.Copy(tempFile, srcFile)
+	if err != nil {
+		os.Remove(tempFile.Name())
+		return "", err
+	}
+
+	return tempFile.Name(), nil
+}
+
+func isAdminOnWindowsForCreate() bool {
+	if runtime.GOOS != "windows" {
+		return true // 非 Windows 假设有权限
+	}
+	elevated := windows.GetCurrentProcessToken().IsElevated()
+	return elevated
 }

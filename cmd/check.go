@@ -114,9 +114,10 @@ func performCheck(options CheckOptions) ([]output.CheckResult, error) {
 
 				for _, entry := range entries {
 					result := output.CheckResult{
-						Type:   linkType,
-						Device: device,
-						Path:   path,
+						Type:     linkType,
+						Device:   device,
+						Path:     path,
+						BasePath: basePath,
 					}
 
 					if linkType == "symlink" {
