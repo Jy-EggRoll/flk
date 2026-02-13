@@ -1,0 +1,266 @@
+name: Package Development Release
+
+on:
+    push:
+        tags:
+            - "[0-9]+.[0-9]+.[0-9]+.dev.[0-9]+" # 匹配 x.y.z.dev.n 格式的开发版本标签
+    workflow_dispatch: # 支持手动运行
+
+permissions:
+    contents: write
+
+jobs:
+    package:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Setup Go
+              uses: actions/setup-go@v5
+            #   with:
+            #       go-version: '1.25.6'
+
+            - name: Get version info
+              id: get_version
+              run: |
+                  if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+                    # 手动运行时，使用当前日期作为版本标识
+                    VERSION="dev-$(date +%Y%m%d-%H%M%S)"
+                    echo "Manual run - using timestamp version: $VERSION"
+                  else
+                    # Tag 触发时，从 tag 获取版本
+                    VERSION=${GITHUB_REF#refs/tags/}
+                    echo "Tag triggered - using tag version: $VERSION"
+                  fi
+                  echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+            - name: Build binaries for all platforms
+              run: |
+                  # 创建输出目录
+                  mkdir -p build
+                  
+                  echo "========================================"
+                  echo "开始交叉编译 Go 二进制文件"
+                  echo "========================================"
+                  echo ""
+                  
+                  # Windows
+                  echo "[1/33] 编译 Windows 386..."
+                  GOOS=windows GOARCH=386 go build -ldflags="-s -w" -o build/flk-windows-386.exe
+                  echo "✓ 完成"
+                  
+                  echo "[2/33] 编译 Windows amd64..."
+                  GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o build/flk-windows-amd64.exe
+                  echo "✓ 完成"
+                  
+                  echo "[3/33] 编译 Windows arm..."
+                  GOOS=windows GOARCH=arm go build -ldflags="-s -w" -o build/flk-windows-arm.exe
+                  echo "✓ 完成"
+                  
+                  echo "[4/33] 编译 Windows arm64..."
+                  GOOS=windows GOARCH=arm64 go build -ldflags="-s -w" -o build/flk-windows-arm64.exe
+                  echo "✓ 完成"
+                  
+                  # Linux
+                  echo ""
+                  echo "[5/33] 编译 Linux 386..."
+                  GOOS=linux GOARCH=386 go build -ldflags="-s -w" -o build/flk-linux-386
+                  echo "✓ 完成"
+                  
+                  echo "[6/33] 编译 Linux amd64..."
+                  GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o build/flk-linux-amd64
+                  echo "✓ 完成"
+                  
+                  echo "[7/33] 编译 Linux arm..."
+                  GOOS=linux GOARCH=arm go build -ldflags="-s -w" -o build/flk-linux-arm
+                  echo "✓ 完成"
+                  
+                  echo "[8/33] 编译 Linux arm64..."
+                  GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o build/flk-linux-arm64
+                  echo "✓ 完成"
+                  
+                  echo "[9/33] 编译 Linux mips..."
+                  GOOS=linux GOARCH=mips go build -ldflags="-s -w" -o build/flk-linux-mips
+                  echo "✓ 完成"
+                  
+                  echo "[10/33] 编译 Linux mipsle..."
+                  GOOS=linux GOARCH=mipsle go build -ldflags="-s -w" -o build/flk-linux-mipsle
+                  echo "✓ 完成"
+                  
+                  echo "[11/33] 编译 Linux mips64..."
+                  GOOS=linux GOARCH=mips64 go build -ldflags="-s -w" -o build/flk-linux-mips64
+                  echo "✓ 完成"
+                  
+                  echo "[12/33] 编译 Linux mips64le..."
+                  GOOS=linux GOARCH=mips64le go build -ldflags="-s -w" -o build/flk-linux-mips64le
+                  echo "✓ 完成"
+                  
+                  echo "[13/33] 编译 Linux ppc64..."
+                  GOOS=linux GOARCH=ppc64 go build -ldflags="-s -w" -o build/flk-linux-ppc64
+                  echo "✓ 完成"
+                  
+                  echo "[14/33] 编译 Linux ppc64le..."
+                  GOOS=linux GOARCH=ppc64le go build -ldflags="-s -w" -o build/flk-linux-ppc64le
+                  echo "✓ 完成"
+                  
+                  echo "[15/33] 编译 Linux riscv64..."
+                  GOOS=linux GOARCH=riscv64 go build -ldflags="-s -w" -o build/flk-linux-riscv64
+                  echo "✓ 完成"
+                  
+                  echo "[16/33] 编译 Linux s390x..."
+                  GOOS=linux GOARCH=s390x go build -ldflags="-s -w" -o build/flk-linux-s390x
+                  echo "✓ 完成"
+                  
+                  # macOS (Darwin)
+                  echo ""
+                  echo "[17/33] 编译 macOS amd64..."
+                  GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o build/flk-darwin-amd64
+                  echo "✓ 完成"
+                  
+                  echo "[18/33] 编译 macOS arm64 (Apple Silicon)..."
+                  GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o build/flk-darwin-arm64
+                  echo "✓ 完成"
+                  
+                  # FreeBSD
+                  echo ""
+                  echo "[19/33] 编译 FreeBSD 386..."
+                  GOOS=freebsd GOARCH=386 go build -ldflags="-s -w" -o build/flk-freebsd-386
+                  echo "✓ 完成"
+                  
+                  echo "[20/33] 编译 FreeBSD amd64..."
+                  GOOS=freebsd GOARCH=amd64 go build -ldflags="-s -w" -o build/flk-freebsd-amd64
+                  echo "✓ 完成"
+                  
+                  echo "[21/33] 编译 FreeBSD arm..."
+                  GOOS=freebsd GOARCH=arm go build -ldflags="-s -w" -o build/flk-freebsd-arm
+                  echo "✓ 完成"
+                  
+                  echo "[22/33] 编译 FreeBSD arm64..."
+                  GOOS=freebsd GOARCH=arm64 go build -ldflags="-s -w" -o build/flk-freebsd-arm64
+                  echo "✓ 完成"
+                  
+                  # OpenBSD
+                  echo ""
+                  echo "[23/33] 编译 OpenBSD 386..."
+                  GOOS=openbsd GOARCH=386 go build -ldflags="-s -w" -o build/flk-openbsd-386
+                  echo "✓ 完成"
+                  
+                  echo "[24/33] 编译 OpenBSD amd64..."
+                  GOOS=openbsd GOARCH=amd64 go build -ldflags="-s -w" -o build/flk-openbsd-amd64
+                  echo "✓ 完成"
+                  
+                  echo "[25/33] 编译 OpenBSD arm..."
+                  GOOS=openbsd GOARCH=arm go build -ldflags="-s -w" -o build/flk-openbsd-arm
+                  echo "✓ 完成"
+                  
+                  echo "[26/33] 编译 OpenBSD arm64..."
+                  GOOS=openbsd GOARCH=arm64 go build -ldflags="-s -w" -o build/flk-openbsd-arm64
+                  echo "✓ 完成"
+                  
+                  # NetBSD
+                  echo ""
+                  echo "[27/33] 编译 NetBSD 386..."
+                  GOOS=netbsd GOARCH=386 go build -ldflags="-s -w" -o build/flk-netbsd-386
+                  echo "✓ 完成"
+                  
+                  echo "[28/33] 编译 NetBSD amd64..."
+                  GOOS=netbsd GOARCH=amd64 go build -ldflags="-s -w" -o build/flk-netbsd-amd64
+                  echo "✓ 完成"
+                  
+                  echo "[29/33] 编译 NetBSD arm..."
+                  GOOS=netbsd GOARCH=arm go build -ldflags="-s -w" -o build/flk-netbsd-arm
+                  echo "✓ 完成"
+                  
+                  echo "[30/33] 编译 NetBSD arm64..."
+                  GOOS=netbsd GOARCH=arm64 go build -ldflags="-s -w" -o build/flk-netbsd-arm64
+                  echo "✓ 完成"
+                  
+                  # DragonFly BSD
+                  echo ""
+                  echo "[31/33] 编译 DragonFly BSD amd64..."
+                  GOOS=dragonfly GOARCH=amd64 go build -ldflags="-s -w" -o build/flk-dragonfly-amd64
+                  echo "✓ 完成"
+                  
+                  # Solaris
+                  echo ""
+                  echo "[32/33] 编译 Solaris amd64..."
+                  GOOS=solaris GOARCH=amd64 go build -ldflags="-s -w" -o build/flk-solaris-amd64
+                  echo "✓ 完成"
+                  
+                  # AIX
+                  echo ""
+                  echo "[33/33] 编译 AIX ppc64..."
+                  GOOS=aix GOARCH=ppc64 go build -ldflags="-s -w" -o build/flk-aix-ppc64
+                  echo "✓ 完成"
+                  
+                  # 显示编译结果
+                  echo ""
+                  echo "========================================"
+                  echo "编译完成！统计信息："
+                  echo "========================================"
+                  echo "总文件数: $(ls -1 build/ | wc -l)"
+                  echo "总大小: $(du -sh build/ | cut -f1)"
+
+            - name: Create development release (for tag runs only)
+              if: github.event_name != 'workflow_dispatch'
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: ${{ steps.get_version.outputs.version }}
+                  name: "flk v${{ steps.get_version.outputs.version }} (开发版)"
+                  body: |
+                      # 🚧 开发版本 - 仅供测试
+
+                      这是一个开发版本，仅供测试使用。请谨慎使用，可能包含不稳定或实验性功能。
+
+                      ## 📥 快速下载
+
+                      | 架构 | Windows | Linux | macOS | FreeBSD | OpenBSD | NetBSD | 其他 |
+                      |------|---------|-------|-------|---------|---------|--------|------|
+                      | **x64** | [x64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-windows-amd64.exe) | [x64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-linux-amd64) | [x64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-darwin-amd64) | [x64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-freebsd-amd64) | [x64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-openbsd-amd64) | [x64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-netbsd-amd64) | [Solaris](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-solaris-amd64) |
+                      | **ARM64** | [arm64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-windows-arm64.exe) | [arm64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-linux-arm64) | [arm64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-darwin-arm64) | [arm64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-freebsd-arm64) | [arm64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-openbsd-arm64) | [arm64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-netbsd-arm64) | 不支持 |
+                      | **x86** | [x86](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-windows-386.exe) | [x86](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-linux-386) | 不支持 | [x86](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-freebsd-386) | [x86](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-openbsd-386) | [x86](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-netbsd-386) | 不支持 |
+                      | **ARM** | [arm](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-windows-arm.exe) | [arm](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-linux-arm) | 不支持 | [arm](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-freebsd-arm) | [arm](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-openbsd-arm) | [arm](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-netbsd-arm) | 不支持 |
+                      | **MIPS** | 不支持 | [mips](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-linux-mips) | 不支持 | 不支持 | 不支持 | 不支持 | 不支持 |
+                      | **MIPSle** | 不支持 | [mipsle](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-linux-mipsle) | 不支持 | 不支持 | 不支持 | 不支持 | 不支持 |
+                      | **MIPS64** | 不支持 | [mips64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-linux-mips64) | 不支持 | 不支持 | 不支持 | 不支持 | 不支持 |
+                      | **MIPS64le** | 不支持 | [mips64le](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-linux-mips64le) | 不支持 | 不支持 | 不支持 | 不支持 | 不支持 |
+                      | **PPC64** | 不支持 | [ppc64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-linux-ppc64) | 不支持 | 不支持 | 不支持 | 不支持 | [AIX](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-aix-ppc64) |
+                      | **PPC64le** | 不支持 | [ppc64le](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-linux-ppc64le) | 不支持 | 不支持 | 不支持 | 不支持 | 不支持 |
+                      | **RISC-V 64** | 不支持 | [riscv64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-linux-riscv64) | 不支持 | 不支持 | 不支持 | 不支持 | 不支持 |
+                      | **S390X** | 不支持 | [s390x](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-linux-s390x) | 不支持 | 不支持 | 不支持 | 不支持 | [DragonFly](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-dragonfly-amd64) |
+
+                      > 💡 **提示**：Windows 用户下载 `.exe` 文件，其他系统下载后需要添加执行权限 `chmod +x flk-*`
+
+                      ---
+
+                      ## 版本信息
+
+                      - 版本号: ${{ steps.get_version.outputs.version }}
+                      - 构建时间: ${{ github.run_id }}
+                      - 提交: ${{ github.sha }}
+
+                      ## 注意事项
+
+                      ⚠️ 仅通过 GitHub Release 提供下载
+                      ⚠️ 可能包含未经充分测试的功能
+
+                      ---
+
+                      📦 **安装方式：** 下载对应平台的二进制文件，赋予执行权限后直接运行
+                  files: |
+                      build/*
+                  draft: false
+                  prerelease: true
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Upload build artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                  name: binaries-${{ steps.get_version.outputs.version }}
+                  path: build/*
+                  retention-days: 30
