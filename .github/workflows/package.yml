@@ -49,49 +49,49 @@ jobs:
                   echo ""
 
                   # Windows (常用架构)
-                  echo "[1/10] 编译 Windows x86 (386)..."
+                  echo "[1/11] 编译 Windows x86 (386)..."
                   GOOS=windows GOARCH=386 go build -ldflags="-s -w" -o build/flk-windows-386.exe
                   echo "完成"
 
-                  echo "[2/10] 编译 Windows x64 (amd64)..."
+                  echo "[2/11] 编译 Windows x64 (amd64)..."
                   GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o build/flk-windows-amd64.exe
                   echo "完成"
 
-                  echo "[3/10] 编译 Windows ARM64..."
+                  echo "[3/11] 编译 Windows ARM64..."
                   GOOS=windows GOARCH=arm64 go build -ldflags="-s -w" -o build/flk-windows-arm64.exe
                   echo "完成"
 
                   # Linux (常用架构)
                   echo ""
-                  echo "[4/10] 编译 Linux x86 (386)..."
+                  echo "[4/11] 编译 Linux x86 (386)..."
                   GOOS=linux GOARCH=386 go build -ldflags="-s -w" -o build/flk-linux-386
                   echo "完成"
 
-                  echo "[5/10] 编译 Linux x64 (amd64)..."
+                  echo "[5/11] 编译 Linux x64 (amd64)..."
                   GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o build/flk-linux-amd64
                   echo "完成"
 
-                  echo "[6/10] 编译 Linux ARM (armv7)..."
+                  echo "[6/11] 编译 Linux ARM (armv7)..."
                   GOOS=linux GOARCH=arm go build -ldflags="-s -w" -o build/flk-linux-arm
                   echo "完成"
 
-                  echo "[7/10] 编译 Linux ARM64..."
+                  echo "[7/11] 编译 Linux ARM64..."
                   GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o build/flk-linux-arm64
                   echo "完成"
 
                   # macOS (Darwin) (常用架构)
                   echo ""
-                  echo "[8/10] 编译 macOS x64 (amd64)..."
+                  echo "[8/11] 编译 macOS x64 (amd64)..."
                   GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o build/flk-darwin-amd64
                   echo "完成"
 
-                  echo "[9/10] 编译 macOS ARM64 (Apple Silicon)..."
+                  echo "[9/11] 编译 macOS ARM64 (Apple Silicon)..."
                   GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o build/flk-darwin-arm64
                   echo "完成"
 
                   # FreeBSD (常用架构)
                   echo ""
-                  echo "[10/10] 编译 FreeBSD x64 (amd64)..."
+                  echo "[10/11] 编译 FreeBSD x64 (amd64)..."
                   GOOS=freebsd GOARCH=amd64 go build -ldflags="-s -w" -o build/flk-freebsd-amd64
                   echo "完成"
 
