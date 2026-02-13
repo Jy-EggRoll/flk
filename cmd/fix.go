@@ -125,7 +125,8 @@ func RunFix(cmd *cobra.Command, args []string) {
 
 func repairResult(result output.CheckResult, idx int) error {
 	logger.Info(fmt.Sprintf("开始修复 #%d: 类型=%s, 设备=%s, 路径=%s, BasePath=%s, Real=%s, Fake=%s", idx+1, result.Type, result.Device, result.Path, result.BasePath, result.Real, result.Fake))
-	if result.Type == "symlink" {
+	switch result.Type {
+	case "symlink":
 		// 临时设置全局变量
 		oldReal := symlinkReal
 		oldFake := symlinkFake
@@ -157,7 +158,7 @@ func repairResult(result output.CheckResult, idx int) error {
 
 		logger.Info("正常运行 Symlink")
 		return Symlink(nil, nil)
-	} else if result.Type == "hardlink" {
+	case "hardlink":
 		oldPrim := hardlinkPrim
 		oldSeco := hardlinkSeco
 		oldForce := createForce

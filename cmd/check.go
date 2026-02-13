@@ -42,8 +42,6 @@ type CheckResult = output.CheckResult
 
 // RunCheck 执行链接检查并输出结果
 func RunCheck(cmd *cobra.Command, args []string) {
-	logger.Info("开始检查链接状态...")
-
 	results, err := performCheck(CheckOptions{
 		DeviceFilter:  checkDevice,
 		CheckSymlink:  checkSymlink,
@@ -120,11 +118,12 @@ func performCheck(options CheckOptions) ([]output.CheckResult, error) {
 						BasePath: basePath,
 					}
 
-					if linkType == "symlink" {
+					switch linkType {
+					case "symlink":
 						result.Real = entry["real"]
 						result.Fake = entry["fake"]
 						result.Valid, result.Error, result.ErrorType = checkSymlinkValid(result.Real, result.Fake, basePath)
-					} else if linkType == "hardlink" {
+					case "hardlink":
 						result.Prim = entry["prim"]
 						result.Seco = entry["seco"]
 						result.Valid, result.Error, result.ErrorType = checkHardlinkValid(result.Prim, result.Seco, basePath)

@@ -13,7 +13,6 @@ type OutputFormat string
 const (
 	JSON  OutputFormat = "json"
 	Table OutputFormat = "table"
-	Plain OutputFormat = "plain"
 )
 
 // CheckResult 单个链接的检查结果
@@ -82,47 +81,48 @@ func PrintCheckResults(format OutputFormat, results []CheckResult) error {
 		fmt.Println(string(data))
 	case Table:
 		// 动态调整列宽，截断长路径
-		table := pterm.TableData{{"#", "类型", "设备", "路径", "相对路径", "绝对路径", "有效", "错误类型"}}
+		termWidth := pterm.GetTerminalWidth()
+		table := pterm.TableData{{"编号", "类型", "设备", "父路径", "相对路径", "绝对路径", "有效", "错误类型"}}
 		for i, r := range results {
 			num := fmt.Sprintf("%d", i+1)
 			valid := "是"
 			if !r.Valid {
 				valid = "否"
 			}
-			relPath := truncatePath(r.Real, 20)
+			relPath := truncateString(r.Real, (termWidth-7*3-4-8-4-10)/3-3)
 			if relPath == "" {
-				relPath = truncatePath(r.Prim, 20)
+				relPath = truncateString(r.Prim, (termWidth-7*3-4-8-4-10)/3-3)
 			}
-			absPath := truncatePath(r.Fake, 30)
+			absPath := truncateString(r.Fake, (termWidth-7*3-4-8-4-10)/3-3)
 			if absPath == "" {
-				absPath = truncatePath(r.Seco, 30)
+				absPath = truncateString(r.Seco, (termWidth-7*3-4-8-4-10)/3-3)
 			}
-			row := []string{num, r.Type, r.Device, truncatePath(r.Path, 20), relPath, absPath, valid, r.ErrorType}
+			row := []string{num, truncateString(r.Type, 6), truncateString(r.Device, 8), truncateString(r.Path, (termWidth-7*3-4-8-4-10)/3-3), relPath, absPath, valid, truncateString(r.ErrorType, 10)}
 			if r.Valid {
 				table = append(table, row)
 			} else {
 				table = append(table, []string{
 					num,
-					pterm.Red(r.Type),
-					pterm.Red(r.Device),
-					pterm.Red(truncatePath(r.Path, 20)),
+					pterm.Red(truncateString(r.Type, 6)),
+					pterm.Red(truncateString(r.Device, 8)),
+					pterm.Red(truncateString(r.Path, (termWidth-7*3-4-8-4-10)/3-3)),
 					pterm.Red(relPath),
 					pterm.Red(absPath),
 					pterm.Red(valid),
-					pterm.Red(r.ErrorType),
+					pterm.Red(truncateString(r.ErrorType, 10)),
 				})
 			}
 		}
-		pterm.DefaultTable.WithHasHeader().WithBoxed(false).WithData(table).Render() // 无框，紧凑
+		pterm.DefaultTable.WithHasHeader().WithBoxed(false).WithData(table).Render()
 	}
 	return nil
 }
 
-// truncatePath 截断路径，如果超过 maxLen（UTF-8 安全）
-func truncatePath(path string, maxLen int) string {
-	runes := []rune(path)
+// truncateString 截断路径，如果超过 maxLen
+func truncateString(raw string, maxLen int) string {
+	runes := []rune(raw)
 	if len(runes) <= maxLen {
-		return path
+		return raw
 	}
 	return string(runes[:maxLen-3]) + "..."
 }
@@ -144,18 +144,6 @@ func PrintCreateResult(format OutputFormat, result CreateResult) error {
 		}
 		table = append(table, []string{success, result.Type, result.Message, result.Error})
 		pterm.DefaultTable.WithHasHeader().WithData(table).Render()
-	case Plain:
-		if result.Success {
-			fmt.Printf("%s 创建成功\n", result.Type)
-			if result.Message != "" {
-				fmt.Printf("消息: %s\n", result.Message)
-			}
-		} else {
-			fmt.Printf("%s 创建失败\n", result.Type)
-			if result.Error != "" {
-				fmt.Printf("错误: %s\n", result.Error)
-			}
-		}
 	}
 	return nil
 }

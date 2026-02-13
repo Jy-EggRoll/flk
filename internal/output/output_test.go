@@ -9,7 +9,4 @@ func TestOutputFormat(t *testing.T) {
 	if OutputFormat("table") != Table {
 		t.Errorf("Expected Table, got %v", OutputFormat("table"))
 	}
-	if OutputFormat("plain") != Plain {
-		t.Errorf("Expected Plain, got %v", OutputFormat("plain"))
-	}
 }
