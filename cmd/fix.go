@@ -3,11 +3,13 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/output"
+	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 )
@@ -36,40 +38,47 @@ var (
 )
 
 func RunFix(cmd *cobra.Command, args []string) {
-	results, err := performCheck(CheckOptions{
-		DeviceFilter:  fixDevice,
-		CheckSymlink:  fixSymlink,
-		CheckHardlink: fixHardlink,
-		CheckDir:      fixDir,
-	})
-	if err != nil {
-		logger.Error("检查失败 " + err.Error())
-		return
-	}
-
-	// 过滤无效结果
-	var invalidResults []output.CheckResult
-	for _, r := range results {
-		if !r.Valid {
-			invalidResults = append(invalidResults, r)
+	checkAndDisplay := func() []output.CheckResult {
+		results, err := performCheck(CheckOptions{
+			DeviceFilter:  fixDevice,
+			CheckSymlink:  fixSymlink,
+			CheckHardlink: fixHardlink,
+			CheckDir:      fixDir,
+		})
+		if err != nil {
+			logger.Error("检查失败：" + err.Error())
+			return nil
 		}
+
+		// 过滤无效结果
+		var invalidResults []output.CheckResult
+		for _, r := range results {
+			if !r.Valid {
+				invalidResults = append(invalidResults, r)
+			}
+		}
+
+		if len(invalidResults) > 0 {
+			format := output.OutputFormat(outputFormat)
+			if err := output.PrintCheckResults(format, invalidResults); err != nil {
+				logger.Error("输出失败：" + err.Error())
+				return invalidResults
+			}
+		} else {
+			pterm.Info.Println("所有链接都有效，无需修复")
+		}
+
+		return invalidResults
 	}
 
+	invalidResults := checkAndDisplay()
 	if len(invalidResults) == 0 {
-		pterm.Info.Println("所有链接都有效，无需修复")
-		return
-	}
-
-	// 显示带编号的table
-	format := output.OutputFormat(outputFormat)
-	if err := output.PrintCheckResults(format, invalidResults); err != nil {
-		logger.Error("输出失败 " + err.Error())
 		return
 	}
 
 	// 交互循环
 	for {
-		input, err := pterm.DefaultInteractiveTextInput.WithMultiLine(false).Show("输入要修复的编号（空格分隔），'all' 或 'a' 修复所有，'exit' 或 'e' 退出")
+		input, err := pterm.DefaultInteractiveTextInput.WithMultiLine(false).Show("输入要修复的编号（空格分隔），'all' 或 'a' 修复所有，'d<编号>' 删除条目，如 d7，单次只能删除一个，'exit' 或 'e' 退出")
 		if err != nil {
 			logger.Error("输入错误 " + err.Error())
 			continue
@@ -78,6 +87,48 @@ func RunFix(cmd *cobra.Command, args []string) {
 		input = strings.TrimSpace(input)
 		if input == "exit" || input == "e" {
 			break
+		}
+
+		if strings.HasPrefix(input, "d") {
+			// 删除模式
+			parts := strings.Fields(input[1:])
+			var indices []int
+			for _, part := range parts {
+				idx, err := strconv.Atoi(part)
+				if err != nil || idx < 1 || idx > len(invalidResults) {
+					pterm.Warning.Printf("无效编号 %s\n", part)
+					continue
+				}
+				indices = append(indices, idx-1)
+			}
+
+			if len(indices) == 0 {
+				continue
+			}
+
+			platform := runtime.GOOS
+			mgr := store.GlobalManager
+			for _, idx := range indices {
+				result := invalidResults[idx]
+				var entry map[string]string
+				switch result.Type {
+				case "symlink":
+					entry = map[string]string{"real": result.Real, "fake": result.Fake}
+				case "hardlink":
+					entry = map[string]string{"prim": result.Prim, "seco": result.Seco}
+				}
+				mgr.RemoveMatchingEntry(platform, result.Device, result.Type, result.Path, entry)
+			}
+			if err := mgr.Save(store.StorePath); err != nil {
+				logger.Error("保存失败 " + err.Error())
+			}
+
+			pterm.Success.Println("删除完成")
+			invalidResults = checkAndDisplay()
+			if len(invalidResults) == 0 {
+				break
+			}
+			continue
 		}
 
 		var indices []int
@@ -90,7 +141,7 @@ func RunFix(cmd *cobra.Command, args []string) {
 			for _, part := range parts {
 				idx, err := strconv.Atoi(part)
 				if err != nil || idx < 1 || idx > len(invalidResults) {
-					pterm.Warning.Printf("无效编号: %s\n", part)
+					pterm.Warning.Printf("无效编号 %s\n", part)
 					continue
 				}
 				indices = append(indices, idx-1)
@@ -111,13 +162,15 @@ func RunFix(cmd *cobra.Command, args []string) {
 			}
 		}
 
-		// 重新检查？
-		// 暂时不重新检查，保持简单
+		invalidResults = checkAndDisplay()
+		if len(invalidResults) == 0 {
+			break
+		}
 	}
 }
 
 func repairResult(result output.CheckResult, idx int) error {
-	logger.Info(fmt.Sprintf("开始修复 #%d: 类型=%s, 设备=%s, 路径=%s, BasePath=%s, Real=%s, Fake=%s", idx+1, result.Type, result.Device, result.Path, result.BasePath, result.Real, result.Fake))
+	logger.Info(fmt.Sprintf("开始修复 #%d, 类型=%s, 设备=%s, 路径=%s, BasePath=%s, Real=%s, Fake=%s", idx+1, result.Type, result.Device, result.Path, result.BasePath, result.Real, result.Fake))
 	switch result.Type {
 	case "symlink":
 		// 临时设置全局变量
@@ -166,5 +219,5 @@ func repairResult(result output.CheckResult, idx int) error {
 		}()
 		return Hardlink(nil, nil)
 	}
-	return fmt.Errorf("未知类型: %s", result.Type)
+	return fmt.Errorf("未知类型 %s", result.Type)
 }

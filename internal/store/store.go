@@ -63,6 +63,23 @@ func (m *Manager) ToJSON() string {
 	return string(jsonResult)
 }
 
+func (m *Manager) RemoveMatchingEntry(platform, device, linkType, parentPath string, entry Entry) {
+	entries := m.Data[platform][device][linkType][parentPath]
+	for i, e := range entries {
+		match := true
+		for k, v := range entry {
+			if e[k] != v {
+				match = false
+				break
+			}
+		}
+		if match {
+			m.Data[platform][device][linkType][parentPath] = append(entries[:i], entries[i+1:]...)
+			break
+		}
+	}
+}
+
 // DefaultStorePath 指定默认的持久化存储路径（不展开 JSON 中的 ~，由写入时展开实际文件系统路径）
 const DefaultStorePath = "~/.config/flk/flk-store.json"
 
