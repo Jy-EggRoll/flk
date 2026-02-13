@@ -3,26 +3,23 @@ package main
 import (
 	"runtime"
 
-	"github.com/jy-eggroll/flk/internal/logger"
-	"golang.org/x/sys/windows"
-
 	"github.com/jy-eggroll/flk/cmd"
+	"github.com/jy-eggroll/flk/internal/logger"
 )
 
+// 声明 Windows 专属的管理员检查函数（由 main_windows.go 赋值）
+var checkWindowsAdmin func()
+
 func main() {
+	// 通用初始化逻辑（全平台执行）
 	logger.Init(nil)
 	logger.Info("欢迎使用 flk！")
-	if runtime.GOOS == "windows" {
-		if isAdminOnWindows() {
-			logger.Info("当前以管理员权限运行")
-		} else {
-			logger.Warn("当前未以管理员权限运行")
-		}
-	}
-	cmd.Execute()
-}
 
-func isAdminOnWindows() bool {
-	elevated := windows.GetCurrentProcessToken().IsElevated()
-	return elevated
+	// 仅 Windows 平台执行管理员权限检查（非 Windows 平台此逻辑自动跳过）
+	if runtime.GOOS == "windows" && checkWindowsAdmin != nil {
+		checkWindowsAdmin()
+	}
+
+	// 通用业务入口（全平台执行）
+	cmd.Execute()
 }
