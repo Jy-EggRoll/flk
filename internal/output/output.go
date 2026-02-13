@@ -74,7 +74,7 @@ func PrintCheckResults(format OutputFormat, results []CheckResult) error {
 
 	switch format {
 	case JSON:
-		data, err := json.MarshalIndent(results, "", "  ")
+		data, err := json.MarshalIndent(results, "", "    ")
 		if err != nil {
 			return err
 		}
@@ -131,7 +131,7 @@ func truncateString(raw string, maxLen int) string {
 func PrintCreateResult(format OutputFormat, result CreateResult) error {
 	switch format {
 	case JSON:
-		data, err := json.MarshalIndent(result, "", "  ")
+		data, err := json.MarshalIndent(result, "", "    ")
 		if err != nil {
 			return err
 		}

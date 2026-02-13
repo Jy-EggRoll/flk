@@ -2,7 +2,6 @@ package store
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -56,8 +55,7 @@ func (m *Manager) AddRecord(device, linkType, parentPath string, fields map[stri
 		processedEntry, // 待追加的元素：处理完成的 Entry 实例
 	)
 
-	logger.Debug("结构创建成功")
-	fmt.Print(m.ToJSON())
+	logger.Info("结构创建成功")
 }
 
 func (m *Manager) ToJSON() string {
