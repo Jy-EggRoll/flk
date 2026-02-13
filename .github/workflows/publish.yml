@@ -22,8 +22,8 @@ jobs:
 
             - name: Setup Go
               uses: actions/setup-go@v5
-              # with:
-              #     go-version: '1.25.6'
+              with:
+                  go-version: '1.26.0'
 
             - name: Get tag version
               id: get_version
@@ -36,161 +36,161 @@ jobs:
               run: |
                   # 创建输出目录
                   mkdir -p build
-                  
+
                   echo "========================================"
                   echo "开始交叉编译 Go 二进制文件"
                   echo "========================================"
                   echo ""
-                  
+
                   # Windows
                   echo "[1/33] 编译 Windows 386..."
                   GOOS=windows GOARCH=386 go build -ldflags="-s -w" -o build/flk-windows-386.exe
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[2/33] 编译 Windows amd64..."
                   GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o build/flk-windows-amd64.exe
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[3/33] 编译 Windows arm..."
                   GOOS=windows GOARCH=arm go build -ldflags="-s -w" -o build/flk-windows-arm.exe
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[4/33] 编译 Windows arm64..."
                   GOOS=windows GOARCH=arm64 go build -ldflags="-s -w" -o build/flk-windows-arm64.exe
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   # Linux
                   echo ""
                   echo "[5/33] 编译 Linux 386..."
                   GOOS=linux GOARCH=386 go build -ldflags="-s -w" -o build/flk-linux-386
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[6/33] 编译 Linux amd64..."
                   GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o build/flk-linux-amd64
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[7/33] 编译 Linux arm..."
                   GOOS=linux GOARCH=arm go build -ldflags="-s -w" -o build/flk-linux-arm
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[8/33] 编译 Linux arm64..."
                   GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o build/flk-linux-arm64
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[9/33] 编译 Linux mips..."
                   GOOS=linux GOARCH=mips go build -ldflags="-s -w" -o build/flk-linux-mips
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[10/33] 编译 Linux mipsle..."
                   GOOS=linux GOARCH=mipsle go build -ldflags="-s -w" -o build/flk-linux-mipsle
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[11/33] 编译 Linux mips64..."
                   GOOS=linux GOARCH=mips64 go build -ldflags="-s -w" -o build/flk-linux-mips64
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[12/33] 编译 Linux mips64le..."
                   GOOS=linux GOARCH=mips64le go build -ldflags="-s -w" -o build/flk-linux-mips64le
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[13/33] 编译 Linux ppc64..."
                   GOOS=linux GOARCH=ppc64 go build -ldflags="-s -w" -o build/flk-linux-ppc64
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[14/33] 编译 Linux ppc64le..."
                   GOOS=linux GOARCH=ppc64le go build -ldflags="-s -w" -o build/flk-linux-ppc64le
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[15/33] 编译 Linux riscv64..."
                   GOOS=linux GOARCH=riscv64 go build -ldflags="-s -w" -o build/flk-linux-riscv64
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[16/33] 编译 Linux s390x..."
                   GOOS=linux GOARCH=s390x go build -ldflags="-s -w" -o build/flk-linux-s390x
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   # macOS (Darwin)
                   echo ""
                   echo "[17/33] 编译 macOS amd64..."
                   GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o build/flk-darwin-amd64
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[18/33] 编译 macOS arm64 (Apple Silicon)..."
                   GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o build/flk-darwin-arm64
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   # FreeBSD
                   echo ""
                   echo "[19/33] 编译 FreeBSD 386..."
                   GOOS=freebsd GOARCH=386 go build -ldflags="-s -w" -o build/flk-freebsd-386
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[20/33] 编译 FreeBSD amd64..."
                   GOOS=freebsd GOARCH=amd64 go build -ldflags="-s -w" -o build/flk-freebsd-amd64
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[21/33] 编译 FreeBSD arm..."
                   GOOS=freebsd GOARCH=arm go build -ldflags="-s -w" -o build/flk-freebsd-arm
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[22/33] 编译 FreeBSD arm64..."
                   GOOS=freebsd GOARCH=arm64 go build -ldflags="-s -w" -o build/flk-freebsd-arm64
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   # OpenBSD
                   echo ""
                   echo "[23/33] 编译 OpenBSD 386..."
                   GOOS=openbsd GOARCH=386 go build -ldflags="-s -w" -o build/flk-openbsd-386
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[24/33] 编译 OpenBSD amd64..."
                   GOOS=openbsd GOARCH=amd64 go build -ldflags="-s -w" -o build/flk-openbsd-amd64
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[25/33] 编译 OpenBSD arm..."
                   GOOS=openbsd GOARCH=arm go build -ldflags="-s -w" -o build/flk-openbsd-arm
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[26/33] 编译 OpenBSD arm64..."
                   GOOS=openbsd GOARCH=arm64 go build -ldflags="-s -w" -o build/flk-openbsd-arm64
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   # NetBSD
                   echo ""
                   echo "[27/33] 编译 NetBSD 386..."
                   GOOS=netbsd GOARCH=386 go build -ldflags="-s -w" -o build/flk-netbsd-386
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[28/33] 编译 NetBSD amd64..."
                   GOOS=netbsd GOARCH=amd64 go build -ldflags="-s -w" -o build/flk-netbsd-amd64
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[29/33] 编译 NetBSD arm..."
                   GOOS=netbsd GOARCH=arm go build -ldflags="-s -w" -o build/flk-netbsd-arm
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   echo "[30/33] 编译 NetBSD arm64..."
                   GOOS=netbsd GOARCH=arm64 go build -ldflags="-s -w" -o build/flk-netbsd-arm64
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   # DragonFly BSD
                   echo ""
                   echo "[31/33] 编译 DragonFly BSD amd64..."
                   GOOS=dragonfly GOARCH=amd64 go build -ldflags="-s -w" -o build/flk-dragonfly-amd64
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   # Solaris
                   echo ""
                   echo "[32/33] 编译 Solaris amd64..."
                   GOOS=solaris GOARCH=amd64 go build -ldflags="-s -w" -o build/flk-solaris-amd64
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   # AIX
                   echo ""
                   echo "[33/33] 编译 AIX ppc64..."
                   GOOS=aix GOARCH=ppc64 go build -ldflags="-s -w" -o build/flk-aix-ppc64
-                  echo "✓ 完成"
-                  
+                  echo "完成"
+
                   # 显示编译结果
                   echo ""
                   echo "========================================"
