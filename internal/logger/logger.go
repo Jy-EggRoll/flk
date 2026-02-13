@@ -55,17 +55,6 @@ func Init(config *Config) { // 定义初始化函数，入参为 Config 结构�
 	// 创建 slog handler
 	handler := pterm.NewSlogHandler(ptermLogger) // 使用 ptermLogger 作为底层，创建适配 slog 库的 Handler 实例
 
-	// TODO: 文件输出实现
-	// if config.FileOutput {
-	//     file, err := os.OpenFile(config.FilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	//     if err == nil {
-	//         fileHandler := slog.NewJSONHandler(file, &slog.HandlerOptions{
-	//             Level: slog.LevelDebug,
-	//         })
-	//         handler = slog.MultiHandler(handler, fileHandler)
-	//     }
-	// }
-
 	globalLogger = slog.New(handler) // 使用创建好的 handler 初始化 slog.Logger 实例，并赋值给全局变量
 	slog.SetDefault(globalLogger)    // 将全局 slog.Logger 实例设为 Go 标准库 slog 的默认日志实例
 }

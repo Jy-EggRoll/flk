@@ -35,7 +35,7 @@ func Create(realPath, fakePath string, force bool) error {
 			if err := os.Remove(fakePath); err == nil {
 				logger.Info("已成功删除 fakePath")
 			} else {
-				logger.Error("删除失败：" + err.Error())
+				logger.Error("删除失败 " + err.Error())
 				return err
 			}
 		} else {
@@ -47,7 +47,7 @@ func Create(realPath, fakePath string, force bool) error {
 				if removeErr := os.Remove(filepath.Dir(fakePath)); removeErr == nil {
 					logger.Info("已成功删除非目录文件")
 				} else {
-					logger.Error("删除非目录文件失败：" + removeErr.Error())
+					logger.Error("删除非目录文件失败 " + removeErr.Error())
 					return removeErr
 				}
 			}

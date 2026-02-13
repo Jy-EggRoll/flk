@@ -25,7 +25,22 @@ func (e *ExistsButNotDirectoryError) Is(target error) bool {
 	return true
 }
 
-func ExpandHome(path string) (string, error) { // 定义 ExpandHome 函数，接收字符串类型的路径参数，返回处理后的路径字符串和错误对象
+// FoldHome 函数，接收原始路径字符串，返回将用户主目录替换为~的简化路径
+func FoldHome(path string) (string, error) { // 定义 fold
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	normPath, _ := NormalizePath(path)
+	if strings.HasPrefix(normPath, home) { // 判断传入的原始路径是否以用户主目录路径为前缀
+		return strings.Replace(normPath, home, "~", 1), nil // 若路径包含主目录前缀，将第一个主目录子串替换为~后返回
+	}
+	return normPath, nil
+}
+
+// ExpandHome ，接收字符串类型的路径参数，返回处理后的路径字符串和错误对象
+func ExpandHome(path string) (string, error) {
 	// 如果路径不以 ~ 开头，直接返回
 	if !strings.HasPrefix(path, "~") { // 判断输入的路径字符串是否不以波浪号(~)开头，strings.HasPrefix 用于检测字符串前缀
 		return path, nil // 若路径不以~开头，直接返回原路径和 nil（表示无错误）
@@ -59,7 +74,7 @@ func NormalizePath(path string) (string, error) { // 定义 NormalizePath 函数
 
 	cleaned := filepath.Clean(expanded) // 调用 filepath.Clean 函数清理展开后的路径，解析路径中的.和..、合并冗余分隔符，生成最简路径
 
-	return cleaned, nil // 返回清理后的规范化路径和 nil（表示无错误）
+	return cleaned, nil // 返回清理后的规范化路径和 nil
 }
 
 func ToAbsolute(normalizePath string) (string, error) {

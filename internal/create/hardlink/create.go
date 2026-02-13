@@ -26,7 +26,7 @@ func Create(primPath, secoPath string, force bool) error {
 			if err := os.Remove(secoPath); err == nil {
 				logger.Info("已成功删除 secoPath")
 			} else {
-				logger.Error("删除失败：" + err.Error())
+				logger.Error("删除失败 " + err.Error())
 				return err
 			}
 		} else {

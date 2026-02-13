@@ -74,7 +74,7 @@ func Symlink(cmd *cobra.Command, args []string) error {
 		// 持久化数据
 		if store.GlobalManager == nil {
 			if err := store.InitStore(store.StorePath); err != nil {
-				logger.Error("初始化存储失败：" + err.Error())
+				logger.Error("初始化存储失败 " + err.Error())
 			}
 		}
 		mgr := store.GlobalManager
@@ -87,7 +87,7 @@ func Symlink(cmd *cobra.Command, args []string) error {
 			parentPath, _ := os.Getwd()
 			mgr.AddRecord(createDevice, "symlink", parentPath, fields)
 			if err := mgr.Save(store.StorePath); err != nil {
-				logger.Error("持久化失败：" + err.Error())
+				logger.Error("持久化失败 " + err.Error())
 			}
 		}
 	}

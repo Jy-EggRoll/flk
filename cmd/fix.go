@@ -41,8 +41,6 @@ var (
 )
 
 func RunFix(cmd *cobra.Command, args []string) {
-	logger.Info("开始修复模式...")
-
 	results, err := performCheck(CheckOptions{
 		DeviceFilter:  fixDevice,
 		CheckSymlink:  fixSymlink,
@@ -50,7 +48,7 @@ func RunFix(cmd *cobra.Command, args []string) {
 		CheckDir:      fixDir,
 	})
 	if err != nil {
-		logger.Error("检查失败：" + err.Error())
+		logger.Error("检查失败 " + err.Error())
 		return
 	}
 
@@ -70,7 +68,7 @@ func RunFix(cmd *cobra.Command, args []string) {
 	// 显示带编号的table
 	format := output.OutputFormat(outputFormat)
 	if err := output.PrintCheckResults(format, invalidResults); err != nil {
-		logger.Error("输出失败：" + err.Error())
+		logger.Error("输出失败 " + err.Error())
 		return
 	}
 
@@ -78,7 +76,7 @@ func RunFix(cmd *cobra.Command, args []string) {
 	for {
 		input, err := pterm.DefaultInteractiveTextInput.WithMultiLine(false).Show("输入要修复的编号（空格分隔），'all' 或 'a' 修复所有，'exit' 或 'e' 退出")
 		if err != nil {
-			logger.Error("输入错误：" + err.Error())
+			logger.Error("输入错误 " + err.Error())
 			continue
 		}
 

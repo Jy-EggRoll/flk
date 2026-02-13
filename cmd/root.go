@@ -27,7 +27,7 @@ var rootCmd = &cobra.Command{
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// 在命令执行前初始化持久化存储，使用当前 storePath 配置
 		if err := storeconfig.InitStore(storeconfig.StorePath); err != nil {
-			logger.Error("初始化存储失败：" + err.Error())
+			logger.Error("初始化存储失败 " + err.Error())
 		}
 	},
 }

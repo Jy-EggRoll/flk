@@ -49,13 +49,13 @@ func RunCheck(cmd *cobra.Command, args []string) {
 		CheckDir:      checkDir,
 	})
 	if err != nil {
-		logger.Error("检查失败：" + err.Error())
+		logger.Error("检查失败 " + err.Error())
 		return
 	}
 
 	format := output.OutputFormat(outputFormat)
 	if err := output.PrintCheckResults(format, results); err != nil {
-		logger.Error("输出失败：" + err.Error())
+		logger.Error("输出失败 " + err.Error())
 		return
 	}
 

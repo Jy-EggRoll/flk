@@ -1,14 +1,11 @@
-package store // 声明当前代码所属的包名为 store，用于封装存储相关的核心逻辑
+package store
 
-import ( // 导入代码依赖的外部包，采用分组导入的方式提升代码整洁性
-
+import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/user" // 导入 os/user 包，用于获取当前操作系统用户的信息（如用户主目录路径）
 	"path/filepath"
-	"runtime" // 导入 runtime 包，用于获取程序运行时的环境信息（如操作系统类型）
-	"strings" // 导入 strings 包，用于执行字符串的各类操作（如前缀判断、子串替换）
+	"runtime"
 
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
@@ -25,15 +22,6 @@ type Manager struct { // 定义 Manager 结构体，作为存储数据的核心�
 	Data RootConfig // Manager 的核心数据字段，存储按平台-设备-类型-路径层级组织的所有 Entry 数据
 }
 
-func foldPath(path string) string { // 定义 foldPath 函数，接收原始路径字符串，返回将用户主目录替换为~的简化路径
-	u, _ := user.Current()             // 获取当前系统用户信息，忽略返回的错误（简化场景下的处理方式），赋值给变量 u
-	home := u.HomeDir                  // 从当前用户信息中提取用户主目录的绝对路径，赋值给变量 home
-	if strings.HasPrefix(path, home) { // 判断传入的原始路径是否以用户主目录路径为前缀
-		return strings.Replace(path, home, "~", 1) // 若路径包含主目录前缀，将第一个主目录子串替换为~后返回
-	}
-	return path // 若路径不包含主目录前缀，直接返回原始路径字符串
-}
-
 func (m *Manager) AddRecord(device, linkType, parentPath string, fields map[string]string) { // 定义 Manager 的 AddRecord 方法，用于添加一条存储记录，参数依次为设备标识、链接类型、父路径、字段键值对
 	platform := runtime.GOOS // 获取当前程序运行的操作系统平台标识（如 linux/darwin/windows），赋值给变量 platform
 
@@ -45,7 +33,10 @@ func (m *Manager) AddRecord(device, linkType, parentPath string, fields map[stri
 		m.Data[platform][device] = make(TypeGroup) // 初始化 TypeGroup 类型的映射，保证层级数据结构的完整性
 	}
 
-	foldedParent := foldPath(parentPath)           // 调用 foldPath 函数处理父路径，将其中的用户主目录替换为~符号
+	foldedParent, err := pathutil.FoldHome(parentPath)
+	if err != nil {
+		logger.Error("未能折叠路径 " + err.Error())
+	}
 	if m.Data[platform][device][linkType] == nil { // 检查当前链接类型对应的 PathGroup 是否未初始化（nil）
 		m.Data[platform][device][linkType] = make(PathGroup) // 初始化 PathGroup 类型的映射，确保路径层级可正常存储数据
 	}
@@ -53,7 +44,11 @@ func (m *Manager) AddRecord(device, linkType, parentPath string, fields map[stri
 	// 处理内部字段的路径折叠
 	processedEntry := make(Entry) // 初始化 Entry 类型的映射，用于存储处理后的字段键值对
 	for k, v := range fields {    // 遍历传入的原始字段键值对，k 为字段名，v 为字段原始值
-		processedEntry[k] = foldPath(v) // 对每个字段值执行路径简化处理，将结果存入 processedEntry
+		foldedPath, err := pathutil.FoldHome(v)
+		if err != nil {
+			logger.Error("未能折叠路径 " + err.Error())
+		}
+		processedEntry[k] = foldedPath // 对每个字段值执行路径简化处理，将结果存入 processedEntry
 	}
 
 	m.Data[platform][device][linkType][foldedParent] = append( // 调用 append 函数，将处理后的 Entry 添加到对应层级的切片中
