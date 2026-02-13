@@ -1,8 +1,9 @@
-package logger // 声明当前代码所属的包名为 logger
-import (       // 导入代码依赖的外部包列表
-	"os" // 导入 os 包，用于与操作系统交互，核心功能是读取环境变量
+package logger
 
-	"github.com/pterm/pterm" // 导入 pterm 第三方日志库，用于定义日志级别常量和日志相关操作
+import (
+	"os"
+
+	"github.com/pterm/pterm"
 )
 
 // 从字符串解析日志级别
