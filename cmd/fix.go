@@ -24,7 +24,7 @@ var fixCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(fixCmd)
 	// 复用check的flags
-	fixCmd.Flags().StringVar(&fixDevice, "device", "", "设备名称，用于过滤检查")
+	fixCmd.Flags().StringVarP(&fixDevice, "device", "d","", "设备名称，用于过滤检查")
 	fixCmd.Flags().BoolVar(&fixSymlink, "symlink", false, "仅检查符号链接")
 	fixCmd.Flags().BoolVar(&fixHardlink, "hardlink", false, "仅检查硬链接")
 	fixCmd.Flags().StringVar(&fixDir, "dir", "", "仅检查包含该路径的记录")

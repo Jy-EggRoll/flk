@@ -29,7 +29,7 @@ func init() {
 	symlinkCmd.Flags().StringVarP(&symlinkReal, "real", "r", "", "真实文件路径")
 	symlinkCmd.Flags().StringVarP(&symlinkFake, "fake", "f", "", "链接文件路径")
 	symlinkCmd.Flags().BoolVar(&createForce, "force", false, "强制覆盖已存在的文件或文件夹")
-	symlinkCmd.Flags().StringVar(&createDevice, "device", "all", "设备名称，用于后续设备过滤")
+	symlinkCmd.Flags().StringVarP(&createDevice, "device", "d", "all", "设备名称，用于后续设备过滤")
 	symlinkCmd.MarkFlagRequired("real")
 	symlinkCmd.MarkFlagRequired("fake")
 }

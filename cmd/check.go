@@ -24,7 +24,7 @@ var checkCmd = &cobra.Command{
 func init() {
 	logger.Init(nil)
 	rootCmd.AddCommand(checkCmd)
-	checkCmd.Flags().StringVar(&checkDevice, "device", "", "设备名称，用于过滤检查")
+	checkCmd.Flags().StringVarP(&checkDevice, "device", "d", "", "设备名称，用于过滤检查")
 	checkCmd.Flags().BoolVar(&checkSymlink, "symlink", false, "仅检查符号链接")
 	checkCmd.Flags().BoolVar(&checkHardlink, "hardlink", false, "仅检查硬链接")
 	checkCmd.Flags().StringVar(&checkDir, "dir", "", "仅检查包含该路径的记录")
