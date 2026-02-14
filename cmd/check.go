@@ -10,7 +10,7 @@ import (
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
-	storeconfig "github.com/jy-eggroll/flk/internal/store"
+	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -74,7 +74,7 @@ func performCheck(options CheckOptions) ([]output.CheckResult, error) {
 	platform := runtime.GOOS
 	var results []CheckResult
 
-	data := storeconfig.GlobalManager.Data
+	data := store.GlobalManager.Data
 	if data == nil {
 		return results, nil
 	}
