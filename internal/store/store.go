@@ -40,14 +40,30 @@ func (m *Manager) AddRecord(device, linkType, parentPath string, fields map[stri
 		m.Data[platform][device][linkType] = make(PathGroup) // 初始化 PathGroup 类型的映射，确保路径层级可正常存储数据
 	}
 
-	// 处理内部字段的路径折叠
+	// 处理内部字段的路径：real 和 prim 存储为相对路径，fake 和 seco 存储为绝对路径
+	normalizedParent, err := pathutil.NormalizePath(parentPath)
+	if err != nil {
+		normalizedParent = parentPath
+	}
 	processedEntry := make(Entry) // 初始化 Entry 类型的映射，用于存储处理后的字段键值对
 	for k, v := range fields {    // 遍历传入的原始字段键值对，k 为字段名，v 为字段原始值
-		foldedPath, err := pathutil.FoldHome(v)
+		normalizedV, err := pathutil.NormalizePath(v)
 		if err != nil {
-			logger.Error("未能折叠路径 " + err.Error())
+			processedEntry[k] = v // fallback to original
+			continue
 		}
-		processedEntry[k] = foldedPath // 对每个字段值执行路径简化处理，将结果存入 processedEntry
+		if k == "real" || k == "prim" {
+			// 对于 real 和 prim，存储相对于父路径的相对路径
+			relPath, err := filepath.Rel(normalizedParent, normalizedV)
+			if err != nil {
+				processedEntry[k] = normalizedV // fallback to absolute
+			} else {
+				processedEntry[k] = relPath // store relative path
+			}
+		} else {
+			// 对于 fake 和 seco，存储绝对路径
+			processedEntry[k] = normalizedV
+		}
 	}
 
 	m.Data[platform][device][linkType][foldedParent] = append( // 调用 append 函数，将处理后的 Entry 添加到对应层级的切片中
