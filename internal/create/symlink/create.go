@@ -55,13 +55,7 @@ func Create(realPath, fakePath string, force bool) error {
 		return err
 	}
 
-	fakeDir := filepath.Dir(fakePath)
-	linkTarget, err := filepath.Rel(fakeDir, absRealPath)
-	if err != nil || linkTarget == "." {
-		linkTarget = absRealPath
-	}
-
-	if err := os.Symlink(linkTarget, fakePath); err != nil {
+	if err := os.Symlink(absRealPath, fakePath); err != nil {
 		return err
 	}
 	return nil
