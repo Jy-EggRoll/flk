@@ -61,8 +61,13 @@ func (m *Manager) AddRecord(device, linkType, parentPath string, fields map[stri
 				processedEntry[k] = relPath // store relative path
 			}
 		} else {
-			// 对于 fake 和 seco，存储绝对路径
-			processedEntry[k] = normalizedV
+			// 对于 fake 和 seco，存储折叠路径（~ 格式）
+			foldedPath, err := pathutil.FoldHome(normalizedV)
+			if err != nil {
+				processedEntry[k] = normalizedV // fallback
+			} else {
+				processedEntry[k] = foldedPath
+			}
 		}
 	}
 

@@ -175,7 +175,11 @@ func repairResult(result output.CheckResult, idx int) error {
 	// 临时设置 workDir 为条目父路径，以便相对路径正确解析
 	oldWorkDir := WorkDir
 	WorkDir = result.BasePath
-	defer func() { WorkDir = oldWorkDir }()
+	logger.Info(fmt.Sprintf("临时设置 WorkDir 从 %s 到 %s", oldWorkDir, WorkDir))
+	defer func() { 
+		WorkDir = oldWorkDir
+		logger.Info(fmt.Sprintf("恢复 WorkDir 到 %s", oldWorkDir))
+	}()
 	
 	switch result.Type {
 	case "symlink":
