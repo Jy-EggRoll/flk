@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"errors"
-	"os"
 
 	"github.com/jy-eggroll/flk/internal/create/symlink"
 	"github.com/jy-eggroll/flk/internal/logger"
@@ -72,7 +71,7 @@ func Symlink(cmd *cobra.Command, args []string) error {
 				"real": normalizedReal,
 				"fake": absFakePath,
 			}
-			parentPath, _ := os.Getwd()
+			parentPath := WorkDir
 			mgr.AddRecord(createDevice, "symlink", parentPath, fields)
 			if err := mgr.Save(store.StorePath); err != nil {
 				logger.Error("持久化失败 " + err.Error())

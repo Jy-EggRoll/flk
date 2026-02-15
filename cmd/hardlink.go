@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"errors"
-	"os"
 
 	"github.com/jy-eggroll/flk/internal/create/hardlink"
 	"github.com/jy-eggroll/flk/internal/logger"
@@ -69,7 +68,7 @@ func Hardlink(cmd *cobra.Command, args []string) error {
 				"prim": normalizedPrim,
 				"seco": absSecoPath,
 			}
-			parentPath, _ := os.Getwd()
+			parentPath := WorkDir
 			mgr.AddRecord(createDevice, "hardlink", parentPath, fields)
 			if err := mgr.Save(store.StorePath); err != nil {
 				logger.Error("持久化失败 " + err.Error())

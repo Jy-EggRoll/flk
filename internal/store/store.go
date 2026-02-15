@@ -71,10 +71,30 @@ func (m *Manager) AddRecord(device, linkType, parentPath string, fields map[stri
 		}
 	}
 
-	m.Data[platform][device][linkType][foldedParent] = append( // 调用 append 函数，将处理后的 Entry 添加到对应层级的切片中
-		m.Data[platform][device][linkType][foldedParent], // 目标切片：当前平台-设备-类型-简化路径对应的 Entry 切片
-		processedEntry, // 待追加的元素：处理完成的 Entry 实例
-	)
+	// 去重逻辑：根据链接类型检查相应字段
+	var dedupField string
+	switch linkType {
+	case "symlink":
+		dedupField = "fake"
+	case "hardlink":
+		dedupField = "seco"
+	default:
+		dedupField = ""
+	}
+
+	currentEntries := m.Data[platform][device][linkType][foldedParent]
+
+	if dedupField != "" {
+		var newEntries []Entry
+		for _, e := range currentEntries {
+			if e[dedupField] != processedEntry[dedupField] {
+				newEntries = append(newEntries, e)
+			}
+		}
+		m.Data[platform][device][linkType][foldedParent] = append(newEntries, processedEntry)
+	} else {
+		m.Data[platform][device][linkType][foldedParent] = append(currentEntries, processedEntry)
+	}
 
 	logger.Info("结构创建成功")
 }
