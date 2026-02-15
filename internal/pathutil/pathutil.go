@@ -9,6 +9,13 @@ import (
 	"strings"
 )
 
+var workDir string
+
+// SetWorkDir 设置工作目录，用于相对路径解析
+func SetWorkDir(dir string) {
+	workDir = dir
+}
+
 type ExistsButNotDirectoryError struct {
 	Path string
 }
@@ -70,6 +77,11 @@ func NormalizePath(path string) (string, error) { // 定义 NormalizePath 函数
 	expanded, err := ExpandHome(path) // 调用 ExpandHome 函数展开路径中的波浪号（~），接收展开后的路径和错误对象
 	if err != nil {                   // 判断展开波浪号的操作是否产生错误
 		return "", err // 若展开波浪号出错，返回空字符串和该错误对象
+	}
+
+	// 如果路径不是绝对路径，且设置了工作目录，则相对于工作目录
+	if !filepath.IsAbs(expanded) && workDir != "" {
+		expanded = filepath.Join(workDir, expanded)
 	}
 
 	cleaned := filepath.Clean(expanded) // 调用 filepath.Clean 函数清理展开后的路径，解析路径中的.和..、合并冗余分隔符，生成最简路径

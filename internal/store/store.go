@@ -91,6 +91,15 @@ var GlobalManager *Manager
 
 // InitStore 初始化全局存储，若目标文件存在则加载，否则创建一个空的存储结构
 func InitStore(storePath string) error {
+	// 如果 storePath 是相对路径，将其相对于工作目录处理
+	if !filepath.IsAbs(storePath) {
+		// 这里需要工作目录，但为了避免导入 cmd 包，使用 pathutil.NormalizePath，它会使用设置的工作目录
+		var err error
+		storePath, err = pathutil.NormalizePath(storePath)
+		if err != nil {
+			return err
+		}
+	}
 	// 尝试从文件加载
 	m, err := LoadFromFile(storePath)
 	if err != nil {
