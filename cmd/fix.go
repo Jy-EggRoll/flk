@@ -78,7 +78,8 @@ func RunFix(cmd *cobra.Command, args []string) {
 
 	// 交互循环
 	for {
-		input, err := pterm.DefaultInteractiveTextInput.WithMultiLine(false).Show("输入 all 或 a 修复所有\n输入 d<编号> 删除条目，如 d7，单次只能删除一个\n输入 exit 或 e 退出程序\n输入数字以修复对应项，使用空格分隔\n")
+		pterm.DefaultBox.WithTitle("INFO").Println(pterm.Green("输入 all 或 a 修复所有\n输入 d<编号> 删除条目，如 d7，单次只能删除一个\n输入 exit 或 e 退出程序\n输入数字以修复对应项\n使用空格分隔"))
+		input, err := pterm.DefaultInteractiveTextInput.WithMultiLine(false).Show("请输入")
 		if err != nil {
 			logger.Error("输入错误 " + err.Error())
 			continue
