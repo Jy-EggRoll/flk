@@ -7,7 +7,7 @@ import (
 )
 
 // Version 应用版本号
-const Version = "v0.0.3"
+const Version = "v0.0.5"
 
 // versionCmd represents the version command
 var versionCmd = &cobra.Command{
