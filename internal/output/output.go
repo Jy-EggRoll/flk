@@ -118,6 +118,56 @@ func PrintCheckResults(format OutputFormat, results []CheckResult) error {
 	return nil
 }
 
+// PrintCheckResultsFix 打印 fix 命令的检查结果（table 模式带斑马条纹）
+// 规则：奇数行红色，偶数行粉色（1-based）。
+func PrintCheckResultsFix(format OutputFormat, results []CheckResult) error {
+	if format != Table {
+		return PrintCheckResults(format, results)
+	}
+
+	// fix 只展示无效项，但这里不依赖 Valid 字段，直接按行号着色。
+	termWidth := pterm.GetTerminalWidth()
+	table := pterm.TableData{{"编号", "类型", "设备", "父路径", "相对路径", "绝对路径", "有效", "错误类型"}}
+	for i, r := range results {
+		num := fmt.Sprintf("%d", i+1)
+		valid := "是"
+		if !r.Valid {
+			valid = "否"
+		}
+		relPath := truncateString(r.Real, (termWidth-7*3-4-8-4-10)/3-3)
+		if relPath == "" {
+			relPath = truncateString(r.Prim, (termWidth-7*3-4-8-4-10)/3-3)
+		}
+		absPath := truncateString(r.Fake, (termWidth-7*3-4-8-4-10)/3-3)
+		if absPath == "" {
+			absPath = truncateString(r.Seco, (termWidth-7*3-4-8-4-10)/3-3)
+		}
+
+		colorize := func(s string) string {
+			// i=0 => 第 1 行（奇数行）
+			if i%2 == 0 {
+				return pterm.Red(s)
+			}
+			return pterm.LightMagenta(s)
+		}
+
+		row := []string{
+			colorize(num),
+			colorize(truncateString(r.Type, 6)),
+			colorize(truncateString(r.Device, 8)),
+			colorize(truncateString(r.Path, (termWidth-7*3-4-8-4-10)/3-3)),
+			colorize(relPath),
+			colorize(absPath),
+			colorize(valid),
+			colorize(truncateString(r.ErrorType, 10)),
+		}
+		table = append(table, row)
+	}
+
+	pterm.DefaultTable.WithHasHeader().WithBoxed(false).WithData(table).Render()
+	return nil
+}
+
 // truncateString 截断路径，如果超过 maxLen
 func truncateString(raw string, maxLen int) string {
 	runes := []rune(raw)
