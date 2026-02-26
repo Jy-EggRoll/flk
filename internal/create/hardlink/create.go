@@ -4,6 +4,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
@@ -17,6 +19,15 @@ func Create(primPath, secoPath string, force bool) error {
 	} else {
 		logger.Error("primPath 对应的文件不存在，中止执行")
 		return err
+	}
+
+	// Windows: hardlink 不能跨盘（跨卷/跨文件系统）。提前给出明确错误，避免 --force 误删目标路径。
+	if runtime.GOOS == "windows" {
+		primVol := strings.ToUpper(filepath.VolumeName(primPath))
+		secoVol := strings.ToUpper(filepath.VolumeName(secoPath))
+		if primVol != "" && secoVol != "" && primVol != secoVol {
+			return errors.New("不允许创建跨文件系统的硬链接")
+		}
 	}
 	if force {
 		logger.Info("检测到 force 选项，将会尝试删除已存在的链接文件或冲突的非目录文件")
