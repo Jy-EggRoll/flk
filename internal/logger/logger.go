@@ -25,7 +25,7 @@ type Config struct { // 定义日志配置结构体，封装所有日志相关�
 // DefaultConfig 默认配置
 func DefaultConfig() *Config { // 定义函数，无入参，返回指向 Config 结构体的指针，用于生成默认日志配置
 	return &Config{ // 创建 Config 结构体实例并返回其指针，初始化各字段为默认值
-		Level:      pterm.LogLevelTrace,  // 默认日志级别设为 Trace（最低级别，输出所有日志）
+		Level:      pterm.LogLevelWarn,   // 默认日志级别设为 Warn
 		ShowCaller: true,                 // 默认显示日志调用方信息
 		ShowTime:   true,                 // 默认显示日志时间戳
 		TimeFormat: "01-02 15:04:05.000", // 默认时间格式，包含月-日 时:分:秒.毫秒

@@ -8,6 +8,7 @@ import (
 	"github.com/jy-eggroll/flk/internal/store"
 
 	"github.com/spf13/cobra"
+	"github.com/pterm/pterm"
 )
 
 var (
@@ -31,7 +32,7 @@ var rootCmd = &cobra.Command{
 			config = logger.DefaultConfig() // 详细模式：Trace级别，显示调用者和时间戳
 		} else {
 			config = &logger.Config{
-				Level:      3, // Warn 级别 (pterm.LogLevelWarn = 3), 只显示警告及以上
+				Level:      pterm.LogLevelWarn,
 				ShowCaller: false,
 				ShowTime:   false,
 				TimeFormat: "",
