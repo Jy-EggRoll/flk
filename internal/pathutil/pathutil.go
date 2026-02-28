@@ -1,13 +1,52 @@
 package pathutil
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-
-	// "runtime"
+	"runtime"
 	"strings"
 )
+
+// ValidateSafePath 检查路径是否安全删除（不是根目录或家目录本身）
+func ValidateSafePath(path string) error {
+	if path == "" {
+		return errors.New("路径为空")
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+
+	// 检查根目录
+	if runtime.GOOS == "windows" {
+		// Windows 根目录: C:\, D:\, 等
+		if len(absPath) == 3 && strings.HasSuffix(absPath, ":\\") {
+			return errors.New("不能删除根目录")
+		}
+		// Windows 家目录: C:\Users\username
+		if home, err := os.UserHomeDir(); err == nil {
+			if absPath == home {
+				return errors.New("不能删除家目录")
+			}
+		}
+	} else {
+		// Unix-like 根目录: /
+		if absPath == "/" {
+			return errors.New("不能删除根目录")
+		}
+		// Unix 家目录: /home/username
+		if home, err := os.UserHomeDir(); err == nil {
+			if absPath == home {
+				return errors.New("不能删除家目录")
+			}
+		}
+	}
+
+	return nil
+}
 
 var workDir string
 

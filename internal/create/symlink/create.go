@@ -23,6 +23,9 @@ func Create(realPath, fakePath string, force bool) error {
 		// 使用 Lstat 而不是 Stat，因为 Stat 会跟随符号链接
 		if _, err := os.Lstat(fakePath); err == nil { // 文件/链接/文件夹存在
 			logger.Debug("fakePath 存在")
+			if err := pathutil.ValidateSafePath(fakePath); err != nil {
+				return err
+			}
 			if err := os.RemoveAll(fakePath); err == nil {
 				logger.Info("已成功删除 fakePath")
 			} else {
