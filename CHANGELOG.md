@@ -1,5 +1,9 @@
 # flk
 
+## 0.0.9
+
+- ✨ feat: 检查或修复时，可以使用组合设备名，例如 `flk fix -d all,dev1` `flk check -d dev2,all`
+
 ## 0.0.8
 
 - 🐛 fix: 硬链接错误处理增强
