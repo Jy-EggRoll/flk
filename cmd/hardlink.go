@@ -40,14 +40,14 @@ func Hardlink(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		result := output.CreateResult{Success: false, Type: "硬链接", Error: "主要文件路径标准化失败: " + err.Error()}
 		output.PrintCreateResult(format, result)
-		return nil
+		return errors.New(result.Error)
 	}
 
 	normalizedSeco, err := pathutil.NormalizePath(hardlinkSeco)
 	if err != nil {
 		result := output.CreateResult{Success: false, Type: "硬链接", Error: "次要文件路径标准化失败: " + err.Error()}
 		output.PrintCreateResult(format, result)
-		return nil
+		return errors.New(result.Error)
 	}
 
 	var result output.CreateResult
