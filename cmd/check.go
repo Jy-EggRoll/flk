@@ -22,7 +22,6 @@ var checkCmd = &cobra.Command{
 }
 
 func init() {
-	logger.Init(nil)
 	rootCmd.AddCommand(checkCmd)
 	checkCmd.Flags().StringVarP(&checkDevice, "device", "d", "", "设备名称，用于过滤检查，可用逗号分隔多个设备")
 	checkCmd.Flags().BoolVar(&checkSymlink, "symlink", false, "仅检查符号链接")

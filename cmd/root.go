@@ -13,6 +13,7 @@ import (
 var (
 	outputFormat string
 	WorkDir      string
+	verbose      bool
 )
 
 var rootCmd = &cobra.Command{
@@ -24,6 +25,22 @@ var rootCmd = &cobra.Command{
 
 	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		// 初始化日志配置
+		var config *logger.Config
+		if verbose {
+			config = logger.DefaultConfig() // 详细模式：Trace级别，显示调用者和时间戳
+		} else {
+			config = &logger.Config{
+				Level:      3, // Warn 级别 (pterm.LogLevelWarn = 3), 只显示警告及以上
+				ShowCaller: false,
+				ShowTime:   false,
+				TimeFormat: "",
+				FileOutput: false,
+				FilePath:   "",
+			}
+		}
+		logger.Init(config)
+
 		// 设置工作目录用于路径解析
 		pathutil.SetWorkDir(WorkDir)
 		// 在命令执行前初始化持久化存储，使用当前 storePath 配置
@@ -41,7 +58,6 @@ func Execute() {
 }
 
 func init() {
-	logger.Init(nil)
 	if wd, err := os.Getwd(); err == nil {
 		WorkDir = wd
 	} else {
@@ -55,5 +71,6 @@ func init() {
 	)
 	rootCmd.PersistentFlags().StringVar(&outputFormat, "output", "table", "输出格式：json/table")
 	rootCmd.PersistentFlags().StringVarP(&WorkDir, "work-dir", "w", WorkDir, "工作目录，作为存储和路径计算的基准")
+	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "启用详细日志输出")
 	rootCmd.Flags().BoolP("version", "v", false, "显示版本信息")
 }

@@ -172,19 +172,28 @@ func RunFix(cmd *cobra.Command, args []string) {
 }
 
 func repairResult(result output.CheckResult, idx int) error {
-	logger.Info(fmt.Sprintf("开始修复 #%d, 类型=%s, 设备=%s, 路径=%s, BasePath=%s, Real=%s, Fake=%s", idx+1, result.Type, result.Device, result.Path, result.BasePath, result.Real, result.Fake))
+	if verbose {
+		logger.Info(fmt.Sprintf("开始修复 #%d, 类型=%s, 设备=%s, 路径=%s, BasePath=%s, Real=%s, Fake=%s", idx+1, result.Type, result.Device, result.Path, result.BasePath, result.Real, result.Fake))
 
-	// 从存储中读取的父键是 result.Path，规范化后是 result.BasePath
-	logger.Info(fmt.Sprintf("读取条目父键: path='%s', 规范化BasePath='%s'", result.Path, result.BasePath))
+		// 从存储中读取的父键是 result.Path，规范化后是 result.BasePath
+		logger.Info(fmt.Sprintf("读取条目父键: path='%s', 规范化BasePath='%s'", result.Path, result.BasePath))
 
-	// 临时设置 workDir 为条目父路径，以便相对路径正确解析
-	oldWorkDir := WorkDir
-	WorkDir = result.BasePath
-	logger.Info(fmt.Sprintf("临时设置 WorkDir 从 '%s' 到 '%s' (条目父路径)", oldWorkDir, WorkDir))
-	defer func() {
-		WorkDir = oldWorkDir
-		logger.Info(fmt.Sprintf("恢复 WorkDir 到 '%s'", oldWorkDir))
-	}()
+		// 临时设置 workDir 为条目父路径，以便相对路径正确解析
+		oldWorkDir := WorkDir
+		WorkDir = result.BasePath
+		logger.Info(fmt.Sprintf("临时设置 WorkDir 从 '%s' 到 '%s' (条目父路径)", oldWorkDir, WorkDir))
+		defer func() {
+			WorkDir = oldWorkDir
+			logger.Info(fmt.Sprintf("恢复 WorkDir 到 '%s'", oldWorkDir))
+		}()
+	} else {
+		// 临时设置 workDir 为条目父路径，以便相对路径正确解析
+		oldWorkDir := WorkDir
+		WorkDir = result.BasePath
+		defer func() {
+			WorkDir = oldWorkDir
+		}()
+	}
 
 	switch result.Type {
 	case "symlink":

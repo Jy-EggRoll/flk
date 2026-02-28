@@ -11,7 +11,6 @@ import (
 
 // 该函数只处理创建逻辑，需要保证传入的路径一定是最正确、最简洁的，函数被调用时，应该优先处理字符串
 func Create(realPath, fakePath string, force bool) error {
-	logger.Init(nil)
 	if _, err := os.Stat(realPath); err == nil {
 		logger.Debug("realPath 对应的文件存在，允许继续执行")
 	} else {

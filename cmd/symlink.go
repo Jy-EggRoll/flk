@@ -43,6 +43,10 @@ func Symlink(cmd *cobra.Command, args []string) error {
 		return errors.New(result.Error)
 	}
 
+	if verbose {
+		logger.Info("开始创建符号链接", "real", symlinkReal, "fake", symlinkFake, "device", createDevice, "force", createForce)
+	}
+
 	normalizedReal, err := pathutil.NormalizePath(symlinkReal)
 	if err != nil {
 		result := output.CreateResult{Success: false, Type: "符号链接", Error: "真实文件路径标准化失败 " + err.Error()}
@@ -58,7 +62,13 @@ func Symlink(cmd *cobra.Command, args []string) error {
 		return errors.New(result.Error)
 	}
 
-	logger.Info("创建符号链接 real=" + normalizedReal + ", fake=" + normalizedFake)
+	if verbose {
+		logger.Debug("路径标准化完成", "normalizedReal", normalizedReal, "normalizedFake", normalizedFake)
+	}
+
+	if verbose {
+		logger.Info("创建符号链接 real=" + normalizedReal + ", fake=" + normalizedFake)
+	}
 
 	var result output.CreateResult
 	if err := symlink.Create(normalizedReal, normalizedFake, createForce); err != nil {

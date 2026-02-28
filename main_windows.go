@@ -5,16 +5,16 @@ package main
 import (
 	"golang.org/x/sys/windows"
 
-	"github.com/jy-eggroll/flk/internal/logger"
+	"github.com/pterm/pterm"
 )
 
 // init 函数：程序启动前为 main.go 的 checkWindowsAdmin 赋值
 func init() {
 	checkWindowsAdmin = func() {
 		if isAdminOnWindows() {
-			logger.Info("当前以管理员权限运行")
+			pterm.Info.Println("当前以管理员权限运行")
 		} else {
-			logger.Warn("当前未以管理员权限运行")
+			pterm.Warning.Println("当前未以管理员权限运行")
 		}
 	}
 }

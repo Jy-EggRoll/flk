@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"github.com/jy-eggroll/flk/internal/logger"
-
 	"github.com/spf13/cobra"
 )
 
@@ -15,7 +13,6 @@ var serverCmd = &cobra.Command{
 }
 
 func init() {
-	logger.Init(nil)
 	rootCmd.AddCommand(serverCmd)
 	serverCmd.Flags().IntP("port", "p", 8999, "指定端口号")
 }
