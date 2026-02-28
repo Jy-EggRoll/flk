@@ -1,5 +1,9 @@
 # flk
 
+## 0.0.10.dev.1
+
+- ✨ feat: 即使使用了 force 参数，也禁止删除根目录和家目录，防止灾难性的删除
+
 ## 0.0.9
 
 - ✨ feat: 检查或修复时，可以使用组合设备名，例如 `flk fix -d all,dev1` `flk check -d dev2,all`
