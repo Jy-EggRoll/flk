@@ -24,7 +24,7 @@ var checkCmd = &cobra.Command{
 func init() {
 	logger.Init(nil)
 	rootCmd.AddCommand(checkCmd)
-	checkCmd.Flags().StringVarP(&checkDevice, "device", "d", "", "设备名称，用于过滤检查")
+	checkCmd.Flags().StringVarP(&checkDevice, "device", "d", "", "设备名称，用于过滤检查，可用逗号分隔多个设备")
 	checkCmd.Flags().BoolVar(&checkSymlink, "symlink", false, "仅检查符号链接")
 	checkCmd.Flags().BoolVar(&checkHardlink, "hardlink", false, "仅检查硬链接")
 	checkCmd.Flags().StringVar(&checkDir, "dir", "", "仅检查包含该路径的记录")
@@ -42,8 +42,9 @@ type CheckResult = output.CheckResult
 
 // RunCheck 执行链接检查并输出结果
 func RunCheck(cmd *cobra.Command, args []string) {
+	deviceFilters := parseDeviceFilters(checkDevice)
 	results, err := performCheck(CheckOptions{
-		DeviceFilter:  checkDevice,
+		DeviceFilters: deviceFilters,
 		CheckSymlink:  checkSymlink,
 		CheckHardlink: checkHardlink,
 		CheckDir:      checkDir,
@@ -64,7 +65,7 @@ func RunCheck(cmd *cobra.Command, args []string) {
 
 // CheckOptions 检查选项
 type CheckOptions struct {
-	DeviceFilter  string
+	DeviceFilters []string
 	CheckSymlink  bool
 	CheckHardlink bool
 	CheckDir      string
@@ -90,7 +91,7 @@ func performCheck(options CheckOptions) ([]output.CheckResult, error) {
 	}
 
 	for device, deviceData := range platformData {
-		if options.DeviceFilter != "" && device != options.DeviceFilter {
+		if len(options.DeviceFilters) > 0 && !contains(options.DeviceFilters, device) {
 			continue
 		}
 
@@ -232,4 +233,27 @@ func checkHardlinkValid(prim, seco, basePath string) (bool, string, string) {
 	}
 
 	return true, "", ""
+}
+
+func parseDeviceFilters(deviceStr string) []string {
+	if deviceStr == "" {
+		return nil
+	}
+	var filters []string
+	for _, d := range strings.Split(deviceStr, ",") {
+		d = strings.TrimSpace(d)
+		if d != "" {
+			filters = append(filters, d)
+		}
+	}
+	return filters
+}
+
+func contains(slice []string, item string) bool {
+	for _, v := range slice {
+		if v == item {
+			return true
+		}
+	}
+	return false
 }

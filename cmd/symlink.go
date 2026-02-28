@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/jy-eggroll/flk/internal/create/symlink"
 	"github.com/jy-eggroll/flk/internal/logger"
@@ -35,6 +36,12 @@ func init() {
 
 func Symlink(cmd *cobra.Command, args []string) error {
 	format := output.OutputFormat(outputFormat)
+
+	if strings.Contains(createDevice, ",") || strings.Contains(createDevice, " ") {
+		result := output.CreateResult{Success: false, Type: "符号链接", Error: "设备名称不能包含逗号或空格"}
+		output.PrintCreateResult(format, result)
+		return errors.New(result.Error)
+	}
 
 	normalizedReal, err := pathutil.NormalizePath(symlinkReal)
 	if err != nil {
