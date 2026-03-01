@@ -47,7 +47,7 @@ func RunFix(cmd *cobra.Command, args []string) {
 			CheckDir:      fixDir,
 		})
 		if err != nil {
-			logger.Error("检查失败：" + err.Error())
+			logger.Error("检查失败: " + err.Error())
 			return nil
 		}
 
@@ -62,7 +62,7 @@ func RunFix(cmd *cobra.Command, args []string) {
 		if len(invalidResults) > 0 {
 			format := output.OutputFormat(outputFormat)
 			if err := output.PrintCheckResultsFix(format, invalidResults); err != nil {
-				logger.Error("输出失败：" + err.Error())
+				logger.Error("输出失败: " + err.Error())
 				return invalidResults
 			}
 		} else {

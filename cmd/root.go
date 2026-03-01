@@ -70,7 +70,7 @@ func init() {
 		store.DefaultStorePath,
 		"用于存放 flk-store.json 的路径",
 	)
-	rootCmd.PersistentFlags().StringVar(&outputFormat, "output", "table", "输出格式：json/table")
+	rootCmd.PersistentFlags().StringVar(&outputFormat, "output", "table", "输出格式: json/table")
 	rootCmd.PersistentFlags().StringVarP(&WorkDir, "work-dir", "w", WorkDir, "工作目录，作为存储和路径计算的基准")
 	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "启用详细日志输出")
 	rootCmd.Flags().BoolP("version", "v", false, "显示版本信息")

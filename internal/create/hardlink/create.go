@@ -51,7 +51,7 @@ func Create(primPath, secoPath string, force bool) error {
 				if removeErr := os.Remove(filepath.Dir(secoPath)); removeErr == nil {
 					logger.Info("已成功删除非目录文件")
 				} else {
-					logger.Error("删除非目录文件失败：" + removeErr.Error())
+					logger.Error("删除非目录文件失败: " + removeErr.Error())
 					return removeErr
 				}
 			}
