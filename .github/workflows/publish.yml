@@ -189,7 +189,7 @@ jobs:
                   echo "📦 **安装说明：**" >> release_notes.md
                   echo "" >> release_notes.md
                   echo "1. 从上方表格中选择并下载对应平台和架构的二进制文件" >> release_notes.md
-                  echo "2. Linux/macOS/BSD 用户需要赋予执行权限：\`chmod +x flk-*\`（建议直接将文件改名为 flk 方便调用）" >> release_notes.md
+                  echo "2. Linux/macOS/BSD 用户需要赋予执行权限：\`chmod +x flk-*\`（建议直接将文件改名为 flk 方便调用和后续的升级）" >> release_notes.md
                   echo "3. 运行程序（建议直接将文件改名为 flk 方便调用）\`flk help\`" >> release_notes.md
                   echo "" >> release_notes.md
                   echo "详细使用说明请参考 [README.md](https://github.com/Jy-EggRoll/flk/blob/main/README.md)" >> release_notes.md
