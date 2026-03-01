@@ -93,8 +93,8 @@ func replaceWindows(newPath, execPath string) error {
 timeout /t 1 /nobreak >nul
 copy /Y "%s" "%s" >nul
 del "%s"
-del "%%~f0"
 start "" "%s"
+del "%%~f0"
 `, newPath, execPath, newPath, execPath)
 
 	if err := os.WriteFile(batPath, []byte(bat), 0644); err != nil {
