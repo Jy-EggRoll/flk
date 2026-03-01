@@ -39,6 +39,26 @@ go build -o flk ./main.go
 
 从 [GitHub Releases](https://github.com/Jy-EggRoll/flk/releases) 下载对应平台的二进制文件，赋予执行权限后使用。
 
+> **建议**：下载后统一将文件重命名为 `flk`（或 `flk.exe`），方便后续使用 `flk upgrade` 命令升级。
+
+### 自动升级
+
+flk 内置自动升级功能：
+
+```sh
+# 检查正式版更新
+flk upgrade
+
+# 检查开发版更新
+flk upgrade --dev
+
+# 仅检查版本，不升级
+flk upgrade --check
+
+# 强制升级（跳过确认）
+flk upgrade --force
+```
+
 ## 核心功能
 
 ### 链接创建与管理
