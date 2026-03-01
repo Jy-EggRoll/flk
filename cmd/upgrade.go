@@ -1,10 +1,8 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/jy-eggroll/flk/internal/updater"
 	"github.com/pterm/pterm"
@@ -39,7 +37,7 @@ func runUpgrade(cmd *cobra.Command, args []string) {
 
 	info, err := updater.CheckForUpdate(Version, BuildTime, checkDev)
 	if err != nil {
-		pterm.Error.Println("检查更新失败: ", err)
+		pterm.Error.Println("检查更新失败:", err)
 		os.Exit(1)
 	}
 
@@ -56,9 +54,10 @@ func runUpgrade(cmd *cobra.Command, args []string) {
 	}
 
 	if !forceUpdate {
-		fmt.Printf("是否升级到 %s? [y/N]: ", info.LatestVersion)
-		input := strings.ToLower(strings.TrimSpace(readLine()))
-		if input != "y" && input != "yes" {
+		confirm, _ := pterm.DefaultInteractiveConfirm.Show(
+			fmt.Sprintf("是否升级到 %s", info.LatestVersion),
+		)
+		if !confirm {
 			pterm.Info.Println("已取消升级")
 			return
 		}
@@ -68,12 +67,7 @@ func runUpgrade(cmd *cobra.Command, args []string) {
 
 	tempDir := os.TempDir()
 	if err := updater.DownloadAndReplace(info.DownloadURL, info.AssetName, tempDir); err != nil {
-		pterm.Error.Println("升级失败: ", err)
+		pterm.Error.Println("升级失败:", err)
 		os.Exit(1)
 	}
-}
-
-func readLine() string {
-	r, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-	return r
 }
