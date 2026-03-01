@@ -19,8 +19,8 @@ var (
 
 var hardlinkCmd = &cobra.Command{
 	Use:   "hardlink",
-	Short: "创建硬链接（仅支持同分区文件）",
-	Long:  "创建硬链接（仅支持同分区文件）",
+	Short: "创建硬链接 (仅支持同分区文件)",
+	Long:  "创建硬链接 (仅支持同分区文件)",
 	RunE:  Hardlink,
 }
 

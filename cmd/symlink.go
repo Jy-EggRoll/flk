@@ -19,8 +19,8 @@ var (
 
 var symlinkCmd = &cobra.Command{
 	Use:   "symlink",
-	Short: "创建符号链接（支持文件和文件夹）",
-	Long:  "创建符号链接（支持文件和文件夹）",
+	Short: "创建符号链接 (支持文件和文件夹)",
+	Long:  "创建符号链接 (支持文件和文件夹)",
 	RunE:  Symlink,
 }
 

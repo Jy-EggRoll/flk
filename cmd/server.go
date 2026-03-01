@@ -6,8 +6,8 @@ import (
 
 var serverCmd = &cobra.Command{
 	Use:   "server",
-	Short: "打开网页服务器（尚未实现）",
-	Long:  "打开网页服务器（尚未实现）",
+	Short: "打开网页服务器 (尚未实现)",
+	Long:  "打开网页服务器 (尚未实现)",
 	Run: func(cmd *cobra.Command, args []string) {
 	},
 }
