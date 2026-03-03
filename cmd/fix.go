@@ -15,10 +15,11 @@ import (
 )
 
 var fixCmd = &cobra.Command{
-	Use:   "fix",
-	Short: "交互式修复无效链接",
-	Long:  "检查链接状态并进入交互模式，允许用户选择编号修复无效链接",
-	Run:   RunFix,
+	Use:     "fix",
+	Aliases: []string{"fx"},
+	Short:   "交互式修复无效链接",
+	Long:    "检查链接状态并进入交互模式，允许用户选择编号修复无效链接",
+	Run:     RunFix,
 }
 
 func init() {

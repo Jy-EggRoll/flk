@@ -11,7 +11,7 @@ import (
 
 var upgradeCmd = &cobra.Command{
 	Use:     "upgrade",
-	Aliases: []string{"update"},
+	Aliases: []string{"update", "up"},
 	Short:   "检查并升级到最新版本",
 	Long:    "检查并升级 flk 到最新版本",
 	Run:     runUpgrade,

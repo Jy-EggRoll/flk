@@ -18,10 +18,11 @@ var (
 )
 
 var symlinkCmd = &cobra.Command{
-	Use:   "symlink",
-	Short: "创建符号链接 (支持文件和文件夹)",
-	Long:  "创建符号链接 (支持文件和文件夹)",
-	RunE:  Symlink,
+	Use:     "symlink",
+	Aliases: []string{"sm"},
+	Short:   "创建符号链接 (支持文件和文件夹)",
+	Long:    "创建符号链接 (支持文件和文件夹)",
+	RunE:    Symlink,
 }
 
 func init() {

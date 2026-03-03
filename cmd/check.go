@@ -15,10 +15,11 @@ import (
 )
 
 var checkCmd = &cobra.Command{
-	Use:   "check",
-	Short: "检查全局软硬链接的生效情况",
-	Long:  "检查全局软硬链接的生效情况",
-	Run:   RunCheck,
+	Use:     "check",
+	Aliases: []string{"ck"},
+	Short:   "检查全局软硬链接的生效情况",
+	Long:    "检查全局软硬链接的生效情况",
+	Run:     RunCheck,
 }
 
 func init() {

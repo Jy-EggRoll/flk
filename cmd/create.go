@@ -12,9 +12,10 @@ var (
 )
 
 var createCmd = &cobra.Command{
-	Use:   "create",
-	Short: "创建链接",
-	Long:  "创建链接",
+	Use:     "create",
+	Aliases: []string{"cr"},
+	Short:   "创建链接",
+	Long:    "创建链接",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("create called")
 	},
