@@ -1,5 +1,21 @@
 # flk
 
+## 0.1.1.dev.1
+
+✨ feat: 给几乎所有命令添加了短别名
+
+第一个为命令本来的名字，此后皆为别名。
+
+```txt
+- check ck
+- create cr
+- fix fx
+- hardlink hd
+- symlink sm
+- upgrade update up
+- version ver
+```
+
 ## 0.1.0
 
 - 🎉 tada: 进入第一个稍正式的版本
