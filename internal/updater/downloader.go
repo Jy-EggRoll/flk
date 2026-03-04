@@ -13,10 +13,13 @@ import (
 	"github.com/jy-eggroll/flk/internal/logger"
 )
 
+const ghProxyPrefix = "https://gh-proxy.org/"
+
 func DownloadAndReplace(url, filename, destDir string) error {
 	downloadPath := filepath.Join(destDir, filename)
 
-	if err := download(url, downloadPath); err != nil {
+	proxyURL := ghProxyPrefix + url
+	if err := downloadWithRetry(proxyURL, url, downloadPath); err != nil {
 		return err
 	}
 
@@ -29,6 +32,17 @@ func DownloadAndReplace(url, filename, destDir string) error {
 		return replaceWindows(downloadPath, execPath)
 	}
 	return replaceUnix(downloadPath, execPath)
+}
+
+func downloadWithRetry(proxyURL, originalURL, destPath string) error {
+	logger.Info("正在尝试代理下载...")
+	if err := download(proxyURL, destPath); err != nil {
+		logger.Info("代理下载失败，尝试原始链接...")
+		if err := download(originalURL, destPath); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func download(url, destPath string) error {
@@ -113,11 +127,29 @@ del "%%~f0"
 }
 
 func replaceUnix(newPath, execPath string) error {
-	if err := copyFile(execPath, newPath); err != nil {
-		return fmt.Errorf("替换失败: %w", err)
+	dir := filepath.Dir(execPath)
+	scriptPath := filepath.Join(dir, ".flk-upgrade.sh")
+
+	script := fmt.Sprintf(`#!/bin/bash
+sleep 0.5
+cp "%s" "%s"
+rm "%s"
+"%s"
+rm "$0"
+`, newPath, execPath, newPath, execPath)
+
+	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
+		os.Remove(newPath)
+		return err
 	}
-	os.Chmod(execPath, 0755)
-	logger.Info("升级成功!")
+
+	logger.Info("正在启动升级程序...")
+
+	cmd := exec.Command(scriptPath)
+	cmd.Dir = dir
+	cmd.Start()
+
+	os.Exit(0)
 	return nil
 }
 
