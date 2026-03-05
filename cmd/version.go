@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"runtime"
 
+	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 )
 
@@ -18,7 +20,13 @@ var versionCmd = &cobra.Command{
 	Short:   "显示版本信息",
 	Long:    "显示版本信息",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("版本: %s\n构建时间: %s\n", Version, BuildTime)
+		platform := fmt.Sprintf("%s-%s", runtime.GOOS, runtime.GOARCH)
+		if runtime.GOOS == "windows" {
+			platform += " (exe)"
+		}
+		pterm.Info.Println("版本: " + Version)
+		pterm.Info.Println("构建时间: " + BuildTime)
+		pterm.Info.Println("平台: " + platform)
 	},
 }
 
