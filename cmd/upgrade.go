@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/jy-eggroll/flk/internal/updater"
 	"github.com/pterm/pterm"
@@ -33,7 +34,16 @@ func runUpgrade(cmd *cobra.Command, args []string) {
 	if checkDev {
 		channel = "开发版"
 	}
+
+	goos := runtime.GOOS
+	goarch := runtime.GOARCH
+	platform := fmt.Sprintf("%s-%s", goos, goarch)
+	if goos == "windows" {
+		platform += " (exe)"
+	}
+
 	pterm.Info.Println("正在检查更新 (" + channel + ")...")
+	pterm.Info.Printf("当前平台: %s\n", platform)
 
 	info, err := updater.CheckForUpdate(Version, BuildTime, checkDev)
 	if err != nil {
