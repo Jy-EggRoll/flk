@@ -13,6 +13,11 @@ tags:
 weight: 
 ---
 
+## 开发路线
+
+- 0.2：开发完 server 功能，实现完整的 WebUI 管理
+- 0.3：开发国际化功能，为软件内所有字符串添加抽象 i18n 层
+
 ## 项目概述
 
 flk（FileLinK）是一款跨平台命令行工具，基于符号链接与硬链接技术，核心目标是解决多设备、多软件的配置文件分散管理与同步难题。它通过将各类软件的文件型配置存放至统一的 Git 仓库，实现配置的集中存储、多设备同步与一键恢复，同时支持灵活调整配置路径，适配不同使用场景下的配置管理需求，目前已可满足日常使用，处于持续迭代优化阶段。
@@ -39,7 +44,7 @@ go build -o flk ./main.go
 
 从 [GitHub Releases](https://github.com/Jy-EggRoll/flk/releases) 下载对应平台的二进制文件，赋予执行权限后使用。
 
-> **建议**：下载后统一将文件重命名为 `flk`（或 `flk.exe`），方便后续使用 `flk upgrade` 命令升级。
+> **建议**：下载后统一将文件重命名为 `flk`（或 `flk.exe`），方便后续的使用和升级。
 
 ### 自动升级
 
@@ -80,11 +85,21 @@ flk upgrade --force
 
 ## 使用示例
 
+### 用前必读
+
+- 查看软件帮助：`flk --help` `flk -h` `flk help`
+- 查看特定命令的帮助：`flk help <命令>` `flk <命令> --help` `flk <命令> -h`
+
+软件中的子命令通常有各种别名，可以简化输入，您可以自行用 help 来查看。例如，`upgrade` `update` `up` 命令三者完全等价。
+
 ### 创建符号链接
 
 ```sh
 # 创建符号链接，将真实配置文件链接到软件读取位置
 flk create symlink --real ~/.config/myapp/config.json --fake ~/Library/Application Support/MyApp/config.json --device laptop
+
+# 采用别名和短参数
+flk cr sm -r ~/.config/myapp/config.json -f ~/Library/Application Support/MyApp/config.json -d laptop
 ```
 
 对于 Windows 用户，需要使用管理员权限运行。建议启用 Windows 平台的 sudo，此处不再赘述。
@@ -94,6 +109,9 @@ flk create symlink --real ~/.config/myapp/config.json --fake ~/Library/Applicati
 ```sh
 # 创建硬链接，要求文件在同一分区
 flk create hardlink --prim /path/to/source --seco /path/to/target --device desktop
+
+# 采用别名和短参数
+flk cr hd -p /path/to/source -s /path/to/target -d desktop
 ```
 
 ### 检查链接状态
@@ -101,6 +119,9 @@ flk create hardlink --prim /path/to/source --seco /path/to/target --device deskt
 ```sh
 # 检查所有链接
 flk check
+
+# 采用别名
+flk ck
 
 # 检查特定设备的链接
 flk check -d laptop,desktop
@@ -115,6 +136,9 @@ flk check --dir ~/.config
 # 交互式修复
 flk fix
 
+# 采用别名
+flk fx
+
 # 修复特定设备的链接
 flk fix -d laptop,desktop
 ```
@@ -123,6 +147,7 @@ flk fix -d laptop,desktop
 
 ```sh
 flk version
+flk ver
 ```
 
 ## 最佳实践
@@ -137,7 +162,7 @@ flk version
 - 设备名不能包含逗号或空格，用于过滤时使用逗号分隔多个设备。
 - 建议使用简单名称如 `laptop`、`desktop`、`server`。
 
-### 3. 安全使用 --force
+### 3. 安全使用 `--force`
 
 - `--force` 会删除目标路径的现有文件，确保路径不指向重要目录。
 - flk 已内置安全检查，禁止删除根目录或家目录。
@@ -147,18 +172,13 @@ flk version
 - 使用 `flk check` 定期验证链接有效性。
 - 对于硬链接，因其失效风险，建议定期修复。
 
-### 5. 跨平台兼容
+### 5. 备份重要配置
 
-- 符号链接适用于跨平台，但硬链接仅限同分区。
-- Windows 用户需管理员权限创建符号链接。
-
-### 6. 备份重要配置
-
-- 在使用前备份现有配置，防止意外丢失。
+- 在使用前备份现有配置，防止意外丢失，尤其是使用 `--force` 参数会增加该风险。
 
 ## 安全注意事项
 
-- **路径验证**：flk 禁止使用 `--force` 删除根目录（/ 或 C:\）或用户家目录，防止灾难性数据丢失。
+- **路径验证**：flk 禁止使用 `--force` 删除根目录（`/` 或 `C:\`）或用户家目录，防止灾难性数据丢失。
 - **权限管理**：Windows 创建符号链接需管理员权限，避免权限不足导致失败。
 - **设备名限制**：创建链接时设备名不能含逗号或空格，以免影响过滤功能。
 - **硬链接限制**：硬链接无法跨文件系统，确保主、次文件在同一分区。
