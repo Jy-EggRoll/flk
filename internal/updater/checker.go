@@ -173,7 +173,7 @@ func (v Version) lessOrEqual(other Version) bool {
 		return v.patch < other.patch
 	}
 	if v.isDev != other.isDev {
-		return !v.isDev
+		return v.isDev
 	}
 	if v.isDev {
 		return v.dev <= other.dev
