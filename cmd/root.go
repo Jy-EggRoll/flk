@@ -7,8 +7,8 @@ import (
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/store"
 
-	"github.com/spf13/cobra"
 	"github.com/pterm/pterm"
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -21,7 +21,14 @@ var rootCmd = &cobra.Command{
 	Use:     "flk",
 	Short:   "flk 是一个跨平台的文件链接管理工具",
 	Long:    "flk 是一个跨平台的文件链接管理工具",
-	Version: Version,
+	Version: "",
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		if v, _ := cmd.Flags().GetBool("version"); v {
+			versionCmd.Run(versionCmd, nil)
+			os.Exit(0)
+		}
+		return nil
+	},
 	Run: func(cmd *cobra.Command, args []string) {
 
 	},
