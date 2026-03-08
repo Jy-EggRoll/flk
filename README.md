@@ -2,7 +2,7 @@
 title: 项目介绍-flk
 description: 跨平台文件链接管理器，让配置同步更简单
 date: 2025-11-28
-lastmod: 2026-02-28
+lastmod: 2026-03-06
 image: 
 categories:
     - 项目
