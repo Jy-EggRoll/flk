@@ -142,9 +142,14 @@ func EnsureDirExists(path string) error {
 	dir := filepath.Dir(path)
 
 	// 检查目录是否已存在
-	info, err := os.Stat(dir)
+	// 使用 Lstat，这样可以检测到符号链接本身（不跟随符号链接）
+	info, err := os.Lstat(dir)
 	if err == nil {
-		// 路径存在，检查是否为目录
+		// 路径存在，检查是否为目录或符号链接
+		// 如果是符号链接或存在但不是目录，返回特殊错误，调用方在 --force 模式下会处理它
+		if info.Mode()&os.ModeSymlink != 0 {
+			return &ExistsButNotDirectoryError{Path: dir}
+		}
 		if !info.IsDir() {
 			return &ExistsButNotDirectoryError{Path: dir}
 		}
