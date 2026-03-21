@@ -102,7 +102,7 @@ func RemoveWithConfirm(path string, opts RemoveOptions) ([]string, error) {
 }
 
 func printDeletePlan(out io.Writer, paths []string) error {
-	if _, err := fmt.Fprintln(out, "有以下文件会在恢复过程中被删除:"); err != nil {
+	if _, err := fmt.Fprintln(out, "有以下文件会在执行过程中被删除:"); err != nil {
 		return err
 	}
 	for _, p := range paths {
@@ -110,10 +110,9 @@ func printDeletePlan(out io.Writer, paths []string) error {
 			return err
 		}
 	}
-	_, err := fmt.Fprintln(out, "您是否确认[y/N]")
-	return err
+	return nil
 }
 
 func defaultConfirm() (bool, error) {
-	return pterm.DefaultInteractiveConfirm.WithDefaultValue(false).Show("您是否确认[y/N]")
+	return pterm.DefaultInteractiveConfirm.WithDefaultValue(false).Show("您是否确认")
 }
