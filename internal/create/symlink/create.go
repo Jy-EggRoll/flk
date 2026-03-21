@@ -20,16 +20,26 @@ func Create(realPath, fakePath string, force bool) error {
 	if force {
 		logger.Info("检测到 force 选项，将会尝试删除已存在的链接文件或冲突的非目录文件")
 		// 使用 Lstat 而不是 Stat，因为 Stat 会跟随符号链接
-		if _, err := os.Lstat(fakePath); err == nil { // 文件/链接/文件夹存在
+		if info, err := os.Lstat(fakePath); err == nil { // 文件/链接/文件夹存在
 			logger.Debug("fakePath 存在")
 			if err := pathutil.ValidateSafePath(fakePath); err != nil {
 				return err
 			}
-			if err := os.RemoveAll(fakePath); err == nil {
-				logger.Info("已成功删除 fakePath")
+			// 如果存在的是符号链接，优先使用 os.Remove 删除链接本身，避免在某些平台或特殊情况下对目标产生副作用
+			if info.Mode()&os.ModeSymlink != 0 {
+				if err := os.Remove(fakePath); err == nil {
+					logger.Info("已成功删除符号链接 fakePath")
+				} else {
+					logger.Error("删除符号链接失败 " + err.Error())
+					return err
+				}
 			} else {
-				logger.Error("删除失败 " + err.Error())
-				return err
+				if err := os.RemoveAll(fakePath); err == nil {
+					logger.Info("已成功删除 fakePath")
+				} else {
+					logger.Error("删除失败 " + err.Error())
+					return err
+				}
 			}
 		} else {
 			logger.Debug("fakePath 不存在 " + err.Error())
