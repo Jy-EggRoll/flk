@@ -7,6 +7,7 @@ import (
 
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
+	"github.com/jy-eggroll/flk/internal/safeop"
 )
 
 // 该函数只处理创建逻辑，需要保证传入的路径一定是最正确、最简洁的，函数被调用时，应该优先处理字符串
@@ -17,39 +18,30 @@ func Create(realPath, fakePath string, force bool) error {
 		logger.Error("realPath 对应的文件不存在，中止执行")
 		return err
 	}
-	if force {
-		logger.Info("检测到 force 选项，将会尝试删除已存在的链接文件或冲突的非目录文件")
-		// 使用 Lstat 而不是 Stat，因为 Stat 会跟随符号链接
-		if _, err := os.Lstat(fakePath); err == nil { // 文件/链接/文件夹存在
-			logger.Debug("fakePath 存在")
-			if err := pathutil.ValidateSafePath(fakePath); err != nil {
-				return err
-			}
-			if err := os.RemoveAll(fakePath); err == nil {
-				logger.Info("已成功删除 fakePath")
-			} else {
-				logger.Error("删除失败 " + err.Error())
-				return err
-			}
-		} else {
-			logger.Debug("fakePath 不存在 " + err.Error())
+
+	if _, err := os.Lstat(fakePath); err == nil { // 文件/链接/文件夹存在
+		logger.Debug("fakePath 存在")
+		if _, removeErr := safeop.RemoveWithConfirm(fakePath, safeop.RemoveOptions{Force: force}); removeErr != nil {
+			logger.Error("删除失败 " + removeErr.Error())
+			return removeErr
 		}
-		if err := pathutil.EnsureDirExists(fakePath); err != nil {
-			if errors.Is(err, &pathutil.ExistsButNotDirectoryError{}) {
-				// fakePath 的父路径存在但不是目录（是文件），删除它
-				if removeErr := os.Remove(filepath.Dir(fakePath)); removeErr == nil {
-					logger.Info("已成功删除非目录文件")
-				} else {
-					logger.Error("删除非目录文件失败 " + removeErr.Error())
-					return removeErr
-				}
-			}
-		}
+	} else {
+		logger.Debug("fakePath 不存在 " + err.Error())
 	}
 
-	err := pathutil.EnsureDirExists(fakePath)
-	if err != nil {
-		return err
+	if err := pathutil.EnsureDirExists(fakePath); err != nil {
+		if errors.Is(err, &pathutil.ExistsButNotDirectoryError{}) {
+			// fakePath 的父路径存在但不是目录（是文件或符号链接），删除它
+			if _, removeErr := safeop.RemoveWithConfirm(filepath.Dir(fakePath), safeop.RemoveOptions{Force: force}); removeErr != nil {
+				logger.Error("删除非目录父路径失败 " + removeErr.Error())
+				return removeErr
+			}
+			if retryErr := pathutil.EnsureDirExists(fakePath); retryErr != nil {
+				return retryErr
+			}
+		} else {
+			return err
+		}
 	}
 
 	absRealPath, err := filepath.Abs(realPath)
