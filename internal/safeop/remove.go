@@ -104,20 +104,11 @@ func RemoveWithConfirm(path string, opts RemoveOptions) ([]string, error) {
 func printDeletePlan(out io.Writer, paths []string) error {
 	// 如果输出是标准输出（交互模式），使用 pterm 更醒目的样式
 	if out == os.Stdout {
-		pterm.Warning.Println("以下路径会在执行过程中被删除:")
+		pterm.Warning.Println("以下位置会在执行过程中被删除:")
 		for _, p := range paths {
-			fmt.Fprintln(out, pterm.Red(p))
+			_, _ = fmt.Fprintln(out, pterm.Red(p))
 		}
 		return nil
-	}
-
-	if _, err := fmt.Fprintln(out, "以下路径会在执行过程中被删除:"); err != nil {
-		return err
-	}
-	for _, p := range paths {
-		if _, err := fmt.Fprintln(out, p); err != nil {
-			return err
-		}
 	}
 	return nil
 }

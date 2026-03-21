@@ -22,6 +22,10 @@ func Create(realPath, fakePath string, force bool) error {
 	if _, err := os.Lstat(fakePath); err == nil { // 文件/链接/文件夹存在
 		logger.Debug("fakePath 存在")
 		if _, removeErr := safeop.RemoveWithConfirm(fakePath, safeop.RemoveOptions{Force: force}); removeErr != nil {
+			if errors.Is(removeErr, safeop.ErrOperationCancelled) {
+				logger.Info("用户取消删除 fakePath")
+				return removeErr
+			}
 			logger.Error("删除失败 " + removeErr.Error())
 			return removeErr
 		}
@@ -33,6 +37,10 @@ func Create(realPath, fakePath string, force bool) error {
 		if errors.Is(err, &pathutil.ExistsButNotDirectoryError{}) {
 			// fakePath 的父路径存在但不是目录（是文件或符号链接），删除它
 			if _, removeErr := safeop.RemoveWithConfirm(filepath.Dir(fakePath), safeop.RemoveOptions{Force: force}); removeErr != nil {
+				if errors.Is(removeErr, safeop.ErrOperationCancelled) {
+					logger.Info("用户取消删除 fakePath 父路径")
+					return removeErr
+				}
 				logger.Error("删除非目录父路径失败 " + removeErr.Error())
 				return removeErr
 			}

@@ -29,6 +29,7 @@ func init() {
 	fixCmd.Flags().BoolVar(&fixSymlink, "symlink", false, "仅检查符号链接")
 	fixCmd.Flags().BoolVar(&fixHardlink, "hardlink", false, "仅检查硬链接")
 	fixCmd.Flags().StringVar(&fixDir, "dir", "", "仅检查包含该路径的记录")
+	fixCmd.Flags().BoolVar(&fixForce, "force", false, "修复时跳过删除确认，直接执行")
 }
 
 var (
@@ -36,6 +37,7 @@ var (
 	fixSymlink  bool
 	fixHardlink bool
 	fixDir      string
+	fixForce    bool
 )
 
 func RunFix(cmd *cobra.Command, args []string) {
@@ -209,7 +211,7 @@ func repairResult(result output.CheckResult, idx int) error {
 			symlinkReal = filepath.Join(result.BasePath, symlinkReal)
 		}
 		symlinkFake = result.Fake
-		createForce = true
+		createForce = fixForce
 		createDevice = result.Device
 
 		defer func() {
@@ -233,7 +235,7 @@ func repairResult(result output.CheckResult, idx int) error {
 		if !filepath.IsAbs(hardlinkSeco) {
 			hardlinkSeco = filepath.Join(result.BasePath, hardlinkSeco)
 		}
-		createForce = true
+		createForce = fixForce
 		createDevice = result.Device
 
 		defer func() {
