@@ -13,6 +13,8 @@ tags:
 weight: 
 ---
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Jy-EggRoll/flk)
+
 ## 开发路线
 
 - 0.2：开发完 server 功能，实现完整的 WebUI 管理
