@@ -166,7 +166,7 @@ func EnsureDirExists(path string) error {
 	return nil
 }
 
-// CopyFile 复制单个文件
+// CopyFile 复制单个文件，保留权限
 func CopyFile(dst, src string) error {
 	from, err := os.Open(src)
 	if err != nil {
@@ -181,14 +181,31 @@ func CopyFile(dst, src string) error {
 	defer to.Close()
 
 	_, err = io.Copy(to, from)
-	return err
-}
-
-// CopyDir 递归复制目录
-func CopyDir(src, dst string) error {
-	info, err := os.Stat(src)
 	if err != nil {
 		return err
+	}
+
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	return os.Chmod(dst, srcInfo.Mode())
+}
+
+// CopyDir 递归复制目录，处理符号链接
+func CopyDir(src, dst string) error {
+	info, err := os.Lstat(src)
+	if err != nil {
+		return err
+	}
+
+	if info.Mode()&os.ModeSymlink != 0 {
+		link, err := os.Readlink(src)
+		if err != nil {
+			return err
+		}
+		return os.Symlink(link, dst)
 	}
 
 	if err := os.MkdirAll(dst, info.Mode()); err != nil {
@@ -208,6 +225,22 @@ func CopyDir(src, dst string) error {
 			if err := CopyDir(srcPath, dstPath); err != nil {
 				return err
 			}
+		} else if entry.Type()&os.ModeSymlink != 0 {
+			link, err := os.Readlink(srcPath)
+			if err != nil {
+				return err
+			}
+			if err := os.Symlink(link, dstPath); err != nil {
+				if !errors.Is(err, os.ErrExist) {
+					return err
+				}
+				if err := os.Remove(dstPath); err != nil {
+					return err
+				}
+				if err := os.Symlink(link, dstPath); err != nil {
+					return err
+				}
+			}
 		} else {
 			if err := CopyFile(dstPath, srcPath); err != nil {
 				return err
@@ -217,11 +250,19 @@ func CopyDir(src, dst string) error {
 	return nil
 }
 
-// Copy 智能复制（文件或目录）
+// Copy 智能复制（文件或目录），处理符号链接
 func Copy(src, dst string) error {
-	info, err := os.Stat(src)
+	info, err := os.Lstat(src)
 	if err != nil {
 		return err
+	}
+
+	if info.Mode()&os.ModeSymlink != 0 {
+		link, err := os.Readlink(src)
+		if err != nil {
+			return err
+		}
+		return os.Symlink(link, dst)
 	}
 
 	if info.IsDir() {
