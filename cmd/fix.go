@@ -30,6 +30,7 @@ func init() {
 	fixCmd.Flags().BoolVar(&fixHardlink, "hardlink", false, "仅检查硬链接")
 	fixCmd.Flags().StringVar(&fixDir, "dir", "", "仅检查包含该路径的记录")
 	fixCmd.Flags().BoolVar(&fixForce, "force", false, "修复时跳过删除确认，直接执行")
+	fixCmd.Flags().BoolVar(&fixAll, "all", false, "自动修复所有无效链接，跳过交互模式")
 }
 
 var (
@@ -38,6 +39,7 @@ var (
 	fixHardlink bool
 	fixDir      string
 	fixForce    bool
+	fixAll      bool
 )
 
 func RunFix(cmd *cobra.Command, args []string) {
@@ -77,6 +79,19 @@ func RunFix(cmd *cobra.Command, args []string) {
 
 	invalidResults := checkAndDisplay()
 	if len(invalidResults) == 0 {
+		return
+	}
+
+	// --all 模式：自动修复所有，跳过交互
+	if fixAll {
+		pterm.Info.Println("自动修复所有无效链接...")
+		for idx, result := range invalidResults {
+			if err := repairResult(result, idx); err != nil {
+				pterm.Error.Printf("修复失败 #%d %v\n", idx+1, err)
+			} else {
+				pterm.Success.Printf("修复成功 #%d\n", idx+1)
+			}
+		}
 		return
 	}
 
