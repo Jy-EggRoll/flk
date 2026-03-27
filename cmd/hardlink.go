@@ -9,6 +9,7 @@ import (
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
+	"github.com/jy-eggroll/flk/internal/safeop"
 	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
@@ -93,6 +94,10 @@ func Hardlink(cmd *cobra.Command, args []string) error {
 
 	var result output.CreateResult
 	if err := hardlink.Create(normalizedPrim, normalizedSeco, createForce); err != nil {
+		if errors.Is(err, safeop.ErrOperationCancelled) {
+			pterm.Info.Println("已取消操作")
+			return nil
+		}
 		result = output.CreateResult{Success: false, Type: "硬链接", Error: err.Error()}
 	} else {
 		result = output.CreateResult{Success: true, Type: "硬链接", Message: "创建成功"}
