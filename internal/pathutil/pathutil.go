@@ -168,6 +168,10 @@ func EnsureDirExists(path string) error {
 
 // CopyFile 复制单个文件，保留权限
 func CopyFile(dst, src string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return err
+	}
+
 	from, err := os.Open(src)
 	if err != nil {
 		return err
