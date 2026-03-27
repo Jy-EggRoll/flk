@@ -8,6 +8,7 @@ import (
 
 var (
 	createForce  bool
+	createSmart  bool
 	createDevice string
 )
 

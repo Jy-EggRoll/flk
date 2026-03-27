@@ -3,6 +3,7 @@ package pathutil
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -163,4 +164,68 @@ func EnsureDirExists(path string) error {
 	}
 
 	return nil
+}
+
+// CopyFile 复制单个文件
+func CopyFile(dst, src string) error {
+	from, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer from.Close()
+
+	to, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer to.Close()
+
+	_, err = io.Copy(to, from)
+	return err
+}
+
+// CopyDir 递归复制目录
+func CopyDir(src, dst string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(dst, info.Mode()); err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+
+		if entry.IsDir() {
+			if err := CopyDir(srcPath, dstPath); err != nil {
+				return err
+			}
+		} else {
+			if err := CopyFile(dstPath, srcPath); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// Copy 智能复制（文件或目录）
+func Copy(src, dst string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	if info.IsDir() {
+		return CopyDir(src, dst)
+	}
+	return CopyFile(dst, src)
 }

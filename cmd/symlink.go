@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"errors"
+	"os"
 	"strings"
 
 	"github.com/jy-eggroll/flk/internal/create/symlink"
@@ -9,6 +10,7 @@ import (
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/store"
+	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 )
 
@@ -29,6 +31,7 @@ func init() {
 	createCmd.AddCommand(symlinkCmd)
 	symlinkCmd.Flags().StringVarP(&symlinkReal, "real", "r", "", "真实文件路径")
 	symlinkCmd.Flags().StringVarP(&symlinkFake, "fake", "f", "", "链接文件路径")
+	symlinkCmd.Flags().BoolVar(&createSmart, "smart", false, "智能模式：当 real 不存在但 fake 存在时，自动将 fake 复制到 real 再创建链接")
 	symlinkCmd.Flags().BoolVar(&createForce, "force", false, "强制覆盖已存在的文件或文件夹")
 	symlinkCmd.Flags().StringVarP(&createDevice, "device", "d", "all", "设备名称，用于后续设备过滤")
 	symlinkCmd.MarkFlagRequired("real")
@@ -65,6 +68,36 @@ func Symlink(cmd *cobra.Command, args []string) error {
 
 	if verbose {
 		logger.Debug("路径标准化完成", "normalizedReal", normalizedReal, "normalizedFake", normalizedFake)
+	}
+
+	realExists, _ := os.Stat(normalizedReal)
+	fakeExists, _ := os.Stat(normalizedFake)
+	if realExists == nil && fakeExists != nil && createSmart {
+		logger.Info("智能模式：检测到 real 不存在但 fake 存在，准备复制 fake 到 real")
+		if err := pathutil.Copy(normalizedFake, normalizedReal); err != nil {
+			result := output.CreateResult{Success: false, Type: "符号链接", Error: "智能复制失败: " + err.Error()}
+			output.PrintCreateResult(format, result)
+			return errors.New(result.Error)
+		}
+		logger.Info("智能复制完成", "from", normalizedFake, "to", normalizedReal)
+		pterm.Success.Println("智能复制成功: " + normalizedReal)
+	} else if realExists == nil && fakeExists != nil && !createForce {
+		confirm, _ := pterm.DefaultInteractiveConfirm.Show(
+			"real 不存在但 fake 存在，是否将 fake 复制到 real 再创建链接？",
+		)
+		if confirm {
+			logger.Info("用户确认智能复制")
+			if err := pathutil.Copy(normalizedFake, normalizedReal); err != nil {
+				result := output.CreateResult{Success: false, Type: "符号链接", Error: "智能复制失败: " + err.Error()}
+				output.PrintCreateResult(format, result)
+				return errors.New(result.Error)
+			}
+			logger.Info("智能复制完成", "from", normalizedFake, "to", normalizedReal)
+			pterm.Success.Println("智能复制成功: " + normalizedReal)
+		} else {
+			pterm.Info.Println("已取消智能复制")
+			return nil
+		}
 	}
 
 	if verbose {
