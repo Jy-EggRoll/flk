@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os/exec"
 	"path/filepath"
@@ -26,6 +27,27 @@ var serveCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		port, _ := cmd.Flags().GetInt("port")
 		host, _ := cmd.Flags().GetString("host")
+
+		var listener net.Listener
+		var err error
+		maxTries := 100
+
+		for i := 0; i < maxTries; i++ {
+			currentPort := port + i
+			addr := fmt.Sprintf("%s:%d", host, currentPort)
+			listener, err = net.Listen("tcp", addr)
+			if err == nil {
+				port = currentPort
+				break
+			}
+			logger.Debug(fmt.Sprintf("端口 %d 被占用，尝试下一个...", currentPort))
+		}
+
+		if err != nil {
+			logger.Error(fmt.Sprintf("无法找到可用的端口 (尝试了 %d 到 %d): %v", port, port+maxTries-1, err))
+			return
+		}
+
 		addr := fmt.Sprintf("%s:%d", host, port)
 
 		// Serve HTML
@@ -280,7 +302,7 @@ var serveCmd = &cobra.Command{
 			}()
 		}
 
-		if err := http.ListenAndServe(addr, nil); err != nil {
+		if err := http.Serve(listener, nil); err != nil {
 			logger.Error("Server error: " + err.Error())
 		}
 	},
