@@ -325,7 +325,7 @@
                             body: JSON.stringify(form.value)
                         });
                         if(res.ok) {
-                            appendLog('✅ 创建成功');
+                            appendLog('创建成功');
                             form.value.real = '';
                             form.value.fake = '';
                             setTimeout(() => {
@@ -333,10 +333,10 @@
                                 checkLinks();
                             }, 1000);
                         } else {
-                            appendLog(`❌ 创建失败: ${await res.text()}`);
+                            appendLog(`创建失败: ${await res.text()}`);
                         }
                     } catch (e) {
-                        appendLog(`❌ 接口异常: ${e.message}`);
+                        appendLog(`接口异常: ${e.message}`);
                     }
                 };
 
@@ -355,7 +355,7 @@
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ all: true })
                         });
-                        appendLog('✅ 修复指令完成');
+                        appendLog('修复指令完成');
                         setTimeout(() => {
                             viewMode.value = 'list';
                             checkLinks();
@@ -374,7 +374,7 @@
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ all: false, item: item })
                         });
-                        appendLog('✅ 单项修复指令完成');
+                        appendLog('单项修复指令完成');
                         setTimeout(() => {
                             viewMode.value = 'list';
                             checkLinks();

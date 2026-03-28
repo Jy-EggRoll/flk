@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -272,6 +273,13 @@ var serveCmd = &cobra.Command{
 
 		logger.Info("Starting server at http://" + addr)
 		fmt.Printf("服务已启动，请在浏览器访问: http://localhost:%d\n", port)
+
+		if runtime.GOOS == "windows" && isDirectRun {
+			go func() {
+				exec.Command("cmd", "/c", "start", fmt.Sprintf("http://localhost:%d", port)).Start()
+			}()
+		}
+
 		if err := http.ListenAndServe(addr, nil); err != nil {
 			logger.Error("Server error: " + err.Error())
 		}

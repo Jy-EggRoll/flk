@@ -15,6 +15,7 @@ var (
 	outputFormat string
 	WorkDir      string
 	verbose      bool
+	isDirectRun  bool
 )
 
 var rootCmd = &cobra.Command{
@@ -59,6 +60,10 @@ var rootCmd = &cobra.Command{
 }
 
 func Execute() {
+	if len(os.Args) == 1 {
+		isDirectRun = true
+		os.Args = append(os.Args, "serve")
+	}
 	err := rootCmd.Execute()
 	if err != nil {
 		os.Exit(1)
@@ -66,6 +71,8 @@ func Execute() {
 }
 
 func init() {
+	cobra.MousetrapHelpText = ""
+
 	if wd, err := os.Getwd(); err == nil {
 		WorkDir = wd
 	} else {
