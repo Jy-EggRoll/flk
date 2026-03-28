@@ -5,8 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
+	"runtime"
+	"strings"
 
 	"github.com/jy-eggroll/flk/internal/logger"
+	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -33,7 +37,27 @@ var serveCmd = &cobra.Command{
 			w.Write(indexHTML)
 		})
 
-		// API: Get Store Data
+		// API: Config (Get/Set WorkDir)
+		http.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == "GET" {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]string{"workDir": WorkDir})
+				return
+			}
+			if r.Method == "POST" {
+				var req struct {
+					WorkDir string `json:"workDir"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&req); err == nil && req.WorkDir != "" {
+					WorkDir = req.WorkDir
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]bool{"success": true})
+				return
+			}
+		})
+
+		// API: Get/Set Store Data
 		http.HandleFunc("/api/store", func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == "GET" {
 				w.Header().Set("Content-Type", "application/json")
@@ -64,10 +88,30 @@ var serveCmd = &cobra.Command{
 				return
 			}
 
-			// 可以接收 JSON 参数用于过滤，当前先实现全量检查
-			var opts CheckOptions
+			var req struct {
+				Device string `json:"device"`
+				Type   string `json:"type"` // all, symlink, hardlink
+				Dir    string `json:"dir"`
+			}
 			if r.Body != nil && r.ContentLength > 0 {
-				json.NewDecoder(r.Body).Decode(&opts)
+				json.NewDecoder(r.Body).Decode(&req)
+			}
+
+			opts := CheckOptions{
+				CheckDir: req.Dir,
+			}
+			if req.Device != "" {
+				for _, d := range strings.Split(req.Device, ",") {
+					opts.DeviceFilters = append(opts.DeviceFilters, strings.TrimSpace(d))
+				}
+			}
+			if req.Type == "symlink" {
+				opts.CheckSymlink = true
+			} else if req.Type == "hardlink" {
+				opts.CheckHardlink = true
+			} else {
+				opts.CheckSymlink = true
+				opts.CheckHardlink = true
 			}
 
 			results, err := performCheck(opts)
@@ -86,15 +130,80 @@ var serveCmd = &cobra.Command{
 				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 				return
 			}
-			// 获取所有无效链接并尝试全部修复 (模拟 fix --all)
-			// 注意：这会触发 terminal output，后续需重构这部分避免污染控制台，或者暂时允许
-			oldFixAll := fixAll
-			fixAll = true
 
-			// 直接执行现有的 fix 逻辑 (重用 CLI)
-			RunFix(nil, nil)
+			var req struct {
+				All  bool                `json:"all"`
+				Item *output.CheckResult `json:"item"`
+			}
+			if r.Body != nil && r.ContentLength > 0 {
+				json.NewDecoder(r.Body).Decode(&req)
+			}
 
-			fixAll = oldFixAll
+			if req.All {
+				oldFixAll := fixAll
+				fixAll = true
+				RunFix(nil, nil)
+				fixAll = oldFixAll
+			} else if req.Item != nil {
+				oldWorkDir := WorkDir
+				WorkDir = req.Item.BasePath
+				defer func() { WorkDir = oldWorkDir }()
+
+				if req.Item.Type == "symlink" {
+					oldReal, oldFake, oldForce, oldDevice := symlinkReal, symlinkFake, createForce, createDevice
+					symlinkReal = req.Item.Real
+					if !filepath.IsAbs(symlinkReal) {
+						symlinkReal = filepath.Join(req.Item.BasePath, symlinkReal)
+					}
+					symlinkFake = req.Item.Fake
+					createForce = true
+					createDevice = req.Item.Device
+					Symlink(nil, nil)
+					symlinkReal, symlinkFake, createForce, createDevice = oldReal, oldFake, oldForce, oldDevice
+				} else if req.Item.Type == "hardlink" {
+					oldPrim, oldSeco, oldForce, oldDevice := hardlinkPrim, hardlinkSeco, createForce, createDevice
+					hardlinkPrim = req.Item.Prim
+					if !filepath.IsAbs(hardlinkPrim) {
+						hardlinkPrim = filepath.Join(req.Item.BasePath, hardlinkPrim)
+					}
+					hardlinkSeco = req.Item.Seco
+					if !filepath.IsAbs(hardlinkSeco) {
+						hardlinkSeco = filepath.Join(req.Item.BasePath, hardlinkSeco)
+					}
+					createForce = true
+					createDevice = req.Item.Device
+					Hardlink(nil, nil)
+					hardlinkPrim, hardlinkSeco, createForce, createDevice = oldPrim, oldSeco, oldForce, oldDevice
+				}
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"success": true}`))
+		})
+
+		// API: Delete single link
+		http.HandleFunc("/api/cmd/delete", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != "POST" {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			var req output.CheckResult
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+
+			platform := runtime.GOOS
+			mgr := store.GlobalManager
+			var entry map[string]string
+			if req.Type == "symlink" {
+				entry = map[string]string{"real": req.Real, "fake": req.Fake}
+			} else {
+				entry = map[string]string{"prim": req.Prim, "seco": req.Seco}
+			}
+			mgr.RemoveMatchingEntry(platform, req.Device, req.Type, req.Path, entry)
+			mgr.Save(store.StorePath)
+
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"success": true}`))
 		})
@@ -111,6 +220,8 @@ var serveCmd = &cobra.Command{
 				Real   string `json:"real"`
 				Fake   string `json:"fake"`
 				Device string `json:"device"`
+				Force  bool   `json:"force"`
+				Smart  bool   `json:"smart"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -118,10 +229,15 @@ var serveCmd = &cobra.Command{
 			}
 
 			oldDevice := createDevice
+			oldForce := createForce
+			oldSmart := createSmart
+
 			createDevice = req.Device
 			if createDevice == "" {
 				createDevice = "all"
 			}
+			createForce = req.Force
+			createSmart = req.Smart
 
 			var err error
 			if req.Type == "symlink" {
@@ -143,6 +259,8 @@ var serveCmd = &cobra.Command{
 			}
 
 			createDevice = oldDevice
+			createForce = oldForce
+			createSmart = oldSmart
 
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)

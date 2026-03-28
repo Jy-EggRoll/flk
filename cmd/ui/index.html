@@ -7,65 +7,93 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <style>
-        .table-row-hover:hover { background-color: #f8fafc; }
-        .valid-row { border-left: 4px solid #22c55e; }
-        .invalid-row { border-left: 4px solid #ef4444; }
+        .table-row-hover:hover { background-color: #fdfbf7; }
+        .valid-row { border-left: 4px solid #10b981; } /* Emerald-500 */
+        .invalid-row { border-left: 4px solid #f43f5e; } /* Rose-500 */
     </style>
 </head>
-<body class="bg-gray-100 text-gray-800 antialiased min-h-screen">
-    <div id="app" class="max-w-7xl mx-auto p-4 md:p-8">
-        <!-- Header -->
-        <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-            <div>
-                <h1 class="text-3xl font-extrabold text-blue-600 tracking-tight">flk Dashboard</h1>
-                <p class="text-gray-500 mt-1 text-sm">跨平台文件链接管理工具</p>
+<body class="bg-stone-100 text-stone-800 antialiased min-h-screen">
+    <div id="app">
+        <!-- App Bar (Google Material Design Style) -->
+        <header class="bg-orange-600 shadow-md text-white px-6 py-4 flex flex-col md:flex-row justify-between items-center z-10 relative">
+            <div class="flex items-center gap-3">
+                <svg class="w-8 h-8 text-orange-100" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+                <div>
+                    <h1 class="text-2xl font-bold tracking-wide">flk 控制台</h1>
+                    <p class="text-orange-200 text-xs">文件链接管理与同步</p>
+                </div>
             </div>
-            <div class="flex gap-3 mt-4 md:mt-0">
-                <button @click="checkLinks" class="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium px-4 py-2 rounded-lg shadow-sm transition-all text-sm">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                    刷新检查
-                </button>
-                <button @click="fixLinks" class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg shadow-sm transition-all text-sm">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
-                    一键修复无效链接
+            
+            <div class="mt-4 md:mt-0 flex gap-4 text-sm items-center">
+                <!-- Settings Input -->
+                <div class="flex items-center bg-orange-700 rounded-md px-3 py-1.5 border border-orange-500">
+                    <label class="text-orange-200 mr-2 whitespace-nowrap text-xs uppercase tracking-wider font-bold">工作目录</label>
+                    <input v-model="config.workDir" @change="saveConfig" class="bg-transparent text-white border-none focus:ring-0 outline-none w-48 text-sm" placeholder="当前目录">
+                </div>
+                <button @click="fixAllLinks" class="bg-white text-orange-600 hover:bg-orange-50 font-bold px-4 py-2 rounded shadow transition-colors flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    一键修复
                 </button>
             </div>
         </header>
 
-        <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
-            <!-- Sidebar: Tools & Forms -->
+        <div class="max-w-7xl mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-4 gap-6">
+            
+            <!-- Sidebar Navigation & Creation -->
             <div class="lg:col-span-1 space-y-6">
-                <!-- Navigation -->
-                <div class="bg-white p-2 rounded-xl shadow-sm border border-gray-200 flex flex-col gap-1">
-                    <button @click="viewMode = 'list'" :class="viewMode === 'list' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-600 hover:bg-gray-50'" class="px-4 py-2.5 rounded-lg text-left transition-colors text-sm">🌐 链接概览</button>
-                    <button @click="viewMode = 'create'" :class="viewMode === 'create' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-600 hover:bg-gray-50'" class="px-4 py-2.5 rounded-lg text-left transition-colors text-sm">✨ 创建链接</button>
-                    <button @click="viewMode = 'json'" :class="viewMode === 'json' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-600 hover:bg-gray-50'" class="px-4 py-2.5 rounded-lg text-left transition-colors text-sm">⚙️ 底层 JSON</button>
+                <!-- Nav Cards -->
+                <div class="bg-white rounded-lg shadow-sm flex flex-col overflow-hidden text-sm font-medium border border-stone-200">
+                    <button @click="viewMode = 'list'" :class="viewMode === 'list' ? 'bg-orange-50 text-orange-700 border-l-4 border-orange-500' : 'text-stone-600 hover:bg-stone-50 border-l-4 border-transparent'" class="px-5 py-3 text-left transition-colors flex items-center gap-3">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg> 链接检查概览
+                    </button>
+                    <div class="h-px bg-stone-100"></div>
+                    <button @click="viewMode = 'create'" :class="viewMode === 'create' ? 'bg-orange-50 text-orange-700 border-l-4 border-orange-500' : 'text-stone-600 hover:bg-stone-50 border-l-4 border-transparent'" class="px-5 py-3 text-left transition-colors flex items-center gap-3">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg> 创建新链接
+                    </button>
+                    <div class="h-px bg-stone-100"></div>
+                    <button @click="viewMode = 'json'" :class="viewMode === 'json' ? 'bg-orange-50 text-orange-700 border-l-4 border-orange-500' : 'text-stone-600 hover:bg-stone-50 border-l-4 border-transparent'" class="px-5 py-3 text-left transition-colors flex items-center gap-3">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg> Store JSON
+                    </button>
                 </div>
 
-                <!-- Create Form Sidebar View -->
-                <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200" v-if="viewMode === 'list' || viewMode === 'create'">
-                    <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">快捷创建</h2>
+                <!-- Create Form -->
+                <div class="bg-white p-5 rounded-lg shadow-sm border border-stone-200" v-if="viewMode === 'list' || viewMode === 'create'">
+                    <h2 class="text-sm font-bold text-stone-500 uppercase tracking-wider mb-4 border-b pb-2">快速创建</h2>
                     <form @submit.prevent="createLink" class="space-y-4">
                         <div>
-                            <label class="block text-xs font-semibold text-gray-600 mb-1">链接类型</label>
-                            <select v-model="form.type" class="block w-full rounded-lg border-gray-300 bg-gray-50 border p-2.5 text-sm focus:ring-blue-500 focus:border-blue-500">
+                            <label class="block text-xs font-semibold text-stone-600 mb-1">链接类型</label>
+                            <select v-model="form.type" class="block w-full rounded-md border-stone-300 bg-stone-50 border p-2 text-sm focus:ring-orange-500 focus:border-orange-500">
                                 <option value="symlink">符号链接 (symlink)</option>
                                 <option value="hardlink">硬链接 (hardlink)</option>
                             </select>
                         </div>
                         <div>
-                            <label class="block text-xs font-semibold text-gray-600 mb-1">真实路径 (real/prim)</label>
-                            <input v-model="form.real" type="text" required placeholder="/path/to/real/file" class="block w-full rounded-lg border-gray-300 bg-gray-50 border p-2.5 text-sm focus:ring-blue-500 focus:border-blue-500">
+                            <label class="block text-xs font-semibold text-stone-600 mb-1">真实/主要路径 (real/prim)</label>
+                            <input v-model="form.real" type="text" required placeholder="例如: ~/.config/app" class="block w-full rounded-md border-stone-300 bg-stone-50 border p-2 text-sm focus:ring-orange-500 focus:border-orange-500">
                         </div>
                         <div>
-                            <label class="block text-xs font-semibold text-gray-600 mb-1">虚拟路径 (fake/seco)</label>
-                            <input v-model="form.fake" type="text" required placeholder="/path/to/link" class="block w-full rounded-lg border-gray-300 bg-gray-50 border p-2.5 text-sm focus:ring-blue-500 focus:border-blue-500">
+                            <label class="block text-xs font-semibold text-stone-600 mb-1">虚拟/次要路径 (fake/seco)</label>
+                            <input v-model="form.fake" type="text" required placeholder="例如: ~/App/config" class="block w-full rounded-md border-stone-300 bg-stone-50 border p-2 text-sm focus:ring-orange-500 focus:border-orange-500">
                         </div>
                         <div>
-                            <label class="block text-xs font-semibold text-gray-600 mb-1">设备标识 (可选)</label>
-                            <input v-model="form.device" type="text" placeholder="留空使用默认设备" class="block w-full rounded-lg border-gray-300 bg-gray-50 border p-2.5 text-sm focus:ring-blue-500 focus:border-blue-500">
+                            <label class="block text-xs font-semibold text-stone-600 mb-1">设备标识 (可选)</label>
+                            <input v-model="form.device" type="text" placeholder="留空则应用到 all" class="block w-full rounded-md border-stone-300 bg-stone-50 border p-2 text-sm focus:ring-orange-500 focus:border-orange-500">
                         </div>
-                        <button type="submit" class="w-full bg-gray-800 hover:bg-gray-900 text-white font-medium px-4 py-2.5 rounded-lg shadow transition-colors text-sm">
+                        
+                        <!-- Create Options -->
+                        <div class="flex flex-col gap-2 pt-2 border-t border-stone-100">
+                            <label class="flex items-center text-sm text-stone-600 cursor-pointer">
+                                <input type="checkbox" v-model="form.force" class="rounded text-orange-600 focus:ring-orange-500 mr-2 border-stone-300">
+                                强制覆盖已存在文件 (--force)
+                            </label>
+                            <label v-if="form.type === 'symlink'" class="flex items-center text-sm text-stone-600 cursor-pointer">
+                                <input type="checkbox" v-model="form.smart" class="rounded text-orange-600 focus:ring-orange-500 mr-2 border-stone-300">
+                                智能复制模式 (--smart)
+                            </label>
+                        </div>
+
+                        <button type="submit" class="w-full bg-stone-800 hover:bg-stone-900 text-white font-medium px-4 py-2.5 rounded-md shadow-sm transition-colors text-sm flex justify-center items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
                             立即创建
                         </button>
                     </form>
@@ -75,88 +103,108 @@
             <!-- Main Content Area -->
             <div class="lg:col-span-3">
                 
-                <!-- Create View Details -->
-                <div v-if="viewMode === 'create'" class="bg-white p-8 rounded-xl shadow-sm border border-gray-200 h-full">
-                    <h2 class="text-2xl font-bold mb-2">创建新链接</h2>
-                    <p class="text-gray-500 mb-8 text-sm">在左侧面板填写参数以创建。这里将展示 CLI 对应的创建日志输出。</p>
-                    <div class="bg-gray-900 rounded-lg p-4 font-mono text-xs text-green-400 min-h-[300px] overflow-auto">
-                        <div v-for="(log, i) in logs" :key="i" class="mb-1">{{ log }}</div>
-                        <div v-if="logs.length === 0" class="text-gray-600 italic">等待操作...</div>
+                <!-- Check Results View -->
+                <div v-if="viewMode === 'list'" class="space-y-4">
+                    
+                    <!-- Filters Bar -->
+                    <div class="bg-white p-4 rounded-lg shadow-sm border border-stone-200 flex flex-wrap gap-4 items-end">
+                        <div class="flex-1 min-w-[150px]">
+                            <label class="block text-xs font-semibold text-stone-500 mb-1 uppercase">设备筛选 (--device)</label>
+                            <input v-model="filters.device" type="text" placeholder="多设备用逗号分隔" class="block w-full rounded-md border-stone-300 bg-stone-50 border px-3 py-1.5 text-sm focus:ring-orange-500 focus:border-orange-500">
+                        </div>
+                        <div class="w-32">
+                            <label class="block text-xs font-semibold text-stone-500 mb-1 uppercase">链接类型</label>
+                            <select v-model="filters.type" class="block w-full rounded-md border-stone-300 bg-stone-50 border px-3 py-1.5 text-sm focus:ring-orange-500 focus:border-orange-500">
+                                <option value="all">全查</option>
+                                <option value="symlink">仅 Symlink</option>
+                                <option value="hardlink">仅 Hardlink</option>
+                            </select>
+                        </div>
+                        <div class="flex-1 min-w-[150px]">
+                            <label class="block text-xs font-semibold text-stone-500 mb-1 uppercase">包含路径 (--dir)</label>
+                            <input v-model="filters.dir" type="text" placeholder="过滤特定路径" class="block w-full rounded-md border-stone-300 bg-stone-50 border px-3 py-1.5 text-sm focus:ring-orange-500 focus:border-orange-500">
+                        </div>
+                        <button @click="checkLinks" class="bg-orange-100 text-orange-700 hover:bg-orange-200 font-medium px-4 py-1.5 border border-orange-200 rounded-md transition-colors text-sm">
+                            筛选 / 刷新
+                        </button>
+                    </div>
+
+                    <!-- Table -->
+                    <div class="bg-white rounded-lg shadow-sm border border-stone-200 overflow-hidden">
+                        <div class="px-5 py-4 border-b border-stone-100 flex justify-between items-center bg-stone-50/50">
+                            <h2 class="text-base font-bold text-stone-800">检查结果</h2>
+                            <div class="text-xs font-semibold flex gap-4">
+                                <span class="flex items-center gap-1 text-emerald-600"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> 正常 ({{ validCount }})</span>
+                                <span class="flex items-center gap-1 text-rose-600"><span class="w-2 h-2 rounded-full bg-rose-500"></span> 失效 ({{ invalidCount }})</span>
+                            </div>
+                        </div>
+                        
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse whitespace-nowrap">
+                                <thead>
+                                    <tr class="bg-stone-50 text-stone-500 text-xs uppercase tracking-wider border-b border-stone-200">
+                                        <th class="p-4 font-semibold">状态</th>
+                                        <th class="p-4 font-semibold">设备</th>
+                                        <th class="p-4 font-semibold">类型</th>
+                                        <th class="p-4 font-semibold w-1/4">主要路径</th>
+                                        <th class="p-4 font-semibold w-1/4">次要路径</th>
+                                        <th class="p-4 font-semibold text-right">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="text-sm divide-y divide-stone-100">
+                                    <tr v-if="checkResults.length === 0" class="bg-white">
+                                        <td colspan="6" class="p-16 text-center text-stone-400">
+                                            暂无符合条件的数据。
+                                        </td>
+                                    </tr>
+                                    <tr v-for="(res, index) in checkResults" :key="index" 
+                                        class="bg-white transition-colors table-row-hover"
+                                        :class="res.valid ? 'valid-row' : 'invalid-row'">
+                                        <td class="p-4">
+                                            <span v-if="res.valid" class="inline-flex px-2 py-0.5 rounded text-xs font-bold bg-emerald-100 text-emerald-700">OK</span>
+                                            <span v-else class="inline-flex px-2 py-0.5 rounded text-xs font-bold bg-rose-100 text-rose-700" :title="res.error">ERR</span>
+                                        </td>
+                                        <td class="p-4 font-mono text-xs text-stone-600">{{ res.device }}</td>
+                                        <td class="p-4 text-xs font-medium text-stone-500">{{ res.type }}</td>
+                                        <td class="p-4 font-mono text-xs text-stone-700 truncate max-w-[180px]" :title="res.type==='symlink'?res.real:res.prim">
+                                            {{ res.type==='symlink' ? res.real : res.prim }}
+                                        </td>
+                                        <td class="p-4 font-mono text-xs text-stone-700 truncate max-w-[180px]" :title="res.type==='symlink'?res.fake:res.seco">
+                                            {{ res.type==='symlink' ? res.fake : res.seco }}
+                                        </td>
+                                        <td class="p-4 text-right space-x-2">
+                                            <button v-if="!res.valid" @click="fixSingleLink(res)" class="text-xs px-2.5 py-1 rounded bg-orange-100 text-orange-700 hover:bg-orange-200 transition-colors font-medium">修复</button>
+                                            <button @click="deleteSingleLink(res)" class="text-xs px-2.5 py-1 rounded bg-stone-100 text-stone-600 hover:bg-rose-100 hover:text-rose-700 transition-colors font-medium">删除</button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
 
-                <!-- JSON Editor -->
-                <div v-if="viewMode === 'json'" class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col h-full min-h-[600px]">
+                <!-- Create Logs View -->
+                <div v-if="viewMode === 'create'" class="bg-white p-6 rounded-lg shadow-sm border border-stone-200 h-full flex flex-col">
+                    <h2 class="text-xl font-bold mb-1 text-stone-800">操作日志</h2>
+                    <p class="text-stone-500 mb-4 text-sm">记录命令执行的实时输出情况。</p>
+                    <div class="flex-grow bg-stone-900 rounded-md p-4 font-mono text-xs text-emerald-400 overflow-auto min-h-[400px] shadow-inner">
+                        <div v-for="(log, i) in logs" :key="i" class="mb-1.5">{{ log }}</div>
+                        <div v-if="logs.length === 0" class="text-stone-500 italic">...等待下发指令...</div>
+                    </div>
+                </div>
+
+                <!-- JSON Editor View -->
+                <div v-if="viewMode === 'json'" class="bg-white p-6 rounded-lg shadow-sm border border-stone-200 h-full flex flex-col">
                     <div class="flex justify-between items-center mb-4">
                         <div>
-                            <h2 class="text-lg font-bold">Store JSON 原始数据</h2>
-                            <p class="text-xs text-gray-500 mt-1">直接编辑底层持久化数据，保存后立即生效。</p>
+                            <h2 class="text-xl font-bold text-stone-800">底层存储直接编辑</h2>
+                            <p class="text-xs text-stone-500 mt-1">请谨慎修改结构，格式错误将无法保存。</p>
                         </div>
-                        <button @click="saveJson" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm shadow-sm transition-colors">保存更改</button>
+                        <button @click="saveJson" class="bg-orange-600 hover:bg-orange-700 text-white font-medium px-5 py-2 rounded-md text-sm shadow transition-colors">
+                            保存 JSON
+                        </button>
                     </div>
-                    <textarea v-model="rawJson" class="flex-grow w-full font-mono text-sm p-4 border border-gray-200 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-colors" spellcheck="false"></textarea>
-                </div>
-
-                <!-- Check Results Table -->
-                <div v-if="viewMode === 'list'" class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                    <div class="p-5 border-b border-gray-100 flex justify-between items-center bg-white">
-                        <h2 class="text-lg font-bold text-gray-800">链接状态检查结果</h2>
-                        <div class="text-sm font-medium">
-                            <span class="text-green-500 mr-3">● 有效 ({{ validCount }})</span>
-                            <span class="text-red-500">● 无效 ({{ invalidCount }})</span>
-                        </div>
-                    </div>
-                    
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left border-collapse">
-                            <thead>
-                                <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
-                                    <th class="p-4 font-semibold">状态</th>
-                                    <th class="p-4 font-semibold">设备</th>
-                                    <th class="p-4 font-semibold">类型</th>
-                                    <th class="p-4 font-semibold">主要路径 (real/prim)</th>
-                                    <th class="p-4 font-semibold">次要路径 (fake/seco)</th>
-                                    <th class="p-4 font-semibold">详情/错误</th>
-                                </tr>
-                            </thead>
-                            <tbody class="text-sm divide-y divide-gray-100">
-                                <tr v-if="checkResults.length === 0" class="bg-white">
-                                    <td colspan="6" class="p-12 text-center text-gray-400">
-                                        <svg class="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path></svg>
-                                        暂无链接数据，点击刷新检查或在左侧创建。
-                                    </td>
-                                </tr>
-                                <tr v-for="(res, index) in checkResults" :key="index" 
-                                    class="bg-white transition-colors table-row-hover"
-                                    :class="res.valid ? 'valid-row' : 'invalid-row'">
-                                    <td class="p-4 whitespace-nowrap">
-                                        <span v-if="res.valid" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                            正常
-                                        </span>
-                                        <span v-else class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                            失效
-                                        </span>
-                                    </td>
-                                    <td class="p-4 font-mono text-xs text-gray-600">{{ res.device }}</td>
-                                    <td class="p-4 text-xs">
-                                        <span class="bg-gray-100 text-gray-700 px-2 py-1 rounded border">{{ res.type }}</span>
-                                    </td>
-                                    <td class="p-4 font-mono text-xs text-gray-600 truncate max-w-[200px]" :title="res.type==='symlink'?res.real:res.prim">
-                                        {{ res.type==='symlink' ? res.real : res.prim }}
-                                    </td>
-                                    <td class="p-4 font-mono text-xs text-gray-600 truncate max-w-[200px]" :title="res.type==='symlink'?res.fake:res.seco">
-                                        {{ res.type==='symlink' ? res.fake : res.seco }}
-                                    </td>
-                                    <td class="p-4 text-xs">
-                                        <div v-if="!res.valid" class="text-red-600 max-w-[250px] truncate" :title="res.error">
-                                            {{ res.error }}
-                                        </div>
-                                        <div v-else class="text-gray-400">-</div>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
+                    <textarea v-model="rawJson" class="flex-grow w-full font-mono text-sm p-4 border border-stone-300 rounded-md bg-stone-50 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white transition-colors" spellcheck="false" style="min-height: 500px;"></textarea>
                 </div>
 
             </div>
@@ -173,11 +221,23 @@
                 const checkResults = ref([]);
                 const logs = ref([]);
                 
+                const config = ref({
+                    workDir: ''
+                });
+
+                const filters = ref({
+                    device: '',
+                    type: 'all',
+                    dir: ''
+                });
+                
                 const form = ref({
                     type: 'symlink',
                     real: '',
                     fake: '',
-                    device: ''
+                    device: '',
+                    force: false,
+                    smart: false
                 });
 
                 const validCount = computed(() => checkResults.value.filter(r => r.valid).length);
@@ -188,13 +248,36 @@
                     logs.value.push(`[${time}] ${msg}`);
                 };
 
+                const loadConfig = async () => {
+                    try {
+                        const res = await fetch('/api/config');
+                        const data = await res.json();
+                        config.value.workDir = data.workDir;
+                    } catch (e) {
+                        console.error('加载配置失败:', e);
+                    }
+                };
+
+                const saveConfig = async () => {
+                    try {
+                        await fetch('/api/config', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ workDir: config.value.workDir })
+                        });
+                        checkLinks();
+                    } catch (e) {
+                        alert('工作目录更新失败: ' + e.message);
+                    }
+                };
+
                 const loadJsonData = async () => {
                     try {
                         const res = await fetch('/api/store');
                         const data = await res.json();
                         rawJson.value = JSON.stringify(data, null, 4);
                     } catch (e) {
-                        appendLog(`加载 JSON 失败: ${e.message}`);
+                        console.error(e);
                     }
                 };
 
@@ -219,29 +302,30 @@
 
                 const checkLinks = async () => {
                     try {
-                        appendLog('正在执行状态检查...');
-                        const res = await fetch('/api/cmd/check', { method: 'POST' });
+                        const res = await fetch('/api/cmd/check', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(filters.value)
+                        });
                         const data = await res.json();
                         checkResults.value = data || [];
-                        loadJsonData(); // Sync JSON view
-                        appendLog(`检查完成，共 ${checkResults.value.length} 个记录。`);
+                        loadJsonData(); 
                     } catch (e) {
-                        appendLog(`检查失败: ${e.message}`);
+                        alert(`检查失败: ${e.message}`);
                     }
                 };
 
                 const createLink = async () => {
                     viewMode.value = 'create';
-                    appendLog(`准备创建 ${form.value.type}...`);
+                    appendLog(`尝试创建 ${form.value.type} [force=${form.value.force}, smart=${form.value.smart}]`);
                     try {
                         const res = await fetch('/api/cmd/create', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(form.value)
                         });
-                        const data = await res.json();
-                        if(data.success) {
-                            appendLog('✅ 创建命令执行成功');
+                        if(res.ok) {
+                            appendLog('✅ 创建成功');
                             form.value.real = '';
                             form.value.fake = '';
                             setTimeout(() => {
@@ -249,44 +333,81 @@
                                 checkLinks();
                             }, 1000);
                         } else {
-                            appendLog(`❌ 创建失败: ${JSON.stringify(data)}`);
+                            appendLog(`❌ 创建失败: ${await res.text()}`);
                         }
                     } catch (e) {
-                        appendLog(`❌ 创建接口请求异常: ${e.message}`);
+                        appendLog(`❌ 接口异常: ${e.message}`);
                     }
                 };
 
-                const fixLinks = async () => {
+                const fixAllLinks = async () => {
                     if(invalidCount.value === 0) {
-                        alert('没有检测到无效链接，无需修复。');
+                        alert('无失效链接，一切正常。');
                         return;
                     }
-                    if(!confirm(`确定要尝试一键修复 ${invalidCount.value} 个无效链接吗？这相当于执行 flk fix --all`)) return;
+                    if(!confirm(`即将修复 ${invalidCount.value} 个无效链接，是否继续？`)) return;
                     
                     try {
-                        appendLog('正在执行自动修复...');
-                        viewMode.value = 'create'; // show logs
-                        const res = await fetch('/api/cmd/fix', { method: 'POST' });
-                        if(res.ok) {
-                            appendLog('✅ 修复命令下发成功，重新检查状态...');
-                            setTimeout(() => {
-                                viewMode.value = 'list';
-                                checkLinks();
-                            }, 1000);
-                        }
+                        viewMode.value = 'create';
+                        appendLog('正在执行全局自动修复...');
+                        await fetch('/api/cmd/fix', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ all: true })
+                        });
+                        appendLog('✅ 修复指令完成');
+                        setTimeout(() => {
+                            viewMode.value = 'list';
+                            checkLinks();
+                        }, 1000);
                     } catch (e) {
                         alert('修复失败: ' + e.message);
                     }
                 };
 
+                const fixSingleLink = async (item) => {
+                    try {
+                        appendLog(`正在尝试修复单独链接: ${item.type}`);
+                        viewMode.value = 'create';
+                        await fetch('/api/cmd/fix', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ all: false, item: item })
+                        });
+                        appendLog('✅ 单项修复指令完成');
+                        setTimeout(() => {
+                            viewMode.value = 'list';
+                            checkLinks();
+                        }, 800);
+                    } catch (e) {
+                        alert('修复失败: ' + e.message);
+                    }
+                };
+
+                const deleteSingleLink = async (item) => {
+                    if(!confirm('确定要从配置清单中移除此记录吗？（不删除物理文件）')) return;
+                    try {
+                        await fetch('/api/cmd/delete', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(item)
+                        });
+                        checkLinks();
+                    } catch (e) {
+                        alert('删除失败: ' + e.message);
+                    }
+                };
+
                 onMounted(() => {
+                    loadConfig();
                     checkLinks();
                 });
 
                 return {
-                    viewMode, rawJson, form, checkResults, logs,
+                    viewMode, rawJson, form, checkResults, logs, config, filters,
                     validCount, invalidCount,
-                    loadJsonData, saveJson, createLink, checkLinks, fixLinks
+                    saveConfig, loadJsonData, saveJson, createLink, 
+                    checkLinks, fixAllLinks, fixSingleLink, deleteSingleLink
                 }
             }
         }).mount('#app');
