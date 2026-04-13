@@ -4,248 +4,647 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>flk 管理面板</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <style>
-        .table-row-hover:hover { background-color: #fdfbf7; }
-        .valid-row { border-left: 4px solid #10b981; } /* Emerald-500 */
-        .invalid-row { border-left: 4px solid #f43f5e; } /* Rose-500 */
+        :root {
+            --mistral-orange: #fa520f;
+            --mistral-flame: #fb6424;
+            --block-orange: #ff8105;
+            --sunshine-900: #ff8a00;
+            --sunshine-700: #ffa110;
+            --sunshine-500: #ffb83e;
+            --sunshine-300: #ffd06a;
+            --block-gold: #ffe295;
+            --bright-yellow: #ffd900;
+            --warm-ivory: #fffaeb;
+            --cream: #fff0c2;
+            --pure-white: #ffffff;
+            --mistral-black: #1f1f1f;
+            --black-tint: #3d3d3d;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html {
+            overflow-y: scroll;
+        }
+
+        body {
+            font-family: Arial, ui-sans-serif, system-ui, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji;
+            background: var(--warm-ivory);
+            color: var(--mistral-black);
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .page-wrapper {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .container { max-width: 1280px; margin: 0 auto; padding: 0 24px; }
+
+        .shadow-golden {
+            box-shadow: 
+                rgba(127, 99, 21, 0.12) -8px 16px 39px,
+                rgba(127, 99, 21, 0.1) -33px 64px 72px,
+                rgba(127, 99, 21, 0.06) -73px 144px 97px;
+        }
+
+        .shadow-golden-sm {
+            box-shadow: rgba(127, 99, 21, 0.08) -4px 8px 20px;
+        }
+
+        input, select, textarea, button { font-family: inherit; }
+        input:focus, select:focus, textarea:focus { outline: 2px solid var(--mistral-orange); outline-offset: -2px; }
+
+        .btn-dark {
+            background: var(--mistral-black);
+            color: var(--pure-white);
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .btn-dark:hover { opacity: 0.9; }
+
+        .btn-cream {
+            background: var(--cream);
+            color: var(--mistral-black);
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .btn-cream:hover { opacity: 0.9; }
+
+        .btn-ghost {
+            background: transparent;
+            color: var(--mistral-black);
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            cursor: pointer;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+        }
+        .btn-ghost:hover { opacity: 1; }
+
+        .btn-icon {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 8px;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+        }
+        .btn-icon:hover { opacity: 1; }
+
+        #app { min-height: 100vh; display: flex; flex-direction: column; }
+
+        header {
+            background: var(--warm-ivory);
+            padding: 24px 0;
+            border-bottom: 1px solid rgba(127, 99, 21, 0.08);
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .logo-section { display: flex; align-items: center; gap: 16px; }
+
+        .logo-block { display: flex; gap: 4px; }
+        .logo-block span { width: 12px; height: 32px; }
+
+        .brand-title { font-size: 30px; font-weight: 400; letter-spacing: -0.5px; }
+        .brand-subtitle { font-size: 12px; color: var(--sunshine-700); letter-spacing: 2px; text-transform: uppercase; margin-top: 2px; }
+
+        .header-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+
+        .workdir-input-wrapper {
+            display: flex;
+            align-items: center;
+            background: var(--pure-white);
+            border: 1px solid hsl(240, 5.9%, 90%);
+            padding: 8px 16px;
+        }
+        .workdir-input-wrapper label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--black-tint);
+            margin-right: 12px;
+            white-space: nowrap;
+        }
+        .workdir-input-wrapper input {
+            border: none;
+            background: transparent;
+            font-size: 14px;
+            color: var(--mistral-black);
+            width: 200px;
+        }
+
+        .version-badge {
+            font-size: 11px;
+            color: var(--black-tint);
+            opacity: 0.6;
+        }
+
+        .main-layout { 
+            display: grid; 
+            grid-template-columns: 320px 1fr; 
+            gap: 48px; 
+            padding: 48px 0; 
+            flex: 1;
+            align-items: start;
+        }
+
+        .main-layout-inner {
+            display: flex;
+            flex-direction: column;
+            min-height: 100%;
+        }
+
+        .sidebar { display: flex; flex-direction: column; gap: 32px; }
+
+        .nav-card { background: var(--pure-white); overflow: hidden; }
+
+        .nav-btn {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            padding: 16px 20px;
+            border: none;
+            background: transparent;
+            font-size: 14px;
+            color: var(--black-tint);
+            cursor: pointer;
+            transition: all 0.15s;
+            text-align: left;
+            border-left: 4px solid transparent;
+        }
+        .nav-btn:hover { background: var(--cream); }
+        .nav-btn.active { background: var(--cream); color: var(--mistral-black); border-left-color: var(--mistral-orange); }
+        .nav-btn svg { width: 20px; height: 20px; }
+
+        .create-form-card { background: var(--pure-white); padding: 32px; }
+        .form-title { font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: var(--black-tint); margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid rgba(127, 99, 21, 0.1); }
+        .form-group { margin-bottom: 20px; }
+        .form-label { display: block; font-size: 12px; font-weight: 400; color: var(--black-tint); margin-bottom: 8px; }
+        .form-select, .form-input { width: 100%; padding: 12px 16px; font-size: 14px; border: 1px solid hsl(240, 5.9%, 90%); background: var(--warm-ivory); color: var(--mistral-black); }
+        .form-select:focus, .form-input:focus { border-color: var(--mistral-orange); }
+        .form-checkbox { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--mistral-black); cursor: pointer; margin-bottom: 8px; }
+        .form-checkbox input { width: 16px; height: 16px; accent-color: var(--mistral-orange); }
+        .form-actions { margin-top: 24px; padding-top: 20px; border-top: 1px solid rgba(127, 99, 21, 0.1); }
+
+        .content-area { display: flex; flex-direction: column; gap: 32px; }
+
+        .filters-bar {
+            display: flex;
+            align-items: flex-end;
+            gap: 16px;
+            flex-wrap: wrap;
+            background: var(--pure-white);
+            padding: 24px;
+        }
+
+        .filter-group { flex: 1; min-width: 150px; }
+        .filter-group.small { flex: 0 0 140px; }
+        .filter-label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--black-tint); margin-bottom: 8px; }
+
+        .batch-actions { display: flex; gap: 12px; }
+
+        .content-card { background: var(--pure-white); overflow: hidden; }
+        .card-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid rgba(127, 99, 21, 0.06); }
+        .card-title { font-size: 24px; font-weight: 400; letter-spacing: -0.3px; }
+        
+        .stats { display: flex; gap: 24px; font-size: 13px; }
+        .stat-item { display: flex; align-items: center; gap: 8px; }
+        .stat-dot { width: 8px; height: 8px; }
+        .stat-dot.valid { background: var(--sunshine-700); }
+        .stat-dot.invalid { background: var(--mistral-orange); }
+
+        .table-wrapper { overflow-x: auto; }
+        .data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        .data-table th { text-align: left; padding: 16px 20px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--black-tint); background: var(--warm-ivory); border-bottom: 1px solid rgba(127, 99, 21, 0.1); font-weight: 400; }
+        .data-table td { padding: 16px 20px; border-bottom: 1px solid rgba(127, 99, 21, 0.06); }
+        .data-table tr:hover { background: var(--cream); }
+        .data-table tr.selected { background: var(--sunshine-300); }
+        .data-table tr.valid { border-left: 4px solid var(--sunshine-700); }
+        .data-table tr.invalid { border-left: 4px solid var(--mistral-orange); }
+
+        .status-badge { display: inline-block; padding: 4px 10px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 400; }
+        .status-badge.valid { background: var(--block-gold); color: var(--mistral-black); }
+        .status-badge.invalid { background: var(--mistral-orange); color: var(--pure-white); }
+
+        .checkbox-cell { width: 40px; }
+        .checkbox-cell input { width: 16px; height: 16px; accent-color: var(--mistral-orange); }
+
+        .path-text { font-family: monospace; font-size: 12px; color: var(--mistral-black); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        .action-btn { padding: 6px 12px; font-size: 12px; border: none; cursor: pointer; margin-left: 8px; transition: opacity 0.2s; }
+        .action-btn:hover { opacity: 0.8; }
+        .action-btn.fix { background: var(--sunshine-300); color: var(--mistral-black); }
+        .action-btn.delete { background: var(--warm-ivory); color: var(--black-tint); }
+        .action-btn.delete:hover { background: var(--mistral-orange); color: var(--pure-white); }
+
+        .empty-state { padding: 64px 20px; text-align: center; color: var(--black-tint); font-size: 14px; }
+
+        .logs-view { display: flex; flex-direction: column; background: var(--pure-white); min-height: 500px; }
+        .logs-header { padding: 24px; border-bottom: 1px solid rgba(127, 99, 21, 0.1); }
+        .logs-title { font-size: 24px; font-weight: 400; letter-spacing: -0.3px; margin-bottom: 8px; }
+        .logs-subtitle { font-size: 14px; color: var(--black-tint); }
+        .logs-content { flex: 1; background: var(--mistral-black); color: var(--sunshine-700); font-family: monospace; font-size: 13px; padding: 24px; overflow-y: auto; }
+        .log-entry { margin-bottom: 8px; }
+        .log-placeholder { color: var(--black-tint); font-style: italic; }
+
+        .json-view { display: flex; flex-direction: column; background: var(--pure-white); min-height: 500px; }
+        .json-header { display: flex; justify-content: space-between; align-items: center; padding: 24px; border-bottom: 1px solid rgba(127, 99, 21, 0.1); }
+        .json-title { font-size: 24px; font-weight: 400; letter-spacing: -0.3px; margin-bottom: 8px; }
+        .json-subtitle { font-size: 12px; color: var(--black-tint); }
+        .json-editor { flex: 1; padding: 24px; border: none; background: var(--warm-ivory); font-family: monospace; font-size: 13px; resize: none; line-height: 1.5; }
+        .json-editor:focus { outline: none; background: var(--cream); }
+
+        .device-select { display: flex; gap: 8px; flex-wrap: wrap; }
+        .device-chip {
+            padding: 6px 14px;
+            font-size: 12px;
+            border: 1px solid hsl(240, 5.9%, 90%);
+            background: var(--warm-ivory);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .device-chip:hover { background: var(--cream); }
+        .device-chip.active { background: var(--mistral-orange); color: var(--pure-white); border-color: var(--mistral-orange); }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255, 250, 235, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--cream);
+            border-top-color: var(--mistral-orange);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        @media (max-width: 768px) {
+            .main-layout { grid-template-columns: 1fr; }
+            .header-content { flex-direction: column; align-items: flex-start; }
+            .header-actions { width: 100%; flex-direction: column; align-items: stretch; }
+            .workdir-input-wrapper { width: 100%; }
+            .workdir-input-wrapper input { width: 100%; }
+            .filters-bar { flex-direction: column; }
+            .filter-group, .filter-group.small { width: 100%; flex: none; }
+            .batch-actions { flex-direction: column; }
+        }
     </style>
 </head>
-<body class="bg-stone-100 text-stone-800 antialiased min-h-screen">
-    <div id="app">
-        <!-- App Bar (Google Material Design Style) -->
-        <header class="bg-orange-600 shadow-md text-white px-6 py-4 flex flex-col md:flex-row justify-between items-center z-10 relative">
-            <div class="flex items-center gap-3">
-                <svg class="w-8 h-8 text-orange-100" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
-                <div>
-                    <h1 class="text-2xl font-bold tracking-wide">flk 控制台</h1>
-                    <p class="text-orange-200 text-xs">文件链接管理与同步</p>
+<body>
+    <div id="app" class="page-wrapper">
+        <div v-if="loading" class="loading-overlay">
+            <div class="loading-spinner"></div>
+        </div>
+
+        <header>
+            <div class="container">
+                <div class="header-content">
+                    <div class="logo-section">
+                        <div class="logo-block">
+                            <span style="background: var(--bright-yellow);"></span>
+                            <span style="background: var(--block-gold);"></span>
+                            <span style="background: var(--sunshine-300);"></span>
+                            <span style="background: var(--sunshine-500);"></span>
+                            <span style="background: var(--sunshine-700);"></span>
+                            <span style="background: var(--block-orange);"></span>
+                            <span style="background: var(--mistral-flame);"></span>
+                            <span style="background: var(--mistral-orange);"></span>
+                        </div>
+                        <div>
+                            <div class="brand-title">flk</div>
+                            <div class="brand-subtitle">文件链接管理</div>
+                        </div>
+                    </div>
+                    <div class="header-actions">
+                        <div class="workdir-input-wrapper">
+                            <label>工作目录</label>
+                            <input v-model="config.workDir" @change="saveConfig" placeholder="设置工作目录">
+                        </div>
+                        <span class="version-badge" v-if="versionInfo.version">v{{ versionInfo.version }}</span>
+                        <button @click="fixAllLinks" class="btn-dark">一键修复</button>
+                    </div>
                 </div>
-            </div>
-            
-            <div class="mt-4 md:mt-0 flex gap-4 text-sm items-center">
-                <!-- Settings Input -->
-                <div class="flex items-center bg-orange-700 rounded-md px-3 py-1.5 border border-orange-500">
-                    <label class="text-orange-200 mr-2 whitespace-nowrap text-xs uppercase tracking-wider font-bold">工作目录</label>
-                    <input v-model="config.workDir" @change="saveConfig" class="bg-transparent text-white border-none focus:ring-0 outline-none w-48 text-sm" placeholder="当前目录">
-                </div>
-                <button @click="fixAllLinks" class="bg-white text-orange-600 hover:bg-orange-50 font-bold px-4 py-2 rounded shadow transition-colors flex items-center gap-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                    一键修复
-                </button>
             </div>
         </header>
 
-        <div class="max-w-7xl mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-4 gap-6">
-            
-            <!-- Sidebar Navigation & Creation -->
-            <div class="lg:col-span-1 space-y-6">
-                <!-- Nav Cards -->
-                <div class="bg-white rounded-lg shadow-sm flex flex-col overflow-hidden text-sm font-medium border border-stone-200">
-                    <button @click="viewMode = 'list'" :class="viewMode === 'list' ? 'bg-orange-50 text-orange-700 border-l-4 border-orange-500' : 'text-stone-600 hover:bg-stone-50 border-l-4 border-transparent'" class="px-5 py-3 text-left transition-colors flex items-center gap-3">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg> 链接检查概览
-                    </button>
-                    <div class="h-px bg-stone-100"></div>
-                    <button @click="viewMode = 'create'" :class="viewMode === 'create' ? 'bg-orange-50 text-orange-700 border-l-4 border-orange-500' : 'text-stone-600 hover:bg-stone-50 border-l-4 border-transparent'" class="px-5 py-3 text-left transition-colors flex items-center gap-3">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg> 创建新链接
-                    </button>
-                    <div class="h-px bg-stone-100"></div>
-                    <button @click="viewMode = 'json'" :class="viewMode === 'json' ? 'bg-orange-50 text-orange-700 border-l-4 border-orange-500' : 'text-stone-600 hover:bg-stone-50 border-l-4 border-transparent'" class="px-5 py-3 text-left transition-colors flex items-center gap-3">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg> Store JSON
-                    </button>
-                </div>
-
-                <!-- Create Form -->
-                <div class="bg-white p-5 rounded-lg shadow-sm border border-stone-200" v-if="viewMode === 'list' || viewMode === 'create'">
-                    <h2 class="text-sm font-bold text-stone-500 uppercase tracking-wider mb-4 border-b pb-2">快速创建</h2>
-                    <form @submit.prevent="createLink" class="space-y-4">
-                        <div>
-                            <label class="block text-xs font-semibold text-stone-600 mb-1">链接类型</label>
-                            <select v-model="form.type" class="block w-full rounded-md border-stone-300 bg-stone-50 border p-2 text-sm focus:ring-orange-500 focus:border-orange-500">
-                                <option value="symlink">符号链接 (symlink)</option>
-                                <option value="hardlink">硬链接 (hardlink)</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-stone-600 mb-1">真实/主要路径 (real/prim)</label>
-                            <input v-model="form.real" type="text" required placeholder="例如: ~/.config/app" class="block w-full rounded-md border-stone-300 bg-stone-50 border p-2 text-sm focus:ring-orange-500 focus:border-orange-500">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-stone-600 mb-1">虚拟/次要路径 (fake/seco)</label>
-                            <input v-model="form.fake" type="text" required placeholder="例如: ~/App/config" class="block w-full rounded-md border-stone-300 bg-stone-50 border p-2 text-sm focus:ring-orange-500 focus:border-orange-500">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-stone-600 mb-1">设备标识 (可选)</label>
-                            <input v-model="form.device" type="text" placeholder="留空则应用到 all" class="block w-full rounded-md border-stone-300 bg-stone-50 border p-2 text-sm focus:ring-orange-500 focus:border-orange-500">
-                        </div>
-                        
-                        <!-- Create Options -->
-                        <div class="flex flex-col gap-2 pt-2 border-t border-stone-100">
-                            <label class="flex items-center text-sm text-stone-600 cursor-pointer">
-                                <input type="checkbox" v-model="form.force" class="rounded text-orange-600 focus:ring-orange-500 mr-2 border-stone-300">
-                                强制覆盖已存在文件 (--force)
-                            </label>
-                            <label v-if="form.type === 'symlink'" class="flex items-center text-sm text-stone-600 cursor-pointer">
-                                <input type="checkbox" v-model="form.smart" class="rounded text-orange-600 focus:ring-orange-500 mr-2 border-stone-300">
-                                智能复制模式 (--smart)
-                            </label>
-                        </div>
-
-                        <button type="submit" class="w-full bg-stone-800 hover:bg-stone-900 text-white font-medium px-4 py-2.5 rounded-md shadow-sm transition-colors text-sm flex justify-center items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
-                            立即创建
+        <div class="container">
+            <div class="main-layout">
+                <div class="sidebar">
+                    <div class="nav-card shadow-golden-sm">
+                        <button @click="setViewMode('list')" :class="['nav-btn', { active: viewMode === 'list' }]">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg>
+                            链接检查
                         </button>
-                    </form>
-                </div>
-            </div>
-
-            <!-- Main Content Area -->
-            <div class="lg:col-span-3">
-                
-                <!-- Check Results View -->
-                <div v-if="viewMode === 'list'" class="space-y-4">
-                    
-                    <!-- Filters Bar -->
-                    <div class="bg-white p-4 rounded-lg shadow-sm border border-stone-200 flex flex-wrap gap-4 items-end">
-                        <div class="flex-1 min-w-[150px]">
-                            <label class="block text-xs font-semibold text-stone-500 mb-1 uppercase">设备筛选 (--device)</label>
-                            <input v-model="filters.device" type="text" placeholder="多设备用逗号分隔" class="block w-full rounded-md border-stone-300 bg-stone-50 border px-3 py-1.5 text-sm focus:ring-orange-500 focus:border-orange-500">
-                        </div>
-                        <div class="w-32">
-                            <label class="block text-xs font-semibold text-stone-500 mb-1 uppercase">链接类型</label>
-                            <select v-model="filters.type" class="block w-full rounded-md border-stone-300 bg-stone-50 border px-3 py-1.5 text-sm focus:ring-orange-500 focus:border-orange-500">
-                                <option value="all">全查</option>
-                                <option value="symlink">仅 Symlink</option>
-                                <option value="hardlink">仅 Hardlink</option>
-                            </select>
-                        </div>
-                        <div class="flex-1 min-w-[150px]">
-                            <label class="block text-xs font-semibold text-stone-500 mb-1 uppercase">包含路径 (--dir)</label>
-                            <input v-model="filters.dir" type="text" placeholder="过滤特定路径" class="block w-full rounded-md border-stone-300 bg-stone-50 border px-3 py-1.5 text-sm focus:ring-orange-500 focus:border-orange-500">
-                        </div>
-                        <button @click="checkLinks" class="bg-orange-100 text-orange-700 hover:bg-orange-200 font-medium px-4 py-1.5 border border-orange-200 rounded-md transition-colors text-sm">
-                            筛选 / 刷新
+                        <button @click="setViewMode('create')" :class="['nav-btn', { active: viewMode === 'create' }]">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                            创建新链接
+                        </button>
+                        <button @click="setViewMode('json')" :class="['nav-btn', { active: viewMode === 'json' }]">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+                            Store JSON
                         </button>
                     </div>
 
-                    <!-- Table -->
-                    <div class="bg-white rounded-lg shadow-sm border border-stone-200 overflow-hidden">
-                        <div class="px-5 py-4 border-b border-stone-100 flex justify-between items-center bg-stone-50/50">
-                            <h2 class="text-base font-bold text-stone-800">检查结果</h2>
-                            <div class="text-xs font-semibold flex gap-4">
-                                <span class="flex items-center gap-1 text-emerald-600"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> 正常 ({{ validCount }})</span>
-                                <span class="flex items-center gap-1 text-rose-600"><span class="w-2 h-2 rounded-full bg-rose-500"></span> 失效 ({{ invalidCount }})</span>
+                    <div class="create-form-card shadow-golden-sm" v-if="viewMode === 'list' || viewMode === 'create'">
+                        <h2 class="form-title">快速创建</h2>
+                        <form @submit.prevent="createLink">
+                            <div class="form-group">
+                                <label class="form-label">链接类型</label>
+                                <select v-model="form.type" class="form-select">
+                                    <option value="symlink">符号链接 (symlink)</option>
+                                    <option value="hardlink">硬链接 (hardlink)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">真实/主要路径 (real/prim)</label>
+                                <input v-model="form.real" type="text" required placeholder="例如: ~/.config/app" class="form-input">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">虚拟/次要路径 (fake/seco)</label>
+                                <input v-model="form.fake" type="text" required placeholder="例如: ~/App/config" class="form-input">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">设备标识 (可选)</label>
+                                <input v-model="form.device" type="text" placeholder="留空则应用到 all" class="form-input">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-checkbox">
+                                    <input type="checkbox" v-model="form.force">
+                                    强制覆盖已存在文件 (--force)
+                                </label>
+                                <label v-if="form.type === 'symlink'" class="form-checkbox">
+                                    <input type="checkbox" v-model="form.smart">
+                                    智能复制模式 (--smart)
+                                </label>
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" class="btn-dark" style="width: 100%;">立即创建</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="content-area">
+                    <div v-if="viewMode === 'list'">
+                        <div class="filters-bar shadow-golden-sm">
+                            <div class="filter-group">
+                                <label class="filter-label">设备筛选</label>
+                                <div class="device-select">
+                                    <span 
+                                        v-for="device in availableDevices" 
+                                        :key="device"
+                                        :class="['device-chip', { active: filters.device.includes(device) }]"
+                                        @click="toggleDeviceFilter(device)"
+                                    >{{ device }}</span>
+                                </div>
+                            </div>
+                            <div class="filter-group small">
+                                <label class="filter-label">链接类型</label>
+                                <select v-model="filters.type" class="form-select">
+                                    <option value="all">全查</option>
+                                    <option value="symlink">仅 Symlink</option>
+                                    <option value="hardlink">仅 Hardlink</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label class="filter-label">包含路径</label>
+                                <input v-model="filters.dir" type="text" placeholder="过滤特定路径" class="form-input">
+                            </div>
+                            <button @click="checkLinks" class="btn-cream">筛选 / 刷新</button>
+                        </div>
+
+                        <div class="content-card shadow-golden">
+                            <div class="card-header">
+                                <h2 class="card-title">检查结果</h2>
+                                <div class="stats">
+                                    <span class="stat-item">
+                                        <span class="stat-dot valid"></span>
+                                        正常 ({{ validCount }})
+                                    </span>
+                                    <span class="stat-item">
+                                        <span class="stat-dot invalid"></span>
+                                        失效 ({{ invalidCount }})
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="table-wrapper">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th class="checkbox-cell">
+                                                <input type="checkbox" 
+                                                    :checked="allSelected"
+                                                    @change="toggleSelectAll">
+                                            </th>
+                                            <th>状态</th>
+                                            <th>设备</th>
+                                            <th>类型</th>
+                                            <th>主要路径</th>
+                                            <th>次要路径</th>
+                                            <th style="text-align: right;">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-if="checkResults.length === 0">
+                                            <td colspan="7" class="empty-state">
+                                                暂无符合条件的数据。
+                                            </td>
+                                        </tr>
+                                        <tr v-for="(res, index) in checkResults" :key="index" 
+                                            :class="[res.valid ? 'valid' : 'invalid', { selected: selectedItems.includes(res) }]">
+                                            <td class="checkbox-cell">
+                                                <input type="checkbox" 
+                                                    :checked="selectedItems.includes(res)"
+                                                    @change="toggleSelect(res)">
+                                            </td>
+                                            <td>
+                                                <span :class="['status-badge', res.valid ? 'valid' : 'invalid']">
+                                                    {{ res.valid ? 'OK' : 'ERR' }}
+                                                </span>
+                                            </td>
+                                            <td class="path-text">{{ res.device }}</td>
+                                            <td>{{ res.type }}</td>
+                                            <td class="path-text" :title="res.type==='symlink'?res.real:res.prim">
+                                                {{ res.type==='symlink' ? res.real : res.prim }}
+                                            </td>
+                                            <td class="path-text" :title="res.type==='symlink'?res.fake:res.seco">
+                                                {{ res.type==='symlink' ? res.fake : res.seco }}
+                                            </td>
+                                            <td style="text-align: right;">
+                                                <button v-if="!res.valid" @click="fixSingleLink(res)" class="action-btn fix">修复</button>
+                                                <button @click="deleteSingleLink(res)" class="action-btn delete">删除</button>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div v-if="selectedItems.length > 0" class="card-header" style="border-top: 1px solid rgba(127,99,21,0.1); border-bottom: none;">
+                                <div class="batch-actions">
+                                    <button @click="deleteSelected" class="btn-dark">删除选中 ({{ selectedItems.length }})</button>
+                                    <button @click="fixSelected" class="btn-cream">修复选中 ({{ selectedItems.length }})</button>
+                                </div>
                             </div>
                         </div>
-                        
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left border-collapse whitespace-nowrap">
-                                <thead>
-                                    <tr class="bg-stone-50 text-stone-500 text-xs uppercase tracking-wider border-b border-stone-200">
-                                        <th class="p-4 font-semibold">状态</th>
-                                        <th class="p-4 font-semibold">设备</th>
-                                        <th class="p-4 font-semibold">类型</th>
-                                        <th class="p-4 font-semibold w-1/4">主要路径</th>
-                                        <th class="p-4 font-semibold w-1/4">次要路径</th>
-                                        <th class="p-4 font-semibold text-right">操作</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="text-sm divide-y divide-stone-100">
-                                    <tr v-if="checkResults.length === 0" class="bg-white">
-                                        <td colspan="6" class="p-16 text-center text-stone-400">
-                                            暂无符合条件的数据。
-                                        </td>
-                                    </tr>
-                                    <tr v-for="(res, index) in checkResults" :key="index" 
-                                        class="bg-white transition-colors table-row-hover"
-                                        :class="res.valid ? 'valid-row' : 'invalid-row'">
-                                        <td class="p-4">
-                                            <span v-if="res.valid" class="inline-flex px-2 py-0.5 rounded text-xs font-bold bg-emerald-100 text-emerald-700">OK</span>
-                                            <span v-else class="inline-flex px-2 py-0.5 rounded text-xs font-bold bg-rose-100 text-rose-700" :title="res.error">ERR</span>
-                                        </td>
-                                        <td class="p-4 font-mono text-xs text-stone-600">{{ res.device }}</td>
-                                        <td class="p-4 text-xs font-medium text-stone-500">{{ res.type }}</td>
-                                        <td class="p-4 font-mono text-xs text-stone-700 truncate max-w-[180px]" :title="res.type==='symlink'?res.real:res.prim">
-                                            {{ res.type==='symlink' ? res.real : res.prim }}
-                                        </td>
-                                        <td class="p-4 font-mono text-xs text-stone-700 truncate max-w-[180px]" :title="res.type==='symlink'?res.fake:res.seco">
-                                            {{ res.type==='symlink' ? res.fake : res.seco }}
-                                        </td>
-                                        <td class="p-4 text-right space-x-2">
-                                            <button v-if="!res.valid" @click="fixSingleLink(res)" class="text-xs px-2.5 py-1 rounded bg-orange-100 text-orange-700 hover:bg-orange-200 transition-colors font-medium">修复</button>
-                                            <button @click="deleteSingleLink(res)" class="text-xs px-2.5 py-1 rounded bg-stone-100 text-stone-600 hover:bg-rose-100 hover:text-rose-700 transition-colors font-medium">删除</button>
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
+                    </div>
+
+                    <div v-if="viewMode === 'create'" class="logs-view shadow-golden">
+                        <div class="logs-header">
+                            <h2 class="logs-title">操作日志</h2>
+                            <p class="logs-subtitle">记录命令执行的实时输出情况。</p>
+                        </div>
+                        <div class="logs-content">
+                            <div v-for="(log, i) in logs" :key="i" class="log-entry">{{ log }}</div>
+                            <div v-if="logs.length === 0" class="log-placeholder">...等待下发指令...</div>
                         </div>
                     </div>
-                </div>
 
-                <!-- Create Logs View -->
-                <div v-if="viewMode === 'create'" class="bg-white p-6 rounded-lg shadow-sm border border-stone-200 h-full flex flex-col">
-                    <h2 class="text-xl font-bold mb-1 text-stone-800">操作日志</h2>
-                    <p class="text-stone-500 mb-4 text-sm">记录命令执行的实时输出情况。</p>
-                    <div class="flex-grow bg-stone-900 rounded-md p-4 font-mono text-xs text-emerald-400 overflow-auto min-h-[400px] shadow-inner">
-                        <div v-for="(log, i) in logs" :key="i" class="mb-1.5">{{ log }}</div>
-                        <div v-if="logs.length === 0" class="text-stone-500 italic">...等待下发指令...</div>
-                    </div>
-                </div>
-
-                <!-- JSON Editor View -->
-                <div v-if="viewMode === 'json'" class="bg-white p-6 rounded-lg shadow-sm border border-stone-200 h-full flex flex-col">
-                    <div class="flex justify-between items-center mb-4">
-                        <div>
-                            <h2 class="text-xl font-bold text-stone-800">底层存储直接编辑</h2>
-                            <p class="text-xs text-stone-500 mt-1">请谨慎修改结构，格式错误将无法保存。</p>
+                    <div v-if="viewMode === 'json'" class="json-view shadow-golden">
+                        <div class="json-header">
+                            <div>
+                                <h2 class="json-title">底层存储直接编辑</h2>
+                                <p class="json-subtitle">请谨慎修改结构，格式错误将无法保存。</p>
+                            </div>
+                            <button @click="saveJson" class="btn-dark">保存 JSON</button>
                         </div>
-                        <button @click="saveJson" class="bg-orange-600 hover:bg-orange-700 text-white font-medium px-5 py-2 rounded-md text-sm shadow transition-colors">
-                            保存 JSON
-                        </button>
+                        <textarea v-model="rawJson" class="json-editor" spellcheck="false"></textarea>
                     </div>
-                    <textarea v-model="rawJson" class="flex-grow w-full font-mono text-sm p-4 border border-stone-300 rounded-md bg-stone-50 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white transition-colors" spellcheck="false" style="min-height: 500px;"></textarea>
                 </div>
-
             </div>
         </div>
     </div>
 
     <script>
-        const { createApp, ref, onMounted, computed } = Vue;
+        const { createApp, ref, onMounted, computed, onUnmounted } = Vue;
 
         createApp({
             setup() {
-                const viewMode = ref('list'); // list, create, json
+                const loading = ref(true);
+                const viewMode = ref('list');
                 const rawJson = ref('');
                 const checkResults = ref([]);
                 const logs = ref([]);
+                const selectedItems = ref([]);
+                const availableDevices = ref(['all']);
+                const versionInfo = ref({});
                 
-                const config = ref({
-                    workDir: ''
-                });
-
-                const filters = ref({
-                    device: '',
-                    type: 'all',
-                    dir: ''
-                });
-                
-                const form = ref({
-                    type: 'symlink',
-                    real: '',
-                    fake: '',
-                    device: '',
-                    force: false,
-                    smart: false
-                });
+                const config = ref({ workDir: '' });
+                const filters = ref({ device: '', type: 'all', dir: '' });
+                const form = ref({ type: 'symlink', real: '', fake: '', device: '', force: false, smart: false });
 
                 const validCount = computed(() => checkResults.value.filter(r => r.valid).length);
                 const invalidCount = computed(() => checkResults.value.filter(r => !r.valid).length);
+                const allSelected = computed(() => 
+                    checkResults.value.length > 0 && 
+                    selectedItems.value.length === checkResults.value.length
+                );
 
-                const appendLog = (msg) => {
-                    const time = new Date().toLocaleTimeString();
-                    logs.value.push(`[${time}] ${msg}`);
+                const setViewMode = (mode) => {
+                    window.scrollTo({ top: 0, behavior: 'auto' });
+                    viewMode.value = mode;
+                };
+
+                let eventSource = null;
+
+                const toggleDeviceFilter = (device) => {
+                    const current = filters.value.device ? filters.value.device.split(',').filter(d => d) : [];
+                    if (device === 'all') {
+                        filters.value.device = 'all';
+                    } else {
+                        const idx = current.indexOf(device);
+                        if (idx > -1) {
+                            current.splice(idx, 1);
+                        } else {
+                            current.push(device);
+                        }
+                        const allIdx = current.indexOf('all');
+                        if (allIdx > -1) current.splice(allIdx, 1);
+                        filters.value.device = current.join(',') || 'all';
+                    }
+                };
+
+                const toggleSelect = (item) => {
+                    const idx = selectedItems.value.indexOf(item);
+                    if (idx > -1) {
+                        selectedItems.value.splice(idx, 1);
+                    } else {
+                        selectedItems.value.push(item);
+                    }
+                };
+
+                const toggleSelectAll = () => {
+                    if (allSelected.value) {
+                        selectedItems.value = [];
+                    } else {
+                        selectedItems.value = [...checkResults.value];
+                    }
+                };
+
+                const deleteSelected = async () => {
+                    if (!confirm(`确定删除选中的 ${selectedItems.value.length} 项？`)) return;
+                    try {
+                        const res = await fetch('/api/cmd/delete/batch', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ items: selectedItems.value })
+                        });
+                        if (res.ok) {
+                            appendLog(`批量删除完成`);
+                            selectedItems.value = [];
+                            checkLinks();
+                        }
+                    } catch (e) {
+                        alert('删除失败: ' + e.message);
+                    }
+                };
+
+                const fixSelected = async () => {
+                    const toFix = selectedItems.value.filter(r => !r.valid);
+                    if (toFix.length === 0) {
+                        alert('选中项无需修复');
+                        return;
+                    }
+                    if (!confirm(`确定修复选中的 ${toFix.length} 项？`)) return;
+                    try {
+                        for (const item of toFix) {
+                            await fetch('/api/cmd/fix', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ all: false, item: item })
+                            });
+                        }
+                        appendLog(`批量修复完成`);
+                        selectedItems.value = [];
+                        checkLinks();
+                    } catch (e) {
+                        alert('修复失败: ' + e.message);
+                    }
                 };
 
                 const loadConfig = async () => {
@@ -300,6 +699,25 @@
                     }
                 };
 
+                const loadDevices = async () => {
+                    try {
+                        const res = await fetch('/api/devices');
+                        const data = await res.json();
+                        availableDevices.value = ['all', ...data];
+                    } catch (e) {
+                        console.error(e);
+                    }
+                };
+
+                const loadVersion = async () => {
+                    try {
+                        const res = await fetch('/api/version');
+                        versionInfo.value = await res.json();
+                    } catch (e) {
+                        console.error(e);
+                    }
+                };
+
                 const checkLinks = async () => {
                     try {
                         const res = await fetch('/api/cmd/check', {
@@ -309,7 +727,7 @@
                         });
                         const data = await res.json();
                         checkResults.value = data || [];
-                        loadJsonData(); 
+                        loadJsonData();
                     } catch (e) {
                         alert(`检查失败: ${e.message}`);
                     }
@@ -324,7 +742,7 @@
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(form.value)
                         });
-                        if(res.ok) {
+                        if (res.ok) {
                             appendLog('创建成功');
                             form.value.real = '';
                             form.value.fake = '';
@@ -341,12 +759,11 @@
                 };
 
                 const fixAllLinks = async () => {
-                    if(invalidCount.value === 0) {
+                    if (invalidCount.value === 0) {
                         alert('无失效链接，一切正常。');
                         return;
                     }
-                    if(!confirm(`即将修复 ${invalidCount.value} 个无效链接，是否继续？`)) return;
-                    
+                    if (!confirm(`即将修复 ${invalidCount.value} 个无效链接，是否继续？`)) return;
                     try {
                         viewMode.value = 'create';
                         appendLog('正在执行全局自动修复...');
@@ -385,7 +802,7 @@
                 };
 
                 const deleteSingleLink = async (item) => {
-                    if(!confirm('确定要从配置清单中移除此记录吗？（不删除物理文件）')) return;
+                    if (!confirm('确定要从配置清单中移除此记录吗？（不删除物理文件）')) return;
                     try {
                         await fetch('/api/cmd/delete', {
                             method: 'POST',
@@ -398,14 +815,44 @@
                     }
                 };
 
-                onMounted(() => {
-                    loadConfig();
+                const appendLog = (msg) => {
+                    const time = new Date().toLocaleTimeString();
+                    logs.value.push(`[${time}] ${msg}`);
+                };
+
+                const connectSSE = () => {
+                    eventSource = new EventSource('/api/events');
+                    eventSource.onmessage = (e) => {
+                        try {
+                            const data = JSON.parse(e.data);
+                            if (data.type === 'refresh') {
+                                checkLinks();
+                            }
+                        } catch (err) {}
+                    };
+                    eventSource.onerror = () => {
+                        setTimeout(connectSSE, 5000);
+                    };
+                };
+
+                onMounted(async () => {
+                    await Promise.all([loadConfig(), loadDevices(), loadVersion()]);
                     checkLinks();
+                    loading.value = false;
+                    connectSSE();
+                });
+
+                onUnmounted(() => {
+                    if (eventSource) {
+                        eventSource.close();
+                    }
                 });
 
                 return {
-                    viewMode, rawJson, form, checkResults, logs, config, filters,
-                    validCount, invalidCount,
+                    loading, viewMode, rawJson, form, checkResults, logs, config, filters,
+                    validCount, invalidCount, allSelected, selectedItems, availableDevices,
+                    versionInfo, setViewMode, toggleDeviceFilter, toggleSelect, toggleSelectAll,
+                    deleteSelected, fixSelected,
                     saveConfig, loadJsonData, saveJson, createLink, 
                     checkLinks, fixAllLinks, fixSingleLink, deleteSingleLink
                 }

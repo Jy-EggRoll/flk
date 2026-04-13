@@ -62,7 +62,7 @@ var rootCmd = &cobra.Command{
 func Execute() {
 	if len(os.Args) == 1 {
 		isDirectRun = true
-		os.Args = append(os.Args, "serve")
+		os.Args = append(os.Args, "server")
 	}
 	err := rootCmd.Execute()
 	if err != nil {
