@@ -29,7 +29,7 @@ weight:
 
 ## 演示
 
-![演示](image/fix-演示图.png)
+![演示](https://raw.githubusercontent.com/Jy-EggRoll/flk/refs/heads/main/image/fix-演示图.png)
 
 ## 项目概述
 
