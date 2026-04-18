@@ -3,8 +3,13 @@ name: Package Development Release
 on:
     push:
         tags:
-            - "[0-9]+.[0-9]+.[0-9]+.dev.[0-9]+" # 匹配 x.y.z.dev.n 格式的开发版本标签
-    workflow_dispatch: # 支持手动运行
+            - "[0-9]+.[0-9]+.[0-9]+.dev.[0-9]+"
+    workflow_dispatch:
+        inputs:
+            version:
+                description: 'Custom version string (e.g., v0.1.3.dev.123)'
+                required: false
+                default: ''
 
 permissions:
     contents: write
@@ -27,12 +32,13 @@ jobs:
             - name: Get version info
               id: get_version
               run: |
-                  if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-                    # 手动运行时，使用当前日期作为版本标识
+                  if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.inputs.version }}" ]; then
+                    VERSION="${{ github.inputs.version }}"
+                    echo "Custom version: $VERSION"
+                  elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
                     VERSION="dev-$(date +%Y%m%d-%H%M%S)"
                     echo "Manual run - using timestamp version: $VERSION"
                   else
-                    # Tag 触发时，从 tag 获取版本
                     VERSION=${GITHUB_REF#refs/tags/}
                     echo "Tag triggered - using tag version: $VERSION"
                   fi
@@ -46,7 +52,6 @@ jobs:
 
             - name: Build binaries for common platforms
               run: |
-                  # 创建输出目录
                   mkdir -p build
 
                   VERSION="${{ steps.get_version.outputs.version }}"
@@ -58,7 +63,6 @@ jobs:
                   echo "========================================"
                   echo ""
 
-                  # Windows (常用架构)
                   echo "[1/11] 编译 Windows x86 (386)..."
                   GOOS=windows GOARCH=386 go build -ldflags="$LDFLAGS" -o build/flk-windows-386.exe
                   echo "完成"
@@ -71,7 +75,6 @@ jobs:
                   GOOS=windows GOARCH=arm64 go build -ldflags="$LDFLAGS" -o build/flk-windows-arm64.exe
                   echo "完成"
 
-                  # Linux (常用架构)
                   echo ""
                   echo "[4/11] 编译 Linux x86 (386)..."
                   GOOS=linux GOARCH=386 go build -ldflags="$LDFLAGS" -o build/flk-linux-386
@@ -89,7 +92,6 @@ jobs:
                   GOOS=linux GOARCH=arm64 go build -ldflags="$LDFLAGS" -o build/flk-linux-arm64
                   echo "完成"
 
-                  # macOS (Darwin) (常用架构)
                   echo ""
                   echo "[8/11] 编译 macOS x64 (amd64)..."
                   GOOS=darwin GOARCH=amd64 go build -ldflags="$LDFLAGS" -o build/flk-darwin-amd64
@@ -99,7 +101,6 @@ jobs:
                   GOOS=darwin GOARCH=arm64 go build -ldflags="$LDFLAGS" -o build/flk-darwin-arm64
                   echo "完成"
 
-                  # FreeBSD (常用架构)
                   echo ""
                   echo "[10/11] 编译 FreeBSD x64 (amd64)..."
                   GOOS=freebsd GOARCH=amd64 go build -ldflags="$LDFLAGS" -o build/flk-freebsd-amd64
@@ -109,7 +110,6 @@ jobs:
                   GOOS=freebsd GOARCH=arm64 go build -ldflags="$LDFLAGS" -o build/flk-freebsd-arm64
                   echo "完成"
 
-                  # 显示编译结果
                   echo ""
                   echo "========================================"
                   echo "编译完成！统计信息："
@@ -117,8 +117,32 @@ jobs:
                   echo "总文件数: $(ls -1 build/ | wc -l)"
                   echo "总大小: $(du -sh build/ | cut -f1)"
 
-            - name: Create development release (for tag runs only)
-              if: github.event_name != 'workflow_dispatch'
+            - name: Find previous version tag
+              id: previous_tag
+              run: |
+                  CURRENT_TAG="${{ steps.get_version.outputs.version }}"
+
+                  PREVIOUS_TAG=$(git tag -l --sort=-version:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
+
+                  if [ -n "$PREVIOUS_TAG" ]; then
+                    echo "Found previous tag: $PREVIOUS_TAG"
+                    echo "previous_tag=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
+                  else
+                    echo "No previous tag found"
+                    echo "previous_tag=" >> $GITHUB_OUTPUT
+                  fi
+
+            - name: Generate release notes
+              id: release_notes
+              uses: Jy-EggRoll/changelog-to-release@main
+              with:
+                  version: ${{ steps.get_version.outputs.version }}
+                  previous_tag: ${{ steps.previous_tag.outputs.previous_tag }}
+                  repo: ${{ github.repository }}
+                  binary_name: flk
+
+            - name: Create development release (tag or manual with custom version)
+              if: github.event_name != 'workflow_dispatch' || github.inputs.version != ''
               uses: softprops/action-gh-release@v2
               with:
                   tag_name: ${{ steps.get_version.outputs.version }}
@@ -128,18 +152,7 @@ jobs:
 
                       这是一个开发版本，仅供测试使用。请谨慎使用，可能包含不稳定或实验性功能。
 
-                      ## 📥 快速下载
-
-                      | 架构 | Windows | Linux | macOS | FreeBSD |
-                      |------|---------|-------|-------|---------|
-                      | **x86 (32位)** | [x86](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-windows-386.exe) | [x86](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-linux-386) | 不支持 | 不支持 |
-                      | **x64 (64位)** | [x64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-windows-amd64.exe) | [x64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-linux-amd64) | [x64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-darwin-amd64) | [x64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-freebsd-amd64) |
-                      | **ARM64** | [ARM64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-windows-arm64.exe) | [ARM64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-linux-arm64) | [ARM64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-darwin-arm64) | [ARM64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-freebsd-arm64) |
-                      | **ARM (armv7)** | 不支持 | [ARM](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-linux-arm) | 不支持 | 不支持 |
-
-                      > 💡 **提示**：Windows 用户下载 `.exe` 文件，其他系统下载后需要添加执行权限 `chmod +x flk-*`
-
-                      ---
+                      ${{ steps.release_notes.outputs.content }}
 
                       ## 版本信息
 
@@ -151,10 +164,6 @@ jobs:
 
                       ⚠️ 仅通过 GitHub Release 提供下载
                       ⚠️ 可能包含未经充分测试的功能
-
-                      ---
-
-                      📦 **安装方式：** 下载对应平台的二进制文件，赋予执行权限后直接运行。
                   files: |
                       build/*
                   draft: false
