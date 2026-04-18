@@ -130,79 +130,19 @@ jobs:
 
             - name: Generate release notes
               id: release_notes
-              run: |
-                  CURRENT_TAG="${{ steps.get_version.outputs.version }}"
-                  PREVIOUS_TAG="${{ steps.previous_tag.outputs.previous_tag }}"
-
-                  # 快速下载表格
-                  echo "## 📥 快速下载" >> release_notes.md
-                  echo "" >> release_notes.md
-                  echo "| 架构 | Windows | Linux | macOS | FreeBSD |" >> release_notes.md
-                  echo "|------|---------|-------|-------|---------|" >> release_notes.md
-                  echo "| **x86 (32位)** | [x86](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-windows-386.exe) | [x86](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-linux-386) | 不支持 | 不支持 |" >> release_notes.md
-                  echo "| **x64 (64位)** | [x64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-windows-amd64.exe) | [x64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-linux-amd64) | [x64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-darwin-amd64) | [x64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-freebsd-amd64) |" >> release_notes.md
-                  echo "| **ARM64** | [ARM64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-windows-arm64.exe) | [ARM64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-linux-arm64) | [ARM64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-darwin-arm64) | [ARM64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-freebsd-arm64) |" >> release_notes.md
-                  echo "| **ARM (armv7)** | 不支持 | [ARM](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-linux-arm) | 不支持 | 不支持 |" >> release_notes.md
-                  echo "" >> release_notes.md
-                  echo "> 💡 **提示**：Windows 用户下载 \`.exe\` 文件，其他系统下载后需要添加执行权限 \`chmod +x flk-*\`" >> release_notes.md
-                  echo "" >> release_notes.md
-                  echo "---" >> release_notes.md
-                  echo "" >> release_notes.md
-
-                  # 检查是否有 CHANGELOG.md 文件并提取相关版本信息
-                  if [ -f "CHANGELOG.md" ]; then
-                    echo "## 更新内容" >> release_notes.md
-                    
-                    # 尝试从 CHANGELOG 中提取当前版本的更新内容
-                    awk -v version="$CURRENT_TAG" '
-                      /^##/ { 
-                        if (found) exit
-                        if ($0 ~ version) found=1
-                        next
-                      }
-                      found && /^##/ { exit }
-                      found { print }
-                    ' CHANGELOG.md >> release_notes.md
-                  fi
-
-                  echo "## 提交记录" >> release_notes.md
-                  echo "" >> release_notes.md
-
-                  # 生成提交记录（保留开发版本相关的提交）
-                  if [ -z "$PREVIOUS_TAG" ]; then
-                    echo "生成从初始提交到 $CURRENT_TAG 的提交记录"
-                    git log --pretty=format:"- %s (%h)" --no-merges >> release_notes.md
-                  else
-                    echo "生成从 $PREVIOUS_TAG 到 $CURRENT_TAG 的提交记录"
-                    git log "$PREVIOUS_TAG..$CURRENT_TAG" --pretty=format:"- %s (%h)" --no-merges >> release_notes.md
-                  fi
-
-                  # 如果没有提交记录，添加默认信息
-                  if [ ! -s release_notes.md ] || [ $(wc -l < release_notes.md) -le 5 ]; then
-                    echo "- 版本发布" >> release_notes.md
-                  fi
-
-                  echo "" >> release_notes.md
-                  echo "" >> release_notes.md
-                  echo "---" >> release_notes.md
-                  echo "" >> release_notes.md
-                  echo "📦 **安装说明：**" >> release_notes.md
-                  echo "" >> release_notes.md
-                  echo "1. 从上方表格中选择并下载对应平台和架构的二进制文件" >> release_notes.md
-                  echo "2. Linux/macOS/BSD 用户需要赋予执行权限：\`chmod +x flk-*\`（建议直接将文件改名为 flk 方便调用和后续的升级）" >> release_notes.md
-                  echo "3. 运行程序（建议直接将文件改名为 flk 方便调用）\`flk help\`" >> release_notes.md
-                  echo "" >> release_notes.md
-                  echo "详细使用说明请参考 [README.md](https://github.com/Jy-EggRoll/flk/blob/main/README.md)" >> release_notes.md
-
-                  echo "生成的发布说明："
-                  cat release_notes.md
+              uses: Jy-EggRoll/changelog-to-release@main
+              with:
+                  version: ${{ steps.get_version.outputs.version }}
+                  previous_tag: ${{ steps.previous_tag.outputs.previous_tag }}
+                  repo: ${{ github.repository }}
+                  binary_name: flk
 
             - name: Create GitHub Release
               uses: softprops/action-gh-release@v2
               with:
                   tag_name: ${{ steps.get_version.outputs.version }}
                   name: "flk v${{ steps.get_version.outputs.version }}"
-                  body_path: release_notes.md
+                  body: ${{ steps.release_notes.outputs.content }}
                   files: |
                       build/*
                   draft: false
