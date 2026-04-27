@@ -15,7 +15,7 @@ weight:
 
 ## 项目图标
 
-![图标](https://raw.githubusercontent.com/Jy-EggRoll/flk/refs/heads/main/image/flk.png)
+<img src="https://raw.githubusercontent.com/Jy-EggRoll/flk/refs/heads/main/image/flk.png" width="128" alt="flk logo">
 
 ## 介绍
 
