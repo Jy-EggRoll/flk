@@ -13,6 +13,12 @@ tags:
 weight: 
 ---
 
+## 项目图标
+
+![图标](https://raw.githubusercontent.com/Jy-EggRoll/flk/refs/heads/main/image/flk.png)
+
+## 介绍
+
 本项目接入了 DeepWiki，欢迎在 DeepWiki 上与之对话，以获取最精准的信息和解答：[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Jy-EggRoll/flk)
 
 ## 开发路线
