@@ -43,7 +43,7 @@ type CheckResult = output.CheckResult
 // RunCheck 执行链接检查并输出结果
 func RunCheck(cmd *cobra.Command, args []string) {
 	deviceFilters := parseDeviceFilters(checkDevice)
-	results, err := performCheck(CheckOptions{
+	results, err := PerformCheck(CheckOptions{
 		DeviceFilters: deviceFilters,
 		CheckSymlink:  checkSymlink,
 		CheckHardlink: checkHardlink,
@@ -71,7 +71,7 @@ type CheckOptions struct {
 	CheckDir      string
 }
 
-func performCheck(options CheckOptions) ([]output.CheckResult, error) {
+func PerformCheck(options CheckOptions) ([]output.CheckResult, error) {
 	platform := runtime.GOOS
 	var results []CheckResult
 

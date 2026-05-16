@@ -45,7 +45,7 @@ var (
 func RunFix(cmd *cobra.Command, args []string) {
 	checkAndDisplay := func() []output.CheckResult {
 		deviceFilters := parseDeviceFilters(fixDevice)
-		results, err := performCheck(CheckOptions{
+		results, err := PerformCheck(CheckOptions{
 			DeviceFilters: deviceFilters,
 			CheckSymlink:  fixSymlink,
 			CheckHardlink: fixHardlink,
@@ -86,7 +86,7 @@ func RunFix(cmd *cobra.Command, args []string) {
 	if fixAll {
 		pterm.Info.Println("自动修复所有无效链接...")
 		for idx, result := range invalidResults {
-			if err := repairResult(result, idx); err != nil {
+			if err := RepairResult(result, idx); err != nil {
 				pterm.Error.Printf("修复失败 #%d %v\n", idx+1, err)
 			} else {
 				pterm.Success.Printf("修复成功 #%d\n", idx+1)
@@ -175,7 +175,7 @@ func RunFix(cmd *cobra.Command, args []string) {
 		// 修复选中的
 		for _, idx := range indices {
 			result := invalidResults[idx]
-			if err := repairResult(result, idx); err != nil {
+			if err := RepairResult(result, idx); err != nil {
 				pterm.Error.Printf("修复失败 #%d %v\n", idx+1, err)
 			} else {
 				pterm.Success.Printf("修复成功 #%d\n", idx+1)
@@ -189,7 +189,7 @@ func RunFix(cmd *cobra.Command, args []string) {
 	}
 }
 
-func repairResult(result output.CheckResult, idx int) error {
+func RepairResult(result output.CheckResult, idx int) error {
 	if verbose {
 		logger.Info(fmt.Sprintf("开始修复 #%d, 类型=%s, 设备=%s, 路径=%s, BasePath=%s, Real=%s, Fake=%s", idx+1, result.Type, result.Device, result.Path, result.BasePath, result.Real, result.Fake))
 
