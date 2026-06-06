@@ -3,9 +3,9 @@ version: '3'
 vars:
   APP: flk
   VERSION:
-    sh: echo "${VERSION:-$(date '+%Y-%m-%d-%H-%M-%S')}"
+    sh: printf '%s' "${VERSION:-$(date '+%Y-%m-%d-%H-%M-%S')}"
   BUILDTIME:
-    sh: echo "${BUILDTIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+    sh: printf '%s' "${BUILDTIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
   LDFLAGS: '-s -w -X github.com/jy-eggroll/flk/cmd.Version={{.VERSION}} -X github.com/jy-eggroll/flk/cmd.BuildTime={{.BUILDTIME}}'
 
 tasks:
