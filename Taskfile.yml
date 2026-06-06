@@ -1,0 +1,183 @@
+version: '3'
+
+vars:
+  APP: flk
+  VERSION:
+    sh: echo "${VERSION:-$(date '+%Y-%m-%d-%H-%M-%S')}"
+  BUILDTIME:
+    sh: echo "${BUILDTIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+  LDFLAGS: '-s -w -X github.com/jy-eggroll/flk/cmd.Version={{.VERSION}} -X github.com/jy-eggroll/flk/cmd.BuildTime={{.BUILDTIME}}'
+
+tasks:
+  default:
+    desc: Build for all platforms
+    deps:
+      - build-all
+
+  build-all:
+    desc: Build all platform binaries in parallel
+    deps:
+      - build:windows:386
+      - build:windows:amd64
+      - build:windows:arm64
+      - build:linux:386
+      - build:linux:amd64
+      - build:linux:arm
+      - build:linux:arm64
+      - build:darwin:amd64
+      - build:darwin:arm64
+      - build:freebsd:amd64
+      - build:freebsd:arm64
+
+  build:
+    desc: Build for current platform
+    cmds:
+      - go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}{{exeExt}} .
+    sources:
+      - ./**/*.go
+      - go.mod
+      - go.sum
+    generates:
+      - build/{{.APP}}{{exeExt}}
+
+  build:windows:386:
+    desc: Cross-compile windows/386
+    cmds:
+      - mkdir -p build
+      - CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-windows-386.exe .
+    sources:
+      - ./**/*.go
+      - go.mod
+      - go.sum
+    generates:
+      - build/{{.APP}}-windows-386.exe
+
+  build:windows:amd64:
+    desc: Cross-compile windows/amd64
+    cmds:
+      - mkdir -p build
+      - CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-windows-amd64.exe .
+    sources:
+      - ./**/*.go
+      - go.mod
+      - go.sum
+    generates:
+      - build/{{.APP}}-windows-amd64.exe
+
+  build:windows:arm64:
+    desc: Cross-compile windows/arm64
+    cmds:
+      - mkdir -p build
+      - CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-windows-arm64.exe .
+    sources:
+      - ./**/*.go
+      - go.mod
+      - go.sum
+    generates:
+      - build/{{.APP}}-windows-arm64.exe
+
+  build:linux:386:
+    desc: Cross-compile linux/386
+    cmds:
+      - mkdir -p build
+      - CGO_ENABLED=0 GOOS=linux GOARCH=386 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-linux-386 .
+    sources:
+      - ./**/*.go
+      - go.mod
+      - go.sum
+    generates:
+      - build/{{.APP}}-linux-386
+
+  build:linux:amd64:
+    desc: Cross-compile linux/amd64
+    cmds:
+      - mkdir -p build
+      - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-linux-amd64 .
+    sources:
+      - ./**/*.go
+      - go.mod
+      - go.sum
+    generates:
+      - build/{{.APP}}-linux-amd64
+
+  build:linux:arm:
+    desc: Cross-compile linux/arm (armv7)
+    cmds:
+      - mkdir -p build
+      - CGO_ENABLED=0 GOOS=linux GOARCH=arm go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-linux-arm .
+    sources:
+      - ./**/*.go
+      - go.mod
+      - go.sum
+    generates:
+      - build/{{.APP}}-linux-arm
+
+  build:linux:arm64:
+    desc: Cross-compile linux/arm64
+    cmds:
+      - mkdir -p build
+      - CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-linux-arm64 .
+    sources:
+      - ./**/*.go
+      - go.mod
+      - go.sum
+    generates:
+      - build/{{.APP}}-linux-arm64
+
+  build:darwin:amd64:
+    desc: Cross-compile darwin/amd64
+    cmds:
+      - mkdir -p build
+      - CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-darwin-amd64 .
+    sources:
+      - ./**/*.go
+      - go.mod
+      - go.sum
+    generates:
+      - build/{{.APP}}-darwin-amd64
+
+  build:darwin:arm64:
+    desc: Cross-compile darwin/arm64 (Apple Silicon)
+    cmds:
+      - mkdir -p build
+      - CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-darwin-arm64 .
+    sources:
+      - ./**/*.go
+      - go.mod
+      - go.sum
+    generates:
+      - build/{{.APP}}-darwin-arm64
+
+  build:freebsd:amd64:
+    desc: Cross-compile freebsd/amd64
+    cmds:
+      - mkdir -p build
+      - CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-freebsd-amd64 .
+    sources:
+      - ./**/*.go
+      - go.mod
+      - go.sum
+    generates:
+      - build/{{.APP}}-freebsd-amd64
+
+  build:freebsd:arm64:
+    desc: Cross-compile freebsd/arm64
+    cmds:
+      - mkdir -p build
+      - CGO_ENABLED=0 GOOS=freebsd GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-freebsd-arm64 .
+    sources:
+      - ./**/*.go
+      - go.mod
+      - go.sum
+    generates:
+      - build/{{.APP}}-freebsd-arm64
+
+  test:
+    desc: Run all Go tests
+    cmds:
+      - go test ./... -count=1
+
+  clean:
+    desc: Remove all build artifacts
+    cmds:
+      - rm -rf build/
