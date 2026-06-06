@@ -32,84 +32,20 @@ jobs:
                   echo "version=$VERSION" >> $GITHUB_OUTPUT
                   echo "Publishing version: $VERSION"
 
+            - name: Setup Task
+              run: go install github.com/go-task/task/v3/cmd/task@latest
+
             - name: Get build time
               id: get_build_time
               run: |
                   BUILDTIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
                   echo "buildtime=$BUILDTIME" >> $GITHUB_OUTPUT
 
-            - name: Build binaries for common platforms
-              run: |
-                  # 创建输出目录
-                  mkdir -p build
-
-                  VERSION="${{ steps.get_version.outputs.version }}"
-                  BUILDTIME="${{ steps.get_build_time.outputs.buildtime }}"
-                  LDFLAGS="-s -w -X 'github.com/jy-eggroll/flk/cmd.Version=$VERSION' -X 'github.com/jy-eggroll/flk/cmd.BuildTime=$BUILDTIME'"
-
-                  echo "========================================"
-                  echo "开始交叉编译 Go 二进制文件（仅常用平台）"
-                  echo "========================================"
-                  echo ""
-
-                  # Windows (常用架构)
-                  echo "[1/11] 编译 Windows x86 (386)..."
-                  GOOS=windows GOARCH=386 go build -ldflags="$LDFLAGS" -o build/flk-windows-386.exe
-                  echo "完成"
-
-                  echo "[2/11] 编译 Windows x64 (amd64)..."
-                  GOOS=windows GOARCH=amd64 go build -ldflags="$LDFLAGS" -o build/flk-windows-amd64.exe
-                  echo "完成"
-
-                  echo "[3/11] 编译 Windows ARM64..."
-                  GOOS=windows GOARCH=arm64 go build -ldflags="$LDFLAGS" -o build/flk-windows-arm64.exe
-                  echo "完成"
-
-                  # Linux (常用架构)
-                  echo ""
-                  echo "[4/11] 编译 Linux x86 (386)..."
-                  GOOS=linux GOARCH=386 go build -ldflags="$LDFLAGS" -o build/flk-linux-386
-                  echo "完成"
-
-                  echo "[5/11] 编译 Linux x64 (amd64)..."
-                  GOOS=linux GOARCH=amd64 go build -ldflags="$LDFLAGS" -o build/flk-linux-amd64
-                  echo "完成"
-
-                  echo "[6/11] 编译 Linux ARM (armv7)..."
-                  GOOS=linux GOARCH=arm go build -ldflags="$LDFLAGS" -o build/flk-linux-arm
-                  echo "完成"
-
-                  echo "[7/11] 编译 Linux ARM64..."
-                  GOOS=linux GOARCH=arm64 go build -ldflags="$LDFLAGS" -o build/flk-linux-arm64
-                  echo "完成"
-
-                  # macOS (Darwin) (常用架构)
-                  echo ""
-                  echo "[8/11] 编译 macOS x64 (amd64)..."
-                  GOOS=darwin GOARCH=amd64 go build -ldflags="$LDFLAGS" -o build/flk-darwin-amd64
-                  echo "完成"
-
-                  echo "[9/11] 编译 macOS ARM64 (Apple Silicon)..."
-                  GOOS=darwin GOARCH=arm64 go build -ldflags="$LDFLAGS" -o build/flk-darwin-arm64
-                  echo "完成"
-
-                  # FreeBSD (常用架构)
-                  echo ""
-                  echo "[10/11] 编译 FreeBSD x64 (amd64)..."
-                  GOOS=freebsd GOARCH=amd64 go build -ldflags="$LDFLAGS" -o build/flk-freebsd-amd64
-                  echo "完成"
-
-                  echo "[11/11] 编译 FreeBSD ARM64..."
-                  GOOS=freebsd GOARCH=arm64 go build -ldflags="$LDFLAGS" -o build/flk-freebsd-arm64
-                  echo "完成"
-
-                  # 显示编译结果
-                  echo ""
-                  echo "========================================"
-                  echo "编译完成！统计信息："
-                  echo "========================================"
-                  echo "总文件数: $(ls -1 build/ | wc -l)"
-                  echo "总大小: $(du -sh build/ | cut -f1)"
+            - name: Build binaries for all platforms
+              run: task build-all
+              env:
+                  VERSION: ${{ steps.get_version.outputs.version }}
+                  BUILDTIME: ${{ steps.get_build_time.outputs.buildtime }}"
 
             - name: Find previous version tag
               id: previous_tag
