@@ -45,7 +45,7 @@ jobs:
               run: task build-all
               env:
                   VERSION: ${{ steps.get_version.outputs.version }}
-                  BUILDTIME: ${{ steps.get_build_time.outputs.buildtime }}"
+                  BUILDTIME: ${{ steps.get_build_time.outputs.buildtime }}
 
             - name: Find previous version tag
               id: previous_tag
