@@ -30,11 +30,11 @@ var copyCmd = &cobra.Command{
 
 func init() {
 	createCmd.AddCommand(copyCmd)
-	copyCmd.Flags().StringVarP(&copySrc, "src", "s", "", "源文件路径")
-	copyCmd.Flags().StringVarP(&copyDst, "dst", "d", "", "目标文件路径")
+	copyCmd.Flags().StringVar(&copySrc, "src", "", "源文件路径")
+	copyCmd.Flags().StringVar(&copyDst, "dst", "", "目标文件路径")
 	copyCmd.Flags().BoolVar(&createSmart, "smart", false, "智能模式：当 src 不存在但 dst 存在时，自动将 dst 复制到 src")
 	copyCmd.Flags().BoolVar(&createForce, "force", false, "强制覆盖已存在的文件或文件夹")
-	copyCmd.Flags().StringVarP(&createDevice, "device", "D", "all", "设备名称，用于后续设备过滤")
+	copyCmd.Flags().StringVarP(&createDevice, "device", "d", "all", "设备名称，用于后续设备过滤")
 	copyCmd.MarkFlagRequired("src")
 	copyCmd.MarkFlagRequired("dst")
 }

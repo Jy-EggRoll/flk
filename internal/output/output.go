@@ -23,6 +23,8 @@ type CheckResult struct {
 	Fake      string `json:"fake,omitempty"`
 	Prim      string `json:"prim,omitempty"`
 	Seco      string `json:"seco,omitempty"`
+	Src       string `json:"src,omitempty"`
+	Dst       string `json:"dst,omitempty"`
 	Valid     bool   `json:"valid"`
 	Error     string `json:"error,omitempty"`
 	ErrorType string `json:"error_type,omitempty"`
@@ -40,21 +42,25 @@ type CreateResult struct {
 func PrintCheckResults(format OutputFormat, results []CheckResult) error {
 	// 收集错误类型并打印解释
 	errorTypes := map[string]string{
-		"PATH_EXPAND_FAIL":     "路径展开失败",
-		"LINK_MISSING":         "链接文件缺失",
-		"LINK_ACCESS_FAIL":     "链接访问失败",
-		"NOT_SYMLINK":          "不是符号链接",
-		"READLINK_FAIL":        "读取链接失败",
-		"TARGET_MISSING":       "目标文件缺失",
-		"TARGET_ACCESS_FAIL":   "目标访问失败",
-		"EXPECTED_MISSING":     "期望文件缺失",
+		"PATH_EXPAND_FAIL":   "路径展开失败",
+		"LINK_MISSING":       "链接文件缺失",
+		"LINK_ACCESS_FAIL":   "链接访问失败",
+		"NOT_SYMLINK":        "不是符号链接",
+		"READLINK_FAIL":      "读取链接失败",
+		"TARGET_MISSING":     "目标文件缺失",
+		"TARGET_ACCESS_FAIL": "目标访问失败",
+		"EXPECTED_MISSING":   "期望文件缺失",
 		"EXPECTED_ACCESS_FAIL": "期望访问失败",
-		"TARGET_MISMATCH":      "目标不匹配",
-		"PRIM_MISSING":         "主文件缺失",
-		"PRIM_ACCESS_FAIL":     "主文件访问失败",
-		"SECO_MISSING":         "次文件缺失",
-		"SECO_ACCESS_FAIL":     "次文件访问失败",
-		"NOT_SAME_FILE":        "不是同一文件",
+		"TARGET_MISMATCH":    "目标不匹配",
+		"PRIM_MISSING":       "主文件缺失",
+		"PRIM_ACCESS_FAIL":   "主文件访问失败",
+		"SECO_MISSING":       "次文件缺失",
+		"SECO_ACCESS_FAIL":   "次文件访问失败",
+		"NOT_SAME_FILE":      "不是同一文件",
+		"SRC_MISSING":        "源文件缺失",
+		"DST_MISSING":        "目标文件缺失",
+		"BOTH_MISSING":       "两者都缺失",
+		"MOD_TIME_MISMATCH":  "修改时间不一致",
 	}
 	usedTypes := make(map[string]bool)
 	for _, r := range results {
@@ -77,7 +83,7 @@ func PrintCheckResults(format OutputFormat, results []CheckResult) error {
 			return err
 		}
 		fmt.Println(string(data))
-	case Table:
+		case Table:
 		termWidth := pterm.GetTerminalWidth()
 		table := pterm.TableData{{"编号", "类型", "设备", "源路径", "链接路径", "有效", "错误类型"}}
 		for i, r := range results {
@@ -90,9 +96,15 @@ func PrintCheckResults(format OutputFormat, results []CheckResult) error {
 			if srcPath == "" {
 				srcPath = truncateString(r.Prim, (termWidth-7*3-4-8-4-10)/3-3)
 			}
+			if srcPath == "" {
+				srcPath = truncateString(r.Src, (termWidth-7*3-4-8-4-10)/3-3)
+			}
 			linkPath := truncateString(r.Fake, (termWidth-7*3-4-8-4-10)/3-3)
 			if linkPath == "" {
 				linkPath = truncateString(r.Seco, (termWidth-7*3-4-8-4-10)/3-3)
+			}
+			if linkPath == "" {
+				linkPath = truncateString(r.Dst, (termWidth-7*3-4-8-4-10)/3-3)
 			}
 			row := []string{num, truncateString(r.Type, 6), truncateString(r.Device, 8), srcPath, linkPath, valid, truncateString(r.ErrorType, 10)}
 			if r.Valid {
@@ -132,9 +144,15 @@ func PrintCheckResultsFix(format OutputFormat, results []CheckResult) error {
 		if srcPath == "" {
 			srcPath = truncateString(r.Prim, (termWidth-7*3-4-8-4-10)/3-3)
 		}
+		if srcPath == "" {
+			srcPath = truncateString(r.Src, (termWidth-7*3-4-8-4-10)/3-3)
+		}
 		linkPath := truncateString(r.Fake, (termWidth-7*3-4-8-4-10)/3-3)
 		if linkPath == "" {
 			linkPath = truncateString(r.Seco, (termWidth-7*3-4-8-4-10)/3-3)
+		}
+		if linkPath == "" {
+			linkPath = truncateString(r.Dst, (termWidth-7*3-4-8-4-10)/3-3)
 		}
 
 		colorize := func(s string) string {
