@@ -114,8 +114,7 @@ func Hardlink(cmd *cobra.Command, args []string) error {
 				"prim": normalizedPrim,
 				"seco": absSecoPath,
 			}
-			parentPath := WorkDir
-			mgr.AddRecord(createDevice, "hardlink", parentPath, fields)
+			mgr.AddRecord(createDevice, "hardlink", fields)
 			if err := mgr.Save(store.StorePath); err != nil {
 				logger.Error("持久化失败 " + err.Error())
 			}

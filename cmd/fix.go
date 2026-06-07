@@ -2,13 +2,13 @@ package cmd
 
 import (
 	"fmt"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/output"
+	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
@@ -24,7 +24,6 @@ var fixCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(fixCmd)
-	// 复用check的flags
 	fixCmd.Flags().StringVarP(&fixDevice, "device", "d", "", "设备名称，用于过滤检查，可用逗号分隔多个设备")
 	fixCmd.Flags().BoolVar(&fixSymlink, "symlink", false, "仅检查符号链接")
 	fixCmd.Flags().BoolVar(&fixHardlink, "hardlink", false, "仅检查硬链接")
@@ -56,7 +55,6 @@ func RunFix(cmd *cobra.Command, args []string) {
 			return nil
 		}
 
-		// 过滤无效结果
 		var invalidResults []output.CheckResult
 		for _, r := range results {
 			if !r.Valid {
@@ -82,7 +80,6 @@ func RunFix(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	// --all 模式：自动修复所有，跳过交互
 	if fixAll {
 		pterm.Info.Println("自动修复所有无效链接...")
 		for idx, result := range invalidResults {
@@ -95,7 +92,6 @@ func RunFix(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	// 交互循环
 	for {
 		pterm.DefaultBox.WithTitle("INFO").Println(pterm.Green("输入 all 或 a 修复所有\n输入 d<编号> 删除条目，如 d7，单次只能删除一个\n输入 exit 或 q 退出程序\n输入数字以修复对应项\n使用空格分隔"))
 		input, err := pterm.DefaultInteractiveTextInput.WithMultiLine(false).Show("请输入")
@@ -110,7 +106,6 @@ func RunFix(cmd *cobra.Command, args []string) {
 		}
 
 		if strings.HasPrefix(input, "d") {
-			// 删除模式
 			parts := strings.Fields(input[1:])
 			var indices []int
 			for _, part := range parts {
@@ -137,7 +132,7 @@ func RunFix(cmd *cobra.Command, args []string) {
 				case "hardlink":
 					entry = map[string]string{"prim": result.Prim, "seco": result.Seco}
 				}
-				mgr.RemoveMatchingEntry(platform, result.Device, result.Type, result.Path, entry)
+				mgr.RemoveMatchingEntry(platform, result.Device, result.Type, entry)
 			}
 			if err := mgr.Save(store.StorePath); err != nil {
 				logger.Error("保存失败 " + err.Error())
@@ -172,7 +167,6 @@ func RunFix(cmd *cobra.Command, args []string) {
 			continue
 		}
 
-		// 修复选中的
 		for _, idx := range indices {
 			result := invalidResults[idx]
 			if err := repairResult(result, idx); err != nil {
@@ -190,42 +184,24 @@ func RunFix(cmd *cobra.Command, args []string) {
 }
 
 func repairResult(result output.CheckResult, idx int) error {
-	if verbose {
-		logger.Info(fmt.Sprintf("开始修复 #%d, 类型=%s, 设备=%s, 路径=%s, BasePath=%s, Real=%s, Fake=%s", idx+1, result.Type, result.Device, result.Path, result.BasePath, result.Real, result.Fake))
-
-		// 从存储中读取的父键是 result.Path，规范化后是 result.BasePath
-		logger.Info(fmt.Sprintf("读取条目父键: path='%s', 规范化BasePath='%s'", result.Path, result.BasePath))
-
-		// 临时设置 workDir 为条目父路径，以便相对路径正确解析
-		oldWorkDir := WorkDir
-		WorkDir = result.BasePath
-		logger.Info(fmt.Sprintf("临时设置 WorkDir 从 '%s' 到 '%s' (条目父路径)", oldWorkDir, WorkDir))
-		defer func() {
-			WorkDir = oldWorkDir
-			logger.Info(fmt.Sprintf("恢复 WorkDir 到 '%s'", oldWorkDir))
-		}()
-	} else {
-		// 临时设置 workDir 为条目父路径，以便相对路径正确解析
-		oldWorkDir := WorkDir
-		WorkDir = result.BasePath
-		defer func() {
-			WorkDir = oldWorkDir
-		}()
-	}
-
+	// 路径已存储为折叠绝对路径，直接展开即可，无需 WorkDir hack
 	switch result.Type {
 	case "symlink":
-		// 临时设置全局变量
 		oldReal := symlinkReal
 		oldFake := symlinkFake
 		oldForce := createForce
 		oldDevice := createDevice
 
-		symlinkReal = result.Real
-		if !filepath.IsAbs(symlinkReal) {
-			symlinkReal = filepath.Join(result.BasePath, symlinkReal)
+		expandedReal, err := pathutil.NormalizePath(result.Real)
+		if err != nil {
+			return fmt.Errorf("展开源路径失败: %w", err)
 		}
-		symlinkFake = result.Fake
+		expandedFake, err := pathutil.NormalizePath(result.Fake)
+		if err != nil {
+			return fmt.Errorf("展开链接路径失败: %w", err)
+		}
+		symlinkReal = expandedReal
+		symlinkFake = expandedFake
 		createForce = fixForce
 		createDevice = result.Device
 
@@ -242,14 +218,16 @@ func repairResult(result output.CheckResult, idx int) error {
 		oldForce := createForce
 		oldDevice := createDevice
 
-		hardlinkPrim = result.Prim
-		if !filepath.IsAbs(hardlinkPrim) {
-			hardlinkPrim = filepath.Join(result.BasePath, hardlinkPrim)
+		expandedPrim, err := pathutil.NormalizePath(result.Prim)
+		if err != nil {
+			return fmt.Errorf("展开主文件路径失败: %w", err)
 		}
-		hardlinkSeco = result.Seco
-		if !filepath.IsAbs(hardlinkSeco) {
-			hardlinkSeco = filepath.Join(result.BasePath, hardlinkSeco)
+		expandedSeco, err := pathutil.NormalizePath(result.Seco)
+		if err != nil {
+			return fmt.Errorf("展开次文件路径失败: %w", err)
 		}
+		hardlinkPrim = expandedPrim
+		hardlinkSeco = expandedSeco
 		createForce = fixForce
 		createDevice = result.Device
 

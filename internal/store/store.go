@@ -2,87 +2,70 @@ package store
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 )
 
-// BaseEntry 用于承载通用的 JSON 序列化逻辑
-type Entry map[string]string           // 定义 Entry 类型，底层为键值对映射结构，作为基础数据单元承载可 JSON 序列化的通用数据
-type PathGroup map[string][]Entry      // 定义 PathGroup 类型，按路径字符串为键，存储对应路径下的多个 Entry 实例切片
-type TypeGroup map[string]PathGroup    // 定义 TypeGroup 类型，按链接类型字符串为键，存储对应类型下的多个 PathGroup 实例
-type DeviceGroup map[string]TypeGroup  // 定义 DeviceGroup 类型，按设备标识字符串为键，存储对应设备下的多个 TypeGroup 实例
-type RootConfig map[string]DeviceGroup // 定义 RootConfig 类型，按操作系统平台字符串为键，存储对应平台下的多个 DeviceGroup 实例
+// Entry 链接记录，底层为键值对映射
+type Entry map[string]string
 
-type Manager struct { // 定义 Manager 结构体，作为存储数据的核心管理对象
-	Data RootConfig // Manager 的核心数据字段，存储按平台-设备-类型-路径层级组织的所有 Entry 数据
+// TypeGroup 按链接类型聚合的 Entry 列表
+type TypeGroup map[string][]Entry
+
+// DeviceGroup 按设备标识聚合的 TypeGroup
+type DeviceGroup map[string]TypeGroup
+
+// RootConfig 按操作系统平台聚合的 DeviceGroup
+type RootConfig map[string]DeviceGroup
+
+// Manager 存储管理对象
+type Manager struct {
+	Data RootConfig
 }
 
-func (m *Manager) AddRecord(device, linkType, parentPath string, fields map[string]string) { // 定义 Manager 的 AddRecord 方法，用于添加一条存储记录，参数依次为设备标识、链接类型、父路径、字段键值对
-	platform := runtime.GOOS // 获取当前程序运行的操作系统平台标识（如 linux/darwin/windows），赋值给变量 platform
+// AddRecord 添加一条链接记录，所有路径统一存储为折叠绝对路径（~ 格式）
+func (m *Manager) AddRecord(device, linkType string, fields map[string]string) {
+	platform := runtime.GOOS
 
-	// 初始化层级（防御性编程）
-	if m.Data[platform] == nil { // 检查当前平台对应的 DeviceGroup 是否未初始化（nil）
-		m.Data[platform] = make(DeviceGroup) // 初始化 DeviceGroup 类型的映射，避免后续操作出现空指针异常
+	if m.Data[platform] == nil {
+		m.Data[platform] = make(DeviceGroup)
 	}
-	if m.Data[platform][device] == nil { // 检查当前设备对应的 TypeGroup 是否未初始化（nil）
-		m.Data[platform][device] = make(TypeGroup) // 初始化 TypeGroup 类型的映射，保证层级数据结构的完整性
-	}
-
-	foldedParent, err := pathutil.FoldHome(parentPath)
-	if err != nil {
-		logger.Error("未能折叠路径 " + err.Error())
-	}
-	if m.Data[platform][device][linkType] == nil { // 检查当前链接类型对应的 PathGroup 是否未初始化（nil）
-		m.Data[platform][device][linkType] = make(PathGroup) // 初始化 PathGroup 类型的映射，确保路径层级可正常存储数据
+	if m.Data[platform][device] == nil {
+		m.Data[platform][device] = make(TypeGroup)
 	}
 
-	// 处理内部字段的路径：real 和 prim 存储为相对路径，fake 和 seco 存储为绝对路径
-	normalizedParent, err := pathutil.NormalizePath(parentPath)
-	if err != nil {
-		normalizedParent = parentPath
-	}
-	processedEntry := make(Entry) // 初始化 Entry 类型的映射，用于存储处理后的字段键值对
-	for k, v := range fields {    // 遍历传入的原始字段键值对，k 为字段名，v 为字段原始值
+	// 将所有路径字段统一存储为折叠绝对路径
+	processedEntry := make(Entry)
+	for k, v := range fields {
 		normalizedV, err := pathutil.NormalizePath(v)
 		if err != nil {
-			processedEntry[k] = v // fallback to original
+			processedEntry[k] = v
 			continue
 		}
-		if k == "real" || k == "prim" {
-			// 对于 real 和 prim，存储相对于父路径的相对路径
-			relPath, err := filepath.Rel(normalizedParent, normalizedV)
-			if err != nil {
-				processedEntry[k] = normalizedV // fallback to absolute
-			} else {
-				processedEntry[k] = relPath // store relative path
-			}
+		foldedPath, err := pathutil.FoldHome(normalizedV)
+		if err != nil {
+			processedEntry[k] = normalizedV
 		} else {
-			// 对于 fake 和 seco，存储折叠路径（~ 格式）
-			foldedPath, err := pathutil.FoldHome(normalizedV)
-			if err != nil {
-				processedEntry[k] = normalizedV // fallback
-			} else {
-				processedEntry[k] = foldedPath
-			}
+			processedEntry[k] = foldedPath
 		}
 	}
 
-	// 去重逻辑：根据链接类型检查相应字段
+	// 去重：symlink 以 fake 去重，hardlink 以 seco 去重
 	var dedupField string
 	switch linkType {
 	case "symlink":
 		dedupField = "fake"
 	case "hardlink":
 		dedupField = "seco"
-	default:
-		dedupField = ""
 	}
 
-	currentEntries := m.Data[platform][device][linkType][foldedParent]
+	currentEntries := m.Data[platform][device][linkType]
 
 	if dedupField != "" {
 		var newEntries []Entry
@@ -91,9 +74,9 @@ func (m *Manager) AddRecord(device, linkType, parentPath string, fields map[stri
 				newEntries = append(newEntries, e)
 			}
 		}
-		m.Data[platform][device][linkType][foldedParent] = append(newEntries, processedEntry)
+		m.Data[platform][device][linkType] = append(newEntries, processedEntry)
 	} else {
-		m.Data[platform][device][linkType][foldedParent] = append(currentEntries, processedEntry)
+		m.Data[platform][device][linkType] = append(currentEntries, processedEntry)
 	}
 
 	logger.Info("结构创建成功")
@@ -104,8 +87,9 @@ func (m *Manager) ToJSON() string {
 	return string(jsonResult)
 }
 
-func (m *Manager) RemoveMatchingEntry(platform, device, linkType, parentPath string, entry Entry) {
-	entries := m.Data[platform][device][linkType][parentPath]
+// RemoveMatchingEntry 从指定平台/设备/类型中删除第一个匹配字段的 Entry
+func (m *Manager) RemoveMatchingEntry(platform, device, linkType string, entry Entry) {
+	entries := m.Data[platform][device][linkType]
 	for i, e := range entries {
 		match := true
 		for k, v := range entry {
@@ -115,36 +99,32 @@ func (m *Manager) RemoveMatchingEntry(platform, device, linkType, parentPath str
 			}
 		}
 		if match {
-			m.Data[platform][device][linkType][parentPath] = append(entries[:i], entries[i+1:]...)
+			m.Data[platform][device][linkType] = append(entries[:i], entries[i+1:]...)
 			break
 		}
 	}
 }
 
-// DefaultStorePath 指定默认的持久化存储路径（不展开 JSON 中的 ~，由写入时展开实际文件系统路径）
+// DefaultStorePath 默认持久化存储路径
 const DefaultStorePath = "~/.config/flk/flk-store.json"
 
-// StorePath 用于 Cobra 参数绑定，默认值为 DefaultStorePath
+// StorePath 用于 Cobra 参数绑定
 var StorePath = DefaultStorePath
 
-// GlobalManager 是全局共享的 Manager 实例，用于在启动阶段加载现有数据并在命令之间共享状态
+// GlobalManager 全局共享的 Manager 实例
 var GlobalManager *Manager
 
-// InitStore 初始化全局存储，若目标文件存在则加载，否则创建一个空的存储结构
+// InitStore 初始化全局存储，支持自动迁移旧格式
 func InitStore(storePath string) error {
-	// 如果 storePath 是相对路径，将其相对于工作目录处理
 	if !filepath.IsAbs(storePath) {
-		// 这里需要工作目录，但为了避免导入 cmd 包，使用 pathutil.NormalizePath，它会使用设置的工作目录
 		var err error
 		storePath, err = pathutil.NormalizePath(storePath)
 		if err != nil {
 			return err
 		}
 	}
-	// 尝试从文件加载
 	m, err := LoadFromFile(storePath)
 	if err != nil {
-		// 如果文件不存在，初始化空数据结构
 		if os.IsNotExist(err) {
 			m = &Manager{Data: make(RootConfig)}
 		} else {
@@ -155,7 +135,7 @@ func InitStore(storePath string) error {
 	return nil
 }
 
-// Save 将当前 Manager 的数据持久化到指定文件路径
+// Save 将数据持久化到指定文件
 func (m *Manager) Save(filePath string) error {
 	data, err := json.MarshalIndent(m.Data, "", "    ")
 	if err != nil {
@@ -174,7 +154,7 @@ func (m *Manager) Save(filePath string) error {
 	return nil
 }
 
-// LoadFromFile 从指定路径加载并返回一个 Manager 实例
+// LoadFromFile 加载存储文件，自动检测并迁移旧格式（4 层嵌套带 parentPath）
 func LoadFromFile(filePath string) (*Manager, error) {
 	expanded, err := pathutil.NormalizePath(filePath)
 	if err != nil {
@@ -184,13 +164,71 @@ func LoadFromFile(filePath string) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	var data RootConfig
-	if len(b) > 0 {
-		if err := json.Unmarshal(b, &data); err != nil {
-			return nil, err
-		}
-	} else {
-		data = make(RootConfig)
+
+	if len(b) == 0 {
+		return &Manager{Data: make(RootConfig)}, nil
 	}
-	return &Manager{Data: data}, nil
+
+	// 先尝试新格式（3 层：platform → device → []Entry）
+	var data RootConfig
+	if err := json.Unmarshal(b, &data); err == nil {
+		return &Manager{Data: data}, nil
+	}
+
+	// 新格式解析失败，尝试旧格式（4 层带 parentPath）并迁移
+	var legacyData map[string]map[string]map[string]map[string][]Entry
+	if err := json.Unmarshal(b, &legacyData); err != nil {
+		return nil, fmt.Errorf("无法解析存储文件: 不支持的格式")
+	}
+
+	migratedData := migrateFromLegacy(legacyData)
+	data = migratedData
+
+	// 自动写回新格式
+	manager := &Manager{Data: data}
+	if saveErr := manager.Save(filePath); saveErr != nil {
+		logger.Warn("自动迁移存储格式后保存失败: " + saveErr.Error())
+	}
+
+	return manager, nil
+}
+
+// migrateFromLegacy 将旧格式（4层带 parentPath）迁移到新格式（3层扁平结构）
+func migrateFromLegacy(legacyData map[string]map[string]map[string]map[string][]Entry) RootConfig {
+	newData := make(RootConfig)
+	for platform, deviceGroup := range legacyData {
+		for device, typeGroup := range deviceGroup {
+			for linkType, pathGroup := range typeGroup {
+				for foldedParent, entries := range pathGroup {
+					// 沿用 parentPath 自身使用的分隔符，保持跨平台一致性
+					sep := "/"
+					if strings.Contains(foldedParent, "\\") {
+						sep = "\\"
+					}
+					parentBase := strings.TrimRight(foldedParent, "/\\")
+					for _, entry := range entries {
+						newEntry := make(Entry)
+						for k, v := range entry {
+							if k == "real" || k == "prim" || k == "src" {
+								// 旧格式中这些字段是相对于 parentPath 的相对路径，直接拼接 parentPath + 原分隔符 + v
+								newEntry[k] = parentBase + sep + v
+							} else {
+								// fake/seco/dst 已存储为折叠绝对路径，直接保留
+								newEntry[k] = v
+							}
+						}
+						if newData[platform] == nil {
+							newData[platform] = make(DeviceGroup)
+						}
+						if newData[platform][device] == nil {
+							newData[platform][device] = make(TypeGroup)
+						}
+						newData[platform][device][linkType] = append(
+							newData[platform][device][linkType], newEntry)
+					}
+				}
+			}
+		}
+	}
+	return newData
 }
