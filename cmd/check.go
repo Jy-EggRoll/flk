@@ -27,6 +27,7 @@ func init() {
 	checkCmd.Flags().StringVarP(&checkDevice, "device", "d", "", "设备名称，用于过滤检查，可用逗号分隔多个设备")
 	checkCmd.Flags().BoolVar(&checkSymlink, "symlink", false, "仅检查符号链接")
 	checkCmd.Flags().BoolVar(&checkHardlink, "hardlink", false, "仅检查硬链接")
+	checkCmd.Flags().BoolVar(&checkCopy, "copy", false, "仅检查复制")
 	checkCmd.Flags().StringVar(&checkDir, "dir", "", "仅检查包含该路径的记录")
 }
 
@@ -34,6 +35,7 @@ var (
 	checkDevice   string
 	checkSymlink  bool
 	checkHardlink bool
+	checkCopy     bool
 	checkDir      string
 )
 
@@ -47,6 +49,7 @@ func RunCheck(cmd *cobra.Command, args []string) {
 		DeviceFilters: deviceFilters,
 		CheckSymlink:  checkSymlink,
 		CheckHardlink: checkHardlink,
+		CheckCopy:     checkCopy,
 		CheckDir:      checkDir,
 	})
 	if err != nil {
@@ -68,6 +71,7 @@ type CheckOptions struct {
 	DeviceFilters []string
 	CheckSymlink  bool
 	CheckHardlink bool
+	CheckCopy     bool
 	CheckDir      string
 }
 
@@ -85,9 +89,10 @@ func performCheck(options CheckOptions) ([]output.CheckResult, error) {
 		return results, nil
 	}
 
-	if !options.CheckSymlink && !options.CheckHardlink {
+	if !options.CheckSymlink && !options.CheckHardlink && !options.CheckCopy {
 		options.CheckSymlink = true
 		options.CheckHardlink = true
+		options.CheckCopy = true
 	}
 
 	for device, deviceData := range platformData {
@@ -97,7 +102,8 @@ func performCheck(options CheckOptions) ([]output.CheckResult, error) {
 
 		for linkType, entries := range deviceData {
 			if (linkType == "symlink" && !options.CheckSymlink) ||
-				(linkType == "hardlink" && !options.CheckHardlink) {
+				(linkType == "hardlink" && !options.CheckHardlink) ||
+				(linkType == "copy" && !options.CheckCopy) {
 				continue
 			}
 
@@ -121,16 +127,20 @@ func performCheck(options CheckOptions) ([]output.CheckResult, error) {
 					Device: device,
 				}
 
-				switch linkType {
-				case "symlink":
-					result.Real = entry["real"]
-					result.Fake = entry["fake"]
-					result.Valid, result.Error, result.ErrorType = checkSymlinkValid(result.Real, result.Fake)
-				case "hardlink":
-					result.Prim = entry["prim"]
-					result.Seco = entry["seco"]
-					result.Valid, result.Error, result.ErrorType = checkHardlinkValid(result.Prim, result.Seco)
-				}
+			switch linkType {
+			case "symlink":
+				result.Real = entry["real"]
+				result.Fake = entry["fake"]
+				result.Valid, result.Error, result.ErrorType = checkSymlinkValid(result.Real, result.Fake)
+			case "hardlink":
+				result.Prim = entry["prim"]
+				result.Seco = entry["seco"]
+				result.Valid, result.Error, result.ErrorType = checkHardlinkValid(result.Prim, result.Seco)
+			case "copy":
+				result.Src = entry["src"]
+				result.Dst = entry["dst"]
+				result.Valid, result.Error, result.ErrorType = checkCopyValid(result.Src, result.Dst)
+			}
 
 				results = append(results, result)
 			}
@@ -138,6 +148,34 @@ func performCheck(options CheckOptions) ([]output.CheckResult, error) {
 	}
 
 	return results, nil
+}
+
+func checkCopyValid(src, dst string) (bool, string, string) {
+	expandedSrc, err := pathutil.NormalizePath(src)
+	if err != nil {
+		return false, fmt.Sprintf("无法展开源路径 %s: %v", src, err), "PATH_EXPAND_FAIL"
+	}
+
+	expandedDst, err := pathutil.NormalizePath(dst)
+	if err != nil {
+		return false, fmt.Sprintf("无法展开目标路径 %s: %v", dst, err), "PATH_EXPAND_FAIL"
+	}
+
+	srcInfo, srcErr := os.Stat(expandedSrc)
+	dstInfo, dstErr := os.Stat(expandedDst)
+
+	switch {
+	case srcErr != nil && dstErr != nil:
+		return false, "源文件和目标文件都不存在", "BOTH_MISSING"
+	case srcErr != nil:
+		return false, fmt.Sprintf("源文件 %s 不存在", src), "SRC_MISSING"
+	case dstErr != nil:
+		return false, fmt.Sprintf("目标文件 %s 不存在", dst), "DST_MISSING"
+	case !srcInfo.ModTime().Equal(dstInfo.ModTime()):
+		return false, "源文件和目标文件的修改时间不一致，需要同步", "MOD_TIME_MISMATCH"
+	default:
+		return true, "", ""
+	}
 }
 
 func checkSymlinkValid(real, fake string) (bool, string, string) {

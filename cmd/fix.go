@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
 
+	"github.com/jy-eggroll/flk/internal/create/copy"
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
@@ -48,6 +50,7 @@ func RunFix(cmd *cobra.Command, args []string) {
 			DeviceFilters: deviceFilters,
 			CheckSymlink:  fixSymlink,
 			CheckHardlink: fixHardlink,
+			CheckCopy:     true,
 			CheckDir:      fixDir,
 		})
 		if err != nil {
@@ -131,6 +134,8 @@ func RunFix(cmd *cobra.Command, args []string) {
 					entry = map[string]string{"real": result.Real, "fake": result.Fake}
 				case "hardlink":
 					entry = map[string]string{"prim": result.Prim, "seco": result.Seco}
+				case "copy":
+					entry = map[string]string{"src": result.Src, "dst": result.Dst}
 				}
 				mgr.RemoveMatchingEntry(platform, result.Device, result.Type, entry)
 			}
@@ -238,6 +243,35 @@ func repairResult(result output.CheckResult, idx int) error {
 			createDevice = oldDevice
 		}()
 		return Hardlink(nil, nil)
+	case "copy":
+		expandedSrc, err := pathutil.NormalizePath(result.Src)
+		if err != nil {
+			return fmt.Errorf("展开源路径失败: %w", err)
+		}
+		expandedDst, err := pathutil.NormalizePath(result.Dst)
+		if err != nil {
+			return fmt.Errorf("展开目标路径失败: %w", err)
+		}
+
+		srcInfo, srcErr := os.Stat(expandedSrc)
+		dstInfo, dstErr := os.Stat(expandedDst)
+
+		if srcErr != nil && dstErr != nil {
+			return fmt.Errorf("源文件和目标文件都不存在")
+		}
+
+		var from, to string
+		if srcErr != nil {
+			from, to = expandedDst, expandedSrc
+		} else if dstErr != nil {
+			from, to = expandedSrc, expandedDst
+		} else if srcInfo.ModTime().After(dstInfo.ModTime()) {
+			from, to = expandedSrc, expandedDst
+		} else {
+			from, to = expandedDst, expandedSrc
+		}
+
+		return copy.Create(from, to, fixForce, false)
 	}
 	return fmt.Errorf("未知类型 %s", result.Type)
 }

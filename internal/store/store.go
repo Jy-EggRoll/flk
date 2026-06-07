@@ -63,6 +63,8 @@ func (m *Manager) AddRecord(device, linkType string, fields map[string]string) {
 		dedupField = "fake"
 	case "hardlink":
 		dedupField = "seco"
+	case "copy":
+		dedupField = "dst"
 	}
 
 	currentEntries := m.Data[platform][device][linkType]
