@@ -127,8 +127,7 @@ func Symlink(cmd *cobra.Command, args []string) error {
 				"real": normalizedReal,
 				"fake": absFakePath,
 			}
-			parentPath := WorkDir
-			mgr.AddRecord(createDevice, "symlink", parentPath, fields)
+			mgr.AddRecord(createDevice, "symlink", fields)
 			if err := mgr.Save(store.StorePath); err != nil {
 				logger.Error("持久化失败 " + err.Error())
 			}

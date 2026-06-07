@@ -95,43 +95,44 @@ func performCheck(options CheckOptions) ([]output.CheckResult, error) {
 			continue
 		}
 
-		for linkType, typeData := range deviceData {
+		for linkType, entries := range deviceData {
 			if (linkType == "symlink" && !options.CheckSymlink) ||
 				(linkType == "hardlink" && !options.CheckHardlink) {
 				continue
 			}
 
-			for path, entries := range typeData {
-				if options.CheckDir != "" && !strings.Contains(path, options.CheckDir) {
-					continue
-				}
-
-				basePath, err := pathutil.NormalizePath(path)
-				if err != nil {
-					basePath = path
-				}
-
-				for _, entry := range entries {
-					result := output.CheckResult{
-						Type:     linkType,
-						Device:   device,
-						Path:     path,
-						BasePath: basePath,
+			for _, entry := range entries {
+				// --dir 过滤：匹配任意路径字段
+				if options.CheckDir != "" {
+					matches := false
+					for _, v := range entry {
+						if strings.Contains(v, options.CheckDir) {
+							matches = true
+							break
+						}
 					}
-
-					switch linkType {
-					case "symlink":
-						result.Real = entry["real"]
-						result.Fake = entry["fake"]
-						result.Valid, result.Error, result.ErrorType = checkSymlinkValid(result.Real, result.Fake, basePath)
-					case "hardlink":
-						result.Prim = entry["prim"]
-						result.Seco = entry["seco"]
-						result.Valid, result.Error, result.ErrorType = checkHardlinkValid(result.Prim, result.Seco, basePath)
+					if !matches {
+						continue
 					}
-
-					results = append(results, result)
 				}
+
+				result := output.CheckResult{
+					Type:   linkType,
+					Device: device,
+				}
+
+				switch linkType {
+				case "symlink":
+					result.Real = entry["real"]
+					result.Fake = entry["fake"]
+					result.Valid, result.Error, result.ErrorType = checkSymlinkValid(result.Real, result.Fake)
+				case "hardlink":
+					result.Prim = entry["prim"]
+					result.Seco = entry["seco"]
+					result.Valid, result.Error, result.ErrorType = checkHardlinkValid(result.Prim, result.Seco)
+				}
+
+				results = append(results, result)
 			}
 		}
 	}
@@ -139,10 +140,15 @@ func performCheck(options CheckOptions) ([]output.CheckResult, error) {
 	return results, nil
 }
 
-func checkSymlinkValid(real, fake, basePath string) (bool, string, string) {
+func checkSymlinkValid(real, fake string) (bool, string, string) {
+	expandedReal, err := pathutil.NormalizePath(real)
+	if err != nil {
+		return false, fmt.Sprintf("无法展开源路径 %s: %v", real, err), "PATH_EXPAND_FAIL"
+	}
+
 	expandedFake, err := pathutil.NormalizePath(fake)
 	if err != nil {
-		return false, fmt.Sprintf("无法展开符号链接路径 %s: %v", fake, err), "PATH_EXPAND_FAIL"
+		return false, fmt.Sprintf("无法展开链接路径 %s: %v", fake, err), "PATH_EXPAND_FAIL"
 	}
 
 	fakeInfo, err := os.Lstat(expandedFake)
@@ -169,16 +175,6 @@ func checkSymlinkValid(real, fake, basePath string) (bool, string, string) {
 		targetAbs = filepath.Join(filepath.Dir(expandedFake), target)
 	}
 
-	var expectedAbs string
-	if filepath.IsAbs(real) {
-		expectedAbs = real
-	} else {
-		expectedAbs = filepath.Join(basePath, real)
-	}
-	if expanded, expandErr := pathutil.NormalizePath(expectedAbs); expandErr == nil {
-		expectedAbs = expanded
-	}
-
 	targetInfo, err := os.Stat(targetAbs)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -187,12 +183,12 @@ func checkSymlinkValid(real, fake, basePath string) (bool, string, string) {
 		return false, fmt.Sprintf("无法访问符号链接的目标文件 %s: %v", targetAbs, err), "TARGET_ACCESS_FAIL"
 	}
 
-	expectedInfo, err := os.Stat(expectedAbs)
+	expectedInfo, err := os.Stat(expandedReal)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return false, fmt.Sprintf("期望的目标文件 %s 不存在", expectedAbs), "EXPECTED_MISSING"
+			return false, fmt.Sprintf("期望的目标文件 %s 不存在", expandedReal), "EXPECTED_MISSING"
 		}
-		return false, fmt.Sprintf("无法访问期望的目标文件 %s: %v", expectedAbs, err), "EXPECTED_ACCESS_FAIL"
+		return false, fmt.Sprintf("无法访问期望的目标文件 %s: %v", expandedReal, err), "EXPECTED_ACCESS_FAIL"
 	}
 
 	if !os.SameFile(targetInfo, expectedInfo) {
@@ -202,15 +198,16 @@ func checkSymlinkValid(real, fake, basePath string) (bool, string, string) {
 	return true, "", ""
 }
 
-func checkHardlinkValid(prim, seco, basePath string) (bool, string, string) {
-	var expandedPrim string
-	if filepath.IsAbs(prim) {
-		expandedPrim = prim
-	} else {
-		expandedPrim = filepath.Join(basePath, prim)
+func checkHardlinkValid(prim, seco string) (bool, string, string) {
+	expandedPrim, err := pathutil.NormalizePath(prim)
+	if err != nil {
+		return false, fmt.Sprintf("无法展开主文件路径 %s: %v", prim, err), "PATH_EXPAND_FAIL"
 	}
 
-	expandedSeco := seco
+	expandedSeco, err := pathutil.NormalizePath(seco)
+	if err != nil {
+		return false, fmt.Sprintf("无法展开硬链接路径 %s: %v", seco, err), "PATH_EXPAND_FAIL"
+	}
 
 	primInfo, err := os.Stat(expandedPrim)
 	if err != nil {

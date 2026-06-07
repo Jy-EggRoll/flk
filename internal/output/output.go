@@ -19,8 +19,6 @@ const (
 type CheckResult struct {
 	Type      string `json:"type"`
 	Device    string `json:"device"`
-	Path      string `json:"path"`
-	BasePath  string `json:"base_path,omitempty"`
 	Real      string `json:"real,omitempty"`
 	Fake      string `json:"fake,omitempty"`
 	Prim      string `json:"prim,omitempty"`
@@ -80,24 +78,23 @@ func PrintCheckResults(format OutputFormat, results []CheckResult) error {
 		}
 		fmt.Println(string(data))
 	case Table:
-		// 动态调整列宽，截断长路径
 		termWidth := pterm.GetTerminalWidth()
-		table := pterm.TableData{{"编号", "类型", "设备", "父路径", "相对路径", "绝对路径", "有效", "错误类型"}}
+		table := pterm.TableData{{"编号", "类型", "设备", "源路径", "链接路径", "有效", "错误类型"}}
 		for i, r := range results {
 			num := fmt.Sprintf("%d", i+1)
 			valid := "是"
 			if !r.Valid {
 				valid = "否"
 			}
-			relPath := truncateString(r.Real, (termWidth-7*3-4-8-4-10)/3-3)
-			if relPath == "" {
-				relPath = truncateString(r.Prim, (termWidth-7*3-4-8-4-10)/3-3)
+			srcPath := truncateString(r.Real, (termWidth-7*3-4-8-4-10)/3-3)
+			if srcPath == "" {
+				srcPath = truncateString(r.Prim, (termWidth-7*3-4-8-4-10)/3-3)
 			}
-			absPath := truncateString(r.Fake, (termWidth-7*3-4-8-4-10)/3-3)
-			if absPath == "" {
-				absPath = truncateString(r.Seco, (termWidth-7*3-4-8-4-10)/3-3)
+			linkPath := truncateString(r.Fake, (termWidth-7*3-4-8-4-10)/3-3)
+			if linkPath == "" {
+				linkPath = truncateString(r.Seco, (termWidth-7*3-4-8-4-10)/3-3)
 			}
-			row := []string{num, truncateString(r.Type, 6), truncateString(r.Device, 8), truncateString(r.Path, (termWidth-7*3-4-8-4-10)/3-3), relPath, absPath, valid, truncateString(r.ErrorType, 10)}
+			row := []string{num, truncateString(r.Type, 6), truncateString(r.Device, 8), srcPath, linkPath, valid, truncateString(r.ErrorType, 10)}
 			if r.Valid {
 				table = append(table, row)
 			} else {
@@ -105,9 +102,8 @@ func PrintCheckResults(format OutputFormat, results []CheckResult) error {
 					num,
 					pterm.Red(truncateString(r.Type, 6)),
 					pterm.Red(truncateString(r.Device, 8)),
-					pterm.Red(truncateString(r.Path, (termWidth-7*3-4-8-4-10)/3-3)),
-					pterm.Red(relPath),
-					pterm.Red(absPath),
+					pterm.Red(srcPath),
+					pterm.Red(linkPath),
 					pterm.Red(valid),
 					pterm.Red(truncateString(r.ErrorType, 10)),
 				})
@@ -119,32 +115,29 @@ func PrintCheckResults(format OutputFormat, results []CheckResult) error {
 }
 
 // PrintCheckResultsFix 打印 fix 命令的检查结果（table 模式带斑马条纹）
-// 规则：奇数行红色，偶数行粉色（1-based）。
 func PrintCheckResultsFix(format OutputFormat, results []CheckResult) error {
 	if format != Table {
 		return PrintCheckResults(format, results)
 	}
 
-	// fix 只展示无效项，但这里不依赖 Valid 字段，直接按行号着色。
 	termWidth := pterm.GetTerminalWidth()
-	table := pterm.TableData{{"编号", "类型", "设备", "父路径", "相对路径", "绝对路径", "有效", "错误类型"}}
+	table := pterm.TableData{{"编号", "类型", "设备", "源路径", "链接路径", "有效", "错误类型"}}
 	for i, r := range results {
 		num := fmt.Sprintf("%d", i+1)
 		valid := "是"
 		if !r.Valid {
 			valid = "否"
 		}
-		relPath := truncateString(r.Real, (termWidth-7*3-4-8-4-10)/3-3)
-		if relPath == "" {
-			relPath = truncateString(r.Prim, (termWidth-7*3-4-8-4-10)/3-3)
+		srcPath := truncateString(r.Real, (termWidth-7*3-4-8-4-10)/3-3)
+		if srcPath == "" {
+			srcPath = truncateString(r.Prim, (termWidth-7*3-4-8-4-10)/3-3)
 		}
-		absPath := truncateString(r.Fake, (termWidth-7*3-4-8-4-10)/3-3)
-		if absPath == "" {
-			absPath = truncateString(r.Seco, (termWidth-7*3-4-8-4-10)/3-3)
+		linkPath := truncateString(r.Fake, (termWidth-7*3-4-8-4-10)/3-3)
+		if linkPath == "" {
+			linkPath = truncateString(r.Seco, (termWidth-7*3-4-8-4-10)/3-3)
 		}
 
 		colorize := func(s string) string {
-			// i=0 => 第 1 行（奇数行）
 			if i%2 == 0 {
 				return pterm.Red(s)
 			}
@@ -155,9 +148,8 @@ func PrintCheckResultsFix(format OutputFormat, results []CheckResult) error {
 			colorize(num),
 			colorize(truncateString(r.Type, 6)),
 			colorize(truncateString(r.Device, 8)),
-			colorize(truncateString(r.Path, (termWidth-7*3-4-8-4-10)/3-3)),
-			colorize(relPath),
-			colorize(absPath),
+			colorize(srcPath),
+			colorize(linkPath),
 			colorize(valid),
 			colorize(truncateString(r.ErrorType, 10)),
 		}
@@ -168,7 +160,7 @@ func PrintCheckResultsFix(format OutputFormat, results []CheckResult) error {
 	return nil
 }
 
-// truncateString 截断路径，如果超过 maxLen
+// truncateString 截断字符串，如果超过 maxLen
 func truncateString(raw string, maxLen int) string {
 	runes := []rune(raw)
 	if len(runes) <= maxLen {

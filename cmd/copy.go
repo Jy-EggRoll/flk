@@ -129,8 +129,7 @@ func Copy(cmd *cobra.Command, args []string) error {
 				"src": normalizedSrc,
 				"dst": absDstPath,
 			}
-			parentPath := WorkDir
-			mgr.AddRecord(createDevice, "copy", parentPath, fields)
+			mgr.AddRecord(createDevice, "copy", fields)
 			if err := mgr.Save(store.StorePath); err != nil {
 				logger.Error("持久化失败 " + err.Error())
 			}
