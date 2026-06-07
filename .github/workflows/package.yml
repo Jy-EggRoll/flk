@@ -39,7 +39,9 @@ jobs:
                   echo "version=$VERSION" >> $GITHUB_OUTPUT
 
             - name: Setup Task
-              run: go install github.com/go-task/task/v3/cmd/task@latest
+              uses: go-task/setup-task@v2
+              with:
+                  version: 3.x
 
             - name: Get build time
               id: get_build_time
