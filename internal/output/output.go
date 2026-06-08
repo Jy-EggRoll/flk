@@ -197,13 +197,11 @@ func PrintCreateResult(format OutputFormat, result CreateResult) error {
 		}
 		fmt.Println(string(data))
 	case Table:
-		table := pterm.TableData{{"成功", "类型", "消息", "错误"}}
-		success := "是"
-		if !result.Success {
-			success = "否"
+		if result.Success && result.Message != "" {
+			pterm.Success.Println(result.Type + ": " + result.Message)
+		} else if !result.Success && result.Error != "" {
+			pterm.Error.Println(result.Type + ": " + result.Error)
 		}
-		table = append(table, []string{success, result.Type, result.Message, result.Error})
-		pterm.DefaultTable.WithHasHeader().WithData(table).Render()
 	}
 	return nil
 }
