@@ -50,7 +50,7 @@ func RunFix(cmd *cobra.Command, args []string) {
 			DeviceFilters: deviceFilters,
 			CheckSymlink:  fixSymlink,
 			CheckHardlink: fixHardlink,
-			CheckCopy:     true,
+			CheckCopy:     false,
 			CheckDir:      fixDir,
 		})
 		if err != nil {
