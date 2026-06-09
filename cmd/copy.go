@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jy-eggroll/flk/internal/create/copy"
+	"github.com/jy-eggroll/flk/internal/create/shared"
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
@@ -32,7 +33,7 @@ func init() {
 	createCmd.AddCommand(copyCmd)
 	copyCmd.Flags().StringVar(&copySrc, "src", "", "源文件路径")
 	copyCmd.Flags().StringVar(&copyDst, "dst", "", "目标文件路径")
-	copyCmd.Flags().BoolVar(&createSmart, "smart", false, "智能模式：当 src 不存在但 dst 存在时，自动将 dst 复制到 src")
+	copyCmd.Flags().BoolVar(&createSmart, "smart", false, "智能模式：当 dst 存在时，自动将 dst 备份到 src 再复制")
 	copyCmd.Flags().BoolVar(&createForce, "force", false, "强制覆盖已存在的文件或文件夹")
 	copyCmd.Flags().StringVarP(&createDevice, "device", "d", "all", "设备名称，用于后续设备过滤")
 	copyCmd.MarkFlagRequired("src")
@@ -65,46 +66,54 @@ func Copy(cmd *cobra.Command, args []string) error {
 	srcExists, _ := os.Stat(normalizedSrc)
 	dstExists, _ := os.Stat(normalizedDst)
 
-	if srcExists == nil && dstExists == nil {
-		logger.Info("src 和 dst 都存在，正常复制 src -> dst")
-	} else if srcExists == nil && dstExists != nil {
-		logger.Info("src 不存在但 dst 存在")
-		if createSmart {
-			logger.Info("smart 模式：直接复制 dst -> src")
-			var result output.CreateResult
-			if err := copy.Create(normalizedDst, normalizedSrc, createForce, false); err != nil {
-				if errors.Is(err, safeop.ErrOperationCancelled) {
-					pterm.Info.Println("已取消操作")
-					return nil
-				}
-				result = output.CreateResult{Success: false, Type: "复制", Error: err.Error()}
-				output.PrintCreateResult(format, result)
-				return err
+	if srcExists == nil && dstExists != nil && dstExists.IsDir() {
+		// 仅在不涉及目录时提示备份（copy 只支持文件）
+		logger.Error("src 不存在，dst 是目录，复制不支持目录")
+		result := output.CreateResult{Success: false, Type: "复制", Error: "源文件不存在，目标路径是目录，不支持复制"}
+		output.PrintCreateResult(format, result)
+		return errors.New(result.Error)
+	}
+
+	if srcExists == nil && dstExists != nil {
+		backupResult, err := shared.HandleTargetBackup(shared.BackupOptions{
+			SourcePath:  normalizedSrc,
+			TargetPath:  normalizedDst,
+			Smart:       createSmart,
+			Force:       createForce,
+			SourceLabel: "src",
+			TargetLabel: "dst",
+		})
+		if err != nil {
+			if errors.Is(err, safeop.ErrOperationCancelled) {
+				pterm.Info.Println("已取消操作")
+				return nil
 			}
-			result = output.CreateResult{Success: true, Type: "复制", Message: "智能复制成功 (dst -> src)"}
+			result := output.CreateResult{Success: false, Type: "复制", Error: err.Error()}
 			output.PrintCreateResult(format, result)
-			return nil
-		} else {
-			confirm, _ := pterm.DefaultInteractiveConfirm.Show("src 不存在但 dst 存在，是否将 dst 复制到 src？")
-			if confirm {
-				logger.Info("用户确认智能复制 dst -> src")
-				var result output.CreateResult
-				if err := copy.Create(normalizedDst, normalizedSrc, createForce, false); err != nil {
-					if errors.Is(err, safeop.ErrOperationCancelled) {
-						pterm.Info.Println("已取消操作")
-						return nil
-					}
-					result = output.CreateResult{Success: false, Type: "复制", Error: err.Error()}
-					output.PrintCreateResult(format, result)
-					return err
+			return err
+		}
+
+		if backupResult.BackedUp {
+			// 对于复制操作，备份本身就是操作本身，不需要后续的删除和链接步骤
+			// HandleTargetBackup 已输出"复制成功"，此处只做持久化和结束
+			if store.GlobalManager == nil {
+				if err := store.InitStore(store.StorePath); err != nil {
+					logger.Error("初始化存储失败 " + err.Error())
 				}
-				result = output.CreateResult{Success: true, Type: "复制", Message: "智能复制成功 (dst -> src)"}
-				output.PrintCreateResult(format, result)
-				return nil
-			} else {
-				pterm.Info.Println("已取消智能复制")
-				return nil
 			}
+			mgr := store.GlobalManager
+			if mgr != nil {
+				absDstPath, _ := pathutil.ToAbsolute(normalizedDst)
+				fields := map[string]string{
+					"src": normalizedSrc,
+					"dst": absDstPath,
+				}
+				mgr.AddRecord(createDevice, "copy", fields)
+				if err := mgr.Save(store.StorePath); err != nil {
+					logger.Error("持久化失败 " + err.Error())
+				}
+			}
+			return nil
 		}
 	}
 

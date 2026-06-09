@@ -17,9 +17,11 @@ var ErrOperationCancelled = errors.New("操作已取消")
 type ConfirmFunc func() (bool, error)
 
 type RemoveOptions struct {
-	Force   bool
-	Output  io.Writer
-	Confirm ConfirmFunc
+	Force          bool
+	Output         io.Writer
+	Confirm        ConfirmFunc
+	ConfirmMessage string
+	ConfirmDefault bool
 }
 
 func PlanRemove(path string) ([]string, error) {
@@ -78,7 +80,15 @@ func RemoveWithConfirm(path string, opts RemoveOptions) ([]string, error) {
 	if !opts.Force {
 		confirm := opts.Confirm
 		if confirm == nil {
-			confirm = defaultConfirm
+			if opts.ConfirmMessage != "" {
+				msg := opts.ConfirmMessage
+				def := opts.ConfirmDefault
+				confirm = func() (bool, error) {
+					return pterm.DefaultInteractiveConfirm.WithDefaultValue(def).Show(msg)
+				}
+			} else {
+				confirm = defaultConfirm
+			}
 		}
 		ok, err := confirm()
 		if err != nil {
