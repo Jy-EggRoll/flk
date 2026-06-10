@@ -177,6 +177,71 @@ tasks:
     cmds:
       - go test ./... -count=1
 
+  changelog:
+    desc: '生成发布更新日志并输出到 stdout（用法: task changelog VERSION=x.y.z）'
+    cmds:
+      - |
+        set -e
+        CURRENT_TAG="{{.VERSION}}"
+
+        if [ -z "$CURRENT_TAG" ]; then
+          echo "Error: VERSION is required. Usage: task changelog VERSION=x.y.z" >&2
+          exit 1
+        fi
+
+        # 获取上一个正式版本标签
+        PREVIOUS_TAG=$(git tag -l --sort=-version:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | grep -v "^$CURRENT_TAG$" | head -n1 || true)
+
+        # 快速下载表格
+        echo "## 快速下载"
+        echo ""
+        echo "| 架构 | Windows | Linux | macOS | FreeBSD |"
+        echo "|------|---------|-------|-------|---------|"
+        echo "| **x86 (32位)** | [x86](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-windows-386.exe) | [x86](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-linux-386) | 不支持 | 不支持 |"
+        echo "| **x64 (64位)** | [x64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-windows-amd64.exe) | [x64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-linux-amd64) | [x64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-darwin-amd64) | [x64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-freebsd-amd64) |"
+        echo "| **ARM64** | [ARM64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-windows-arm64.exe) | [ARM64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-linux-arm64) | [ARM64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-darwin-arm64) | [ARM64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-freebsd-arm64) |"
+        echo "| **ARM (armv7)** | 不支持 | [ARM](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-linux-arm) | 不支持 | 不支持 |"
+        echo ""
+        echo "> **提示**：Windows 用户下载 .exe 文件，其他系统下载后需要添加执行权限 chmod +x flk-*"
+        echo ""
+        echo "---"
+        echo ""
+
+        # 从 CHANGELOG.md 提取当前版本的更新内容
+        if [ -f "CHANGELOG.md" ]; then
+          echo "## 主要更新内容"
+          awk -v version="$CURRENT_TAG" '
+            /^##/ {
+              if (found) exit
+              if ($0 ~ version) found=1
+              next
+            }
+            found && /^##/ { exit }
+            found { print }
+          ' CHANGELOG.md
+        fi
+
+        echo "## 详细提交记录"
+        echo ""
+
+        # 用 GitHub compare 链接替代冗长的提交列表
+        if [ -z "$PREVIOUS_TAG" ]; then
+          echo "首次发布"
+        else
+          echo "[查看 $PREVIOUS_TAG 到 $CURRENT_TAG 的完整变更](https://github.com/Jy-EggRoll/flk/compare/$PREVIOUS_TAG...$CURRENT_TAG)"
+          echo ""
+        fi
+
+        echo "---"
+        echo ""
+        echo "**安装说明：**"
+        echo ""
+        echo "1. 从上方表格中选择并下载对应平台和架构的二进制文件"
+        echo "2. Linux/macOS/BSD 用户需要赋予执行权限：\`chmod +x flk-*\`（建议直接将文件改名为 flk 方便调用和后续的升级）"
+        echo "3. 运行程序（建议直接将文件改名为 flk 方便调用）\`flk help\`"
+        echo ""
+        echo "详细使用说明请参考 [README.md](https://github.com/Jy-EggRoll/flk/blob/main/README.md)"
+
   clean:
     desc: Remove all build artifacts
     cmds:
