@@ -6,6 +6,8 @@ vars:
     sh: printf '%s' "${VERSION:-$(date '+%Y-%m-%d-%H-%M-%S')}"
   BUILDTIME:
     sh: printf '%s' "${BUILDTIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+  TYPE:
+    sh: printf '%s' "${TYPE:-release}"
   LDFLAGS: '-s -w -X github.com/jy-eggroll/flk/cmd.Version={{.VERSION}} -X github.com/jy-eggroll/flk/cmd.BuildTime={{.BUILDTIME}}'
 
 tasks:
@@ -178,10 +180,11 @@ tasks:
       - go test ./... -count=1
 
   changelog:
-    desc: '生成发布更新日志并输出到 stdout（用法: task changelog VERSION=x.y.z）'
+    desc: '生成发布更新日志并输出到 stdout（用法: task changelog VERSION=x.y.z [TYPE=release|dev]）'
     cmds:
       - |
         set -e
+        TYPE="{{.TYPE}}"
         CURRENT_TAG="{{.VERSION}}"
 
         if [ -z "$CURRENT_TAG" ]; then
@@ -189,8 +192,21 @@ tasks:
           exit 1
         fi
 
-        # 获取上一个正式版本标签
-        PREVIOUS_TAG=$(git tag -l --sort=-version:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | grep -v "^$CURRENT_TAG$" | head -n1 || true)
+        # 根据类型决定 tag 匹配模式：dev 版匹配任意标签，正式版只匹配 semver
+        if [ "$TYPE" = "dev" ]; then
+          TAG_PATTERN='.'
+        else
+          TAG_PATTERN='^[0-9]+\.[0-9]+\.[0-9]+$'
+        fi
+        PREVIOUS_TAG=$(git tag -l --sort=-version:refname | grep -E "$TAG_PATTERN" | grep -v "^$CURRENT_TAG$" | head -n1 || true)
+
+        # Dev 版本警告头部
+        if [ "$TYPE" = "dev" ]; then
+          echo "## 开发版本 - 仅供测试"
+          echo ""
+          echo "这是一个开发版本，仅供测试使用。请谨慎使用，可能包含不稳定或实验性功能。"
+          echo ""
+        fi
 
         # 快速下载表格
         echo "## 快速下载"
@@ -207,8 +223,17 @@ tasks:
         echo "---"
         echo ""
 
-        # 从 CHANGELOG.md 提取当前版本的更新内容
-        if [ -f "CHANGELOG.md" ]; then
+        # Dev 版本输出版本信息
+        if [ "$TYPE" = "dev" ]; then
+          echo "## 版本信息"
+          echo ""
+          echo "- 版本号: $CURRENT_TAG"
+          echo "- 提交: $(git rev-parse HEAD)"
+          echo ""
+        fi
+
+        # 从 CHANGELOG.md 提取当前版本的更新内容（仅正式版）
+        if [ "$TYPE" != "dev" ] && [ -f "CHANGELOG.md" ]; then
           echo "## 主要更新内容"
           awk -v version="$CURRENT_TAG" '
             /^##/ {
@@ -219,6 +244,7 @@ tasks:
             found && /^##/ { exit }
             found { print }
           ' CHANGELOG.md
+          echo ""
         fi
 
         echo "## 详细提交记录"
@@ -234,13 +260,22 @@ tasks:
 
         echo "---"
         echo ""
-        echo "**安装说明：**"
-        echo ""
-        echo "1. 从上方表格中选择并下载对应平台和架构的二进制文件"
-        echo "2. Linux/macOS/BSD 用户需要赋予执行权限：\`chmod +x flk-*\`（建议直接将文件改名为 flk 方便调用和后续的升级）"
-        echo "3. 运行程序（建议直接将文件改名为 flk 方便调用）\`flk help\`"
-        echo ""
-        echo "详细使用说明请参考 [README.md](https://github.com/Jy-EggRoll/flk/blob/main/README.md)"
+
+        # 底部信息
+        if [ "$TYPE" = "dev" ]; then
+          echo "## 注意事项"
+          echo ""
+          echo "仅通过 GitHub Release 提供下载"
+          echo "可能包含未经充分测试的功能"
+        else
+          echo "**安装说明：**"
+          echo ""
+          echo "1. 从上方表格中选择并下载对应平台和架构的二进制文件"
+          echo "2. Linux/macOS/BSD 用户需要赋予执行权限：\`chmod +x flk-*\`（建议直接将文件改名为 flk 方便调用和后续的升级）"
+          echo "3. 运行程序（建议直接将文件改名为 flk 方便调用）\`flk help\`"
+          echo ""
+          echo "详细使用说明请参考 [README.md](https://github.com/Jy-EggRoll/flk/blob/main/README.md)"
+        fi
 
   clean:
     desc: Remove all build artifacts

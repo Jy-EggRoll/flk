@@ -55,44 +55,17 @@ jobs:
                   VERSION: ${{ steps.get_version.outputs.version }}
                   BUILDTIME: ${{ steps.get_build_time.outputs.buildtime }}
 
+            - name: Generate release notes
+              if: github.event_name != 'workflow_dispatch'
+              run: task changelog VERSION=${{ steps.get_version.outputs.version }} TYPE=dev > release_notes.md
+
             - name: Create development release (for tag runs only)
               if: github.event_name != 'workflow_dispatch'
               uses: softprops/action-gh-release@v2
               with:
                   tag_name: ${{ steps.get_version.outputs.version }}
                   name: "flk v${{ steps.get_version.outputs.version }} (开发版)"
-                  body: |
-                      # 🚧 开发版本 - 仅供测试
-
-                      这是一个开发版本，仅供测试使用。请谨慎使用，可能包含不稳定或实验性功能。
-
-                      ## 📥 快速下载
-
-                      | 架构 | Windows | Linux | macOS | FreeBSD |
-                      |------|---------|-------|-------|---------|
-                      | **x86 (32位)** | [x86](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-windows-386.exe) | [x86](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-linux-386) | 不支持 | 不支持 |
-                      | **x64 (64位)** | [x64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-windows-amd64.exe) | [x64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-linux-amd64) | [x64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-darwin-amd64) | [x64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-freebsd-amd64) |
-                      | **ARM64** | [ARM64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-windows-arm64.exe) | [ARM64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-linux-arm64) | [ARM64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-darwin-arm64) | [ARM64](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-freebsd-arm64) |
-                      | **ARM (armv7)** | 不支持 | [ARM](https://github.com/Jy-EggRoll/flk/releases/download/${{ steps.get_version.outputs.version }}/flk-linux-arm) | 不支持 | 不支持 |
-
-                      > 💡 **提示**：Windows 用户下载 `.exe` 文件，其他系统下载后需要添加执行权限 `chmod +x flk-*`
-
-                      ---
-
-                      ## 版本信息
-
-                      - 版本号: ${{ steps.get_version.outputs.version }}
-                      - 构建时间: ${{ github.run_id }}
-                      - 提交: ${{ github.sha }}
-
-                      ## 注意事项
-
-                      ⚠️ 仅通过 GitHub Release 提供下载
-                      ⚠️ 可能包含未经充分测试的功能
-
-                      ---
-
-                      📦 **安装方式：** 下载对应平台的二进制文件，赋予执行权限后直接运行。
+                  body_path: release_notes.md
                   files: |
                       build/*
                   draft: false
