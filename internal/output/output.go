@@ -3,6 +3,9 @@ package output
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
+	"sort"
+	"strings"
 
 	"github.com/pterm/pterm"
 )
@@ -36,6 +39,70 @@ type CreateResult struct {
 	Type    string `json:"type"`
 	Message string `json:"message,omitempty"`
 	Error   string `json:"error,omitempty"`
+}
+
+// toSortedMap 将结构体转为 map[string]interface{}，利用 Go 对 map key 的默认排序实现字典序 JSON 输出
+// 支持 json tag 命名和 omitempty 语义
+func toSortedMap(v interface{}) map[string]interface{} {
+	val := reflect.ValueOf(v)
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
+	typ := val.Type()
+	if typ.Kind() != reflect.Struct {
+		return nil
+	}
+
+	result := make(map[string]interface{})
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		fieldVal := val.Field(i)
+
+		if field.PkgPath != "" {
+			continue
+		}
+
+		tag := field.Tag.Get("json")
+		if tag == "-" {
+			continue
+		}
+		name := field.Name
+		omitEmpty := false
+		if tag != "" {
+			parts := strings.Split(tag, ",")
+			if parts[0] != "" {
+				name = parts[0]
+			}
+			for _, p := range parts[1:] {
+				if p == "omitempty" {
+					omitEmpty = true
+					break
+				}
+			}
+		}
+
+		if omitEmpty && fieldVal.IsZero() {
+			continue
+		}
+
+		result[name] = fieldVal.Interface()
+	}
+	return result
+}
+
+// resultMapValues 从 struct 转换得到的 map 中提取所有值并按键排序，用于排序比较
+func resultMapValues(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	vals := make([]string, 0, len(m))
+	for _, k := range keys {
+		vals = append(vals, fmt.Sprintf("%v", m[k]))
+	}
+	sort.Strings(vals)
+	return vals
 }
 
 // PrintCheckResults 打印检查结果
@@ -78,12 +145,26 @@ func PrintCheckResults(format OutputFormat, results []CheckResult) error {
 
 	switch format {
 	case JSON:
-		data, err := json.MarshalIndent(results, "", "    ")
+		sort.SliceStable(results, func(i, j int) bool {
+			vi := resultMapValues(toSortedMap(results[i]))
+			vj := resultMapValues(toSortedMap(results[j]))
+			for idx := 0; idx < len(vi) && idx < len(vj); idx++ {
+				if vi[idx] != vj[idx] {
+					return vi[idx] < vj[idx]
+				}
+			}
+			return len(vi) < len(vj)
+		})
+		sortedResults := make([]map[string]interface{}, len(results))
+		for i, r := range results {
+			sortedResults[i] = toSortedMap(r)
+		}
+		data, err := json.MarshalIndent(sortedResults, "", "    ")
 		if err != nil {
 			return err
 		}
 		fmt.Println(string(data))
-		case Table:
+	case Table:
 		termWidth := pterm.GetTerminalWidth()
 		table := pterm.TableData{{"编号", "类型", "设备", "源路径", "链接路径", "有效", "错误类型"}}
 		for i, r := range results {
@@ -191,7 +272,7 @@ func truncateString(raw string, maxLen int) string {
 func PrintCreateResult(format OutputFormat, result CreateResult) error {
 	switch format {
 	case JSON:
-		data, err := json.MarshalIndent(result, "", "    ")
+		data, err := json.MarshalIndent(toSortedMap(result), "", "    ")
 		if err != nil {
 			return err
 		}

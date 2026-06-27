@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/jy-eggroll/flk/internal/logger"
@@ -85,6 +86,7 @@ func (m *Manager) AddRecord(device, linkType string, fields map[string]string) {
 }
 
 func (m *Manager) ToJSON() string {
+	sortRootConfig(m.Data)
 	jsonResult, _ := json.MarshalIndent(m.Data, "", "    ")
 	return string(jsonResult)
 }
@@ -139,6 +141,7 @@ func InitStore(storePath string) error {
 
 // Save 将数据持久化到指定文件
 func (m *Manager) Save(filePath string) error {
+	sortRootConfig(m.Data)
 	data, err := json.MarshalIndent(m.Data, "", "    ")
 	if err != nil {
 		return err
@@ -193,6 +196,42 @@ func LoadFromFile(filePath string) (*Manager, error) {
 	}
 
 	return manager, nil
+}
+
+// sortEntrySlice 对 []Entry 按所有字段值的字典序排序
+// 条目比较：提取每个 Entry 的所有值，各自升序排列后逐位比较，确保稳定可预测的输出
+func sortEntrySlice(entries []Entry) {
+	sort.SliceStable(entries, func(i, j int) bool {
+		vi := entrySortValues(entries[i])
+		vj := entrySortValues(entries[j])
+		for idx := 0; idx < len(vi) && idx < len(vj); idx++ {
+			if vi[idx] != vj[idx] {
+				return vi[idx] < vj[idx]
+			}
+		}
+		return len(vi) < len(vj)
+	})
+}
+
+// entrySortValues 提取 Entry 中所有值并按字母序排列，用于排序比较
+func entrySortValues(e Entry) []string {
+	vals := make([]string, 0, len(e))
+	for _, v := range e {
+		vals = append(vals, v)
+	}
+	sort.Strings(vals)
+	return vals
+}
+
+// sortRootConfig 递归遍历 RootConfig，对所有 []Entry 进行排序
+func sortRootConfig(rc RootConfig) {
+	for _, dg := range rc {
+		for _, tg := range dg {
+			for _, entries := range tg {
+				sortEntrySlice(entries)
+			}
+		}
+	}
 }
 
 // migrateFromLegacy 将旧格式（4层带 parentPath）迁移到新格式（3层扁平结构）
