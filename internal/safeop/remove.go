@@ -99,10 +99,10 @@ func RemoveWithConfirm(path string, opts RemoveOptions) ([]string, error) {
 		}
 	}
 
-	for _, p := range paths {
-		if err := pathutil.ValidateSafePath(p); err != nil {
-			return nil, err
-		}
+	// 删除前对顶层目标做强安全校验（而非逐个子文件），保证校验对象与删除对象一致，避免 TOCTOU 竞态
+	// ValidateSafePath 已禁止删除根目录、家目录本身及家目录顶层子项（如 ~/.ssh、~/.config）
+	if err := pathutil.ValidateSafePath(path); err != nil {
+		return nil, err
 	}
 
 	if err := os.RemoveAll(path); err != nil {

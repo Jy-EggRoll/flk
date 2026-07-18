@@ -10,7 +10,9 @@ import (
 	"strings"
 )
 
-// ValidateSafePath 检查路径是否安全删除（不是根目录或家目录本身）
+// ValidateSafePath 检查路径是否安全删除
+// 受保护目标包括：根目录、家目录本身、以及家目录的直接一级子项（如 ~/.ssh、~/.config）
+// 这样做既能避免误删整个家目录子树下的系统关键目录，又允许删除用户通过 flk 管理的更深层子目录
 func ValidateSafePath(path string) error {
 	if path == "" {
 		return errors.New("路径为空")
@@ -20,28 +22,37 @@ func ValidateSafePath(path string) error {
 	if err != nil {
 		return err
 	}
+	// 统一使用分隔符，避免 Windows 上混合分隔符导致的前缀判断失效
+	absPath = filepath.Clean(absPath)
 
-	// 检查根目录
-	if runtime.GOOS == "windows" {
-		// Windows 根目录: C:\, D:\, 等
-		if len(absPath) == 3 && strings.HasSuffix(absPath, ":\\") {
-			return errors.New("不能删除根目录")
+	home, herr := os.UserHomeDir()
+	if herr == nil {
+		homeAbs := filepath.Clean(home)
+		// 家目录本身
+		if absPath == homeAbs {
+			return errors.New("不能删除家目录本身")
 		}
-		// Windows 家目录: C:\Users\username
-		if home, err := os.UserHomeDir(); err == nil {
-			if absPath == home {
-				return errors.New("不能删除家目录")
+		// 家目录的直接一级子项（~/xxx 或 ~\xxx）：路径段数比家目录多 1 且以家目录为前缀
+		if strings.HasPrefix(absPath, homeAbs+string(os.PathSeparator)) {
+			rel, relErr := filepath.Rel(homeAbs, absPath)
+			if relErr == nil && !strings.ContainsRune(rel, os.PathSeparator) {
+				return fmt.Errorf("不能删除家目录下的顶层目录或文件: %s", absPath)
 			}
 		}
-	} else {
-		// Unix-like 根目录: /
-		if absPath == "/" {
-			return errors.New("不能删除根目录")
-		}
-		// Unix 家目录: /home/username
-		if home, err := os.UserHomeDir(); err == nil {
-			if absPath == home {
-				return errors.New("不能删除家目录")
+	}
+
+	// 检查根目录（跨平台统一处理，Windows 下覆盖 C:\、C:、C:\ 等变体）
+	if absPath == string(os.PathSeparator) {
+		return errors.New("不能删除根目录")
+	}
+	if runtime.GOOS == "windows" {
+		// Windows 盘符根目录形如 C:\，也可能出现 C: 或尾部带多余分隔符的写法，统一归一化后判断
+		if len(absPath) >= 2 && absPath[1] == ':' {
+			drive := absPath[:2]
+			rest := absPath[2:]
+			// 去掉开头的反斜杠后应为空，才表示盘符根目录
+			if rest == "" || rest == "\\" || rest == "/" {
+				return fmt.Errorf("不能删除根目录: %s", drive)
 			}
 		}
 	}
@@ -110,7 +121,9 @@ func ExpandHome(path string) (string, error) {
 		return filepath.Join(home, path[2:]), nil // 使用 filepath.Join 拼接主目录和~后的路径（path[2:]截取从索引 2 开始的子串，去掉~和分隔符），返回拼接后的路径和 nil（表示无错误）
 	}
 
-	return "", err // 若以上条件都不满足（如~后接非分隔符的情况），返回空字符串和错误对象
+	// 若以上条件都不满足（如~后接非分隔符的情况，例如 "~foo"），属于非法路径前缀，必须返回明确错误
+	// 之前此处返回 ("", nil)，会静默得到空路径并被后续逻辑当作当前目录使用，属于严重隐患，故改为显式报错
+	return "", fmt.Errorf("非法的 ~ 路径前缀: %s", path)
 }
 
 func NormalizePath(path string) (string, error) { // 定义 NormalizePath 函数，接收字符串类型的路径参数，返回规范化后的路径字符串和错误对象
