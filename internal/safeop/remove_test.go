@@ -9,13 +9,19 @@ import (
 
 // TestRemoveWithConfirm_BlocksHomeDirectChild 验证删除家目录顶层子项时被安全校验拦截，不会真正删除
 // 对应修复点：ValidateSafePath 现在禁止删除 ~/.ssh 等家目录顶层子项
+// 注意：RemoveWithConfirm 对不存在的路径会在 PlanRemove 阶段直接返回，不会走到 ValidateSafePath，
+// 因此此处必须在真实 HOME 下创建出该目录再尝试删除，才能命中校验逻辑
 func TestRemoveWithConfirm_BlocksHomeDirectChild(t *testing.T) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Skip("无法获取家目录，跳过")
 	}
-	// 仅校验逻辑，不需要真实存在该路径
-	target := filepath.Join(home, ".ssh")
+	target := filepath.Join(home, ".flk-safeop-test-blocked")
+	if err := os.MkdirAll(target, 0755); err != nil {
+		t.Skip("无法在 HOME 下创建测试目录，跳过: " + err.Error())
+	}
+	defer os.RemoveAll(target)
+
 	_, err = RemoveWithConfirm(target, RemoveOptions{Force: true})
 	if err == nil {
 		t.Fatalf("RemoveWithConfirm 应拦截家目录顶层子项 %s", target)
