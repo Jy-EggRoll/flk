@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -171,11 +174,42 @@ func checkCopyValid(src, dst string) (bool, string, string) {
 		return false, fmt.Sprintf("源文件 %s 不存在", src), "SRC_MISSING"
 	case dstErr != nil:
 		return false, fmt.Sprintf("目标文件 %s 不存在", dst), "DST_MISSING"
-	case !srcInfo.ModTime().Equal(dstInfo.ModTime()):
-		return false, "源文件和目标文件的修改时间不一致，需要同步", "MOD_TIME_MISMATCH"
+	case !srcInfo.Mode().IsRegular() || !dstInfo.Mode().IsRegular():
+		return false, "源文件或目标文件不是普通文件，无法比较内容", "NOT_REGULAR_FILE"
+	case srcInfo.Size() != dstInfo.Size():
+		return false, "源文件和目标文件大小不一致，需要同步", "SIZE_MISMATCH"
+	case !filesEqualByHash(expandedSrc, expandedDst):
+		return false, "源文件和目标文件内容不一致，需要同步", "CONTENT_MISMATCH"
 	default:
 		return true, "", ""
 	}
+}
+
+// filesEqualByHash 通过对两个文件做 SHA256 哈希比对判断内容是否一致
+// 相比仅比较修改时间，能避免时区/精度/NFS 等因素导致的误报，准确识别是否需要同步
+func filesEqualByHash(a, b string) bool {
+	hashA, err := sha256File(a)
+	if err != nil {
+		return false
+	}
+	hashB, err := sha256File(b)
+	if err != nil {
+		return false
+	}
+	return hashA == hashB
+}
+
+func sha256File(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func checkSymlinkValid(real, fake string) (bool, string, string) {
