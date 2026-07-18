@@ -10,7 +10,6 @@ import (
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/safeop"
-	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 )
@@ -103,23 +102,10 @@ func Symlink(cmd *cobra.Command, args []string) error {
 	} else {
 		result = output.CreateResult{Success: true, Type: "符号链接", Message: "创建成功"}
 		// 持久化数据
-		if store.GlobalManager == nil {
-			if err := store.InitStore(store.StorePath); err != nil {
-				logger.Error("初始化存储失败 " + err.Error())
-			}
-		}
-		mgr := store.GlobalManager
-		if mgr != nil {
-			absFakePath, _ := pathutil.ToAbsolute(normalizedFake)
-			fields := map[string]string{
-				"real": normalizedReal,
-				"fake": absFakePath,
-			}
-			mgr.AddRecord(createDevice, "symlink", fields)
-			if err := mgr.Save(store.StorePath); err != nil {
-				logger.Error("持久化失败 " + err.Error())
-			}
-		}
+		persistRecord(createDevice, "symlink", map[string]string{
+			"real": normalizedReal,
+			"fake": normalizedFake,
+		})
 	}
 	output.PrintCreateResult(format, result)
 	if result.Success {

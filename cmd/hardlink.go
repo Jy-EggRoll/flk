@@ -6,11 +6,9 @@ import (
 
 	"github.com/jy-eggroll/flk/internal/create/hardlink"
 	"github.com/jy-eggroll/flk/internal/create/shared"
-	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/safeop"
-	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 )
@@ -90,23 +88,10 @@ func Hardlink(cmd *cobra.Command, args []string) error {
 	} else {
 		result = output.CreateResult{Success: true, Type: "硬链接", Message: "创建成功"}
 		// 存储逻辑
-		if store.GlobalManager == nil {
-			if err := store.InitStore(store.StorePath); err != nil {
-				logger.Error("初始化存储失败 " + err.Error())
-			}
-		}
-		mgr := store.GlobalManager
-		if mgr != nil {
-			absSecoPath, _ := pathutil.ToAbsolute(normalizedSeco)
-			fields := map[string]string{
-				"prim": normalizedPrim,
-				"seco": absSecoPath,
-			}
-			mgr.AddRecord(createDevice, "hardlink", fields)
-			if err := mgr.Save(store.StorePath); err != nil {
-				logger.Error("持久化失败 " + err.Error())
-			}
-		}
+		persistRecord(createDevice, "hardlink", map[string]string{
+			"prim": normalizedPrim,
+			"seco": normalizedSeco,
+		})
 	}
 	output.PrintCreateResult(format, result)
 	if result.Success {

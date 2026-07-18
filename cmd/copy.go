@@ -11,7 +11,6 @@ import (
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/safeop"
-	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 )
@@ -96,23 +95,10 @@ func Copy(cmd *cobra.Command, args []string) error {
 		if backupResult.BackedUp {
 			// 对于复制操作，备份本身就是操作本身，不需要后续的删除和链接步骤
 			// HandleTargetBackup 已输出"复制成功"，此处只做持久化和结束
-			if store.GlobalManager == nil {
-				if err := store.InitStore(store.StorePath); err != nil {
-					logger.Error("初始化存储失败 " + err.Error())
-				}
-			}
-			mgr := store.GlobalManager
-			if mgr != nil {
-				absDstPath, _ := pathutil.ToAbsolute(normalizedDst)
-				fields := map[string]string{
-					"src": normalizedSrc,
-					"dst": absDstPath,
-				}
-				mgr.AddRecord(createDevice, "copy", fields)
-				if err := mgr.Save(store.StorePath); err != nil {
-					logger.Error("持久化失败 " + err.Error())
-				}
-			}
+			persistRecord(createDevice, "copy", map[string]string{
+				"src": normalizedSrc,
+				"dst": normalizedDst,
+			})
 			return nil
 		}
 	}
@@ -126,23 +112,10 @@ func Copy(cmd *cobra.Command, args []string) error {
 		result = output.CreateResult{Success: false, Type: "复制", Error: err.Error()}
 	} else {
 		result = output.CreateResult{Success: true, Type: "复制", Message: "复制成功"}
-		if store.GlobalManager == nil {
-			if err := store.InitStore(store.StorePath); err != nil {
-				logger.Error("初始化存储失败 " + err.Error())
-			}
-		}
-		mgr := store.GlobalManager
-		if mgr != nil {
-			absDstPath, _ := pathutil.ToAbsolute(normalizedDst)
-			fields := map[string]string{
-				"src": normalizedSrc,
-				"dst": absDstPath,
-			}
-			mgr.AddRecord(createDevice, "copy", fields)
-			if err := mgr.Save(store.StorePath); err != nil {
-				logger.Error("持久化失败 " + err.Error())
-			}
-		}
+		persistRecord(createDevice, "copy", map[string]string{
+			"src": normalizedSrc,
+			"dst": normalizedDst,
+		})
 	}
 	output.PrintCreateResult(format, result)
 	if result.Success {

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
@@ -8,9 +9,13 @@ import (
 	"strings"
 
 	"github.com/jy-eggroll/flk/internal/create/copy"
+	"github.com/jy-eggroll/flk/internal/create/hardlink"
+	"github.com/jy-eggroll/flk/internal/create/shared"
+	"github.com/jy-eggroll/flk/internal/create/symlink"
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
+	"github.com/jy-eggroll/flk/internal/safeop"
 	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
@@ -189,14 +194,10 @@ func RunFix(cmd *cobra.Command, args []string) {
 }
 
 func repairResult(result output.CheckResult, idx int) error {
-	// 路径已存储为折叠绝对路径，直接展开即可，无需 WorkDir hack
+	// 路径已存储为折叠绝对路径，展开为规范化绝对路径后直接调用底层创建函数
+	// 不再通过改写包级全局变量复用命令 RunE（旧的 hack 在 panic 或部分失败时无法可靠还原状态，且存在并发竞态）
 	switch result.Type {
 	case "symlink":
-		oldReal := symlinkReal
-		oldFake := symlinkFake
-		oldForce := createForce
-		oldDevice := createDevice
-
 		expandedReal, err := pathutil.NormalizePath(result.Real)
 		if err != nil {
 			return fmt.Errorf("展开源路径失败: %w", err)
@@ -205,24 +206,32 @@ func repairResult(result output.CheckResult, idx int) error {
 		if err != nil {
 			return fmt.Errorf("展开链接路径失败: %w", err)
 		}
-		symlinkReal = expandedReal
-		symlinkFake = expandedFake
-		createForce = fixForce
-		createDevice = result.Device
-
-		defer func() {
-			symlinkReal = oldReal
-			symlinkFake = oldFake
-			createForce = oldForce
-			createDevice = oldDevice
-		}()
-		return Symlink(nil, nil)
+		backupResult, err := shared.HandleTargetBackup(shared.BackupOptions{
+			SourcePath:  expandedReal,
+			TargetPath:  expandedFake,
+			Smart:       false,
+			Force:       fixForce,
+			SourceLabel: "real",
+			TargetLabel: "fake",
+		})
+		if err != nil {
+			if errors.Is(err, safeop.ErrOperationCancelled) {
+				return nil
+			}
+			return err
+		}
+		if err := symlink.Create(expandedReal, expandedFake, backupResult.RemoveOpts); err != nil {
+			if errors.Is(err, safeop.ErrOperationCancelled) {
+				return nil
+			}
+			return err
+		}
+		persistRecord(result.Device, "symlink", map[string]string{
+			"real": expandedReal,
+			"fake": expandedFake,
+		})
+		return nil
 	case "hardlink":
-		oldPrim := hardlinkPrim
-		oldSeco := hardlinkSeco
-		oldForce := createForce
-		oldDevice := createDevice
-
 		expandedPrim, err := pathutil.NormalizePath(result.Prim)
 		if err != nil {
 			return fmt.Errorf("展开主文件路径失败: %w", err)
@@ -231,18 +240,31 @@ func repairResult(result output.CheckResult, idx int) error {
 		if err != nil {
 			return fmt.Errorf("展开次文件路径失败: %w", err)
 		}
-		hardlinkPrim = expandedPrim
-		hardlinkSeco = expandedSeco
-		createForce = fixForce
-		createDevice = result.Device
-
-		defer func() {
-			hardlinkPrim = oldPrim
-			hardlinkSeco = oldSeco
-			createForce = oldForce
-			createDevice = oldDevice
-		}()
-		return Hardlink(nil, nil)
+		backupResult, err := shared.HandleTargetBackup(shared.BackupOptions{
+			SourcePath:  expandedPrim,
+			TargetPath:  expandedSeco,
+			Smart:       false,
+			Force:       fixForce,
+			SourceLabel: "prim",
+			TargetLabel: "seco",
+		})
+		if err != nil {
+			if errors.Is(err, safeop.ErrOperationCancelled) {
+				return nil
+			}
+			return err
+		}
+		if err := hardlink.Create(expandedPrim, expandedSeco, backupResult.RemoveOpts); err != nil {
+			if errors.Is(err, safeop.ErrOperationCancelled) {
+				return nil
+			}
+			return err
+		}
+		persistRecord(result.Device, "hardlink", map[string]string{
+			"prim": expandedPrim,
+			"seco": expandedSeco,
+		})
+		return nil
 	case "copy":
 		expandedSrc, err := pathutil.NormalizePath(result.Src)
 		if err != nil {
@@ -271,7 +293,17 @@ func repairResult(result output.CheckResult, idx int) error {
 			from, to = expandedDst, expandedSrc
 		}
 
-		return copy.Create(from, to, fixForce, false)
+		if err := copy.Create(from, to, fixForce, false); err != nil {
+			if errors.Is(err, safeop.ErrOperationCancelled) {
+				return nil
+			}
+			return err
+		}
+		persistRecord(result.Device, "copy", map[string]string{
+			"src": expandedSrc,
+			"dst": expandedDst,
+		})
+		return nil
 	}
 	return fmt.Errorf("未知类型 %s", result.Type)
 }
