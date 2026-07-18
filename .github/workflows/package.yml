@@ -43,6 +43,9 @@ jobs:
               with:
                   version: 3.x
 
+            - name: Run tests
+              run: task test
+
             - name: Get build time
               id: get_build_time
               run: |

@@ -12,8 +12,9 @@ vars:
 
 tasks:
   default:
-    desc: Build for all platforms
+    desc: 构建前先跑全部测试，再交叉编译所有平台
     deps:
+      - test
       - build-all
 
   build-all:

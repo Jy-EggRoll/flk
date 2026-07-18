@@ -21,8 +21,10 @@ var rootCmd = &cobra.Command{
 	Use:     "flk",
 	Short:   "flk 是一个跨平台的文件链接管理工具",
 	Long:    "flk 是一个跨平台的文件链接管理工具",
-	Version: "",
+	Version: Version,
 	PreRunE: func(cmd *cobra.Command, args []string) error {
+		// -v/--version 直接复用 version 子命令的打印逻辑，打印后正常退出
+		// 注意：必须在 PersistentPreRun 之前处理，避免无谓地初始化存储与日志
 		if v, _ := cmd.Flags().GetBool("version"); v {
 			versionCmd.Run(versionCmd, nil)
 			os.Exit(0)
