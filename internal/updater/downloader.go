@@ -15,7 +15,32 @@ import (
 	"github.com/jy-eggroll/flk/internal/logger"
 )
 
-const ghProxyPrefix = "https://gh-proxy.org/"
+// ghProxyDefault 默认使用的 GitHub 加速代理（国内用户直连 GitHub 常不通，代理优先）
+// 用户可通过环境变量 FLK_GH_PROXY 覆盖，支持逗号分隔多个代理（按顺序作为优先级做故障转移）
+const ghProxyDefault = "https://gh-proxy.org/"
+
+// proxyList 解析实际使用的代理列表：优先读取 FLK_GH_PROXY 环境变量（逗号分隔），
+// 否则回退到默认代理。所有下载与校验和获取都先依次尝试这些代理，全部失败才直连官方
+func proxyList() []string {
+	if raw := strings.TrimSpace(os.Getenv("FLK_GH_PROXY")); raw != "" {
+		var list []string
+		for _, p := range strings.Split(raw, ",") {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			// 统一保证代理前缀以 / 结尾，便于拼接目标 URL
+			if !strings.HasSuffix(p, "/") {
+				p += "/"
+			}
+			list = append(list, p)
+		}
+		if len(list) > 0 {
+			return list
+		}
+	}
+	return []string{ghProxyDefault}
+}
 
 // DownloadAndReplace 下载新版二进制并替换当前可执行文件
 // 完整流程：代理/原始链接下载到临时文件 -> 校验 SHA256 完整性 -> 备份旧二进制 -> 延迟脚本原子替换
@@ -23,13 +48,21 @@ const ghProxyPrefix = "https://gh-proxy.org/"
 func DownloadAndReplace(url, filename, destDir string) error {
 	downloadPath := filepath.Join(destDir, filename)
 
-	proxyURL := ghProxyPrefix + url
-	if err := downloadWithRetry(proxyURL, url, downloadPath); err != nil {
+	proxies := proxyList()
+	// 构造每个代理对应的完整下载 URL（代理优先，直连兜底）
+	proxyURLs := make([]string, 0, len(proxies)+1)
+	for _, p := range proxies {
+		proxyURLs = append(proxyURLs, p+url)
+	}
+	proxyURLs = append(proxyURLs, url) // 末尾为官方直连，作为所有代理都失败时的兜底
+
+	if err := downloadWithRetry(proxyURLs, downloadPath); err != nil {
 		return err
 	}
 
 	// 下载完成后立即做完整性校验，拦截被篡改或损坏的二进制
-	if err := verifyChecksum(downloadPath, proxyURL, url); err != nil {
+	// 校验和同样按代理优先、直连兜底的同一顺序尝试
+	if err := verifyChecksum(downloadPath, proxyURLs); err != nil {
 		os.Remove(downloadPath)
 		return err
 	}
@@ -51,15 +84,27 @@ func DownloadAndReplace(url, filename, destDir string) error {
 	return replaceUnix(downloadPath, execPath, backupPath)
 }
 
-func downloadWithRetry(proxyURL, originalURL, destPath string) error {
-	logger.Info("正在尝试代理下载...")
-	if err := download(proxyURL, destPath); err != nil {
-		logger.Info("代理下载失败，尝试原始链接...")
-		if err := download(originalURL, destPath); err != nil {
-			return err
+// downloadWithRetry 按 urls 顺序依次尝试下载，urls 中代理在前、官方直连在末
+// 这样国内用户默认优先走加速代理，代理全部不可用才回退直连
+func downloadWithRetry(urls []string, destPath string) error {
+	var lastErr error
+	for i, u := range urls {
+		label := "官方直连"
+		if i < len(urls)-1 {
+			label = fmt.Sprintf("代理(%d)", i+1)
 		}
+		logger.Info("正在尝试%s下载...", label)
+		if err := download(u, destPath); err != nil {
+			logger.Warn("%s下载失败: %v", label, err)
+			lastErr = err
+			continue
+		}
+		return nil
 	}
-	return nil
+	if lastErr != nil {
+		return lastErr
+	}
+	return fmt.Errorf("所有下载源均不可用")
 }
 
 func download(url, destPath string) error {
@@ -117,9 +162,14 @@ func download(url, destPath string) error {
 }
 
 // verifyChecksum 优先尝试下载与二进制同名的 .sha256 校验和文件并与本地哈希比对
-// 若代理与原始链接都获取不到校验和文件，则仅告警不阻断（兼容未提供校验和的发布）
-func verifyChecksum(binPath, proxyURL, originalURL string) error {
-	want, err := fetchChecksum(proxyURL+".sha256", originalURL+".sha256")
+// urls 顺序与下载一致（代理在前、直连在末），任一源取到校验和即停止
+// 若所有源都获取不到校验和文件，则仅告警不阻断（兼容未提供校验和的发布）
+func verifyChecksum(binPath string, urls []string) error {
+	checksumURLs := make([]string, 0, len(urls))
+	for _, u := range urls {
+		checksumURLs = append(checksumURLs, u+".sha256")
+	}
+	want, err := fetchChecksum(checksumURLs...)
 	if err != nil {
 		logger.Warn("未找到校验和文件，跳过完整性校验: %v", err)
 		return nil

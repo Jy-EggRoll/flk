@@ -94,16 +94,30 @@ func fetchAllReleases() ([]Release, error) {
 		logger.Debug("使用 GitHub 令牌进行认证更新检查")
 	}
 
-	// 更新检查也走代理回退：先试 gh-proxy 加速的 API，失败再直连官方 API
+	// 更新检查同样代理优先（国内用户直连 GitHub API 常不通）：依次尝试所有代理，全部失败再直连官方 API
+	// 代理列表由 FLK_GH_PROXY 环境变量或默认 gh-proxy.org 决定，与下载器保持一致
 	// 注意：GitHub 对匿名 API 限制每小时 60 次（按公网 IP 计），超出返回 403，
-	// 代理可分散 IP 压力；若仍 403 则给出速率限制友好提示而非笼统报错
-	proxyURL := ghProxyPrefix + url
-	releases, err := fetchReleasesFromURL(proxyURL, token)
-	if err != nil {
-		logger.Info("代理检查更新失败，尝试直连官方 API...")
-		return fetchReleasesFromURL(url, token)
+	// 代理可分散 IP 压力；携带令牌（gh 已登录）时限额提升到 5000 次/小时
+	urls := make([]string, 0, len(proxyList())+1)
+	for _, p := range proxyList() {
+		urls = append(urls, p+url)
 	}
-	return releases, nil
+	urls = append(urls, url) // 官方直连兜底
+
+	var lastErr error
+	for i, u := range urls {
+		label := "官方直连"
+		if i < len(urls)-1 {
+			label = fmt.Sprintf("代理(%d)", i+1)
+		}
+		releases, err := fetchReleasesFromURL(u, token)
+		if err == nil {
+			return releases, nil
+		}
+		logger.Warn("%s检查更新失败: %v", label, err)
+		lastErr = err
+	}
+	return nil, lastErr
 }
 
 // resolveGitHubToken 解析用于 GitHub API 认证的令牌，按以下优先级：
