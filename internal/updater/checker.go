@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/jy-eggroll/flk/internal/logger"
 )
 
 const (
@@ -82,6 +84,20 @@ func CheckForUpdate(currentVersion, buildTime string, checkDev bool) (*UpdateInf
 func fetchAllReleases() ([]Release, error) {
 	url := fmt.Sprintf("%s/%s/%s/releases?per_page=50", APIBaseURL, Owner, Repo)
 
+	// 更新检查也走代理回退：先试 gh-proxy 加速的 API，失败再直连官方 API
+	// 注意：GitHub 对匿名 API 限制每小时 60 次（按公网 IP 计），超出返回 403，
+	// 代理可分散 IP 压力；若仍 403 则给出速率限制友好提示而非笼统报错
+	proxyURL := ghProxyPrefix + url
+	releases, err := fetchReleasesFromURL(proxyURL)
+	if err != nil {
+		logger.Info("代理检查更新失败，尝试直连官方 API...")
+		return fetchReleasesFromURL(url)
+	}
+	return releases, nil
+}
+
+// fetchReleasesFromURL 从指定 URL 拉取发布列表，并对 403 速率限制给出更友好的错误
+func fetchReleasesFromURL(url string) ([]Release, error) {
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", "flk-updater")
@@ -93,6 +109,13 @@ func fetchAllReleases() ([]Release, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusForbidden {
+			// GitHub 匿名 API 超限返回 403，读取 x-ratelimit-reset 给出倒计时提示
+			if reset := resp.Header.Get("X-RateLimit-Reset"); reset != "" {
+				return nil, fmt.Errorf("GitHub API 速率限制（每小时 60 次）已耗尽，请于 %s (UTC) 后重试，或稍后再试", reset)
+			}
+			return nil, fmt.Errorf("GitHub API 返回 403（可能是速率限制或被拒绝），请稍后重试")
+		}
 		return nil, fmt.Errorf("请求失败，状态码: %d", resp.StatusCode)
 	}
 
