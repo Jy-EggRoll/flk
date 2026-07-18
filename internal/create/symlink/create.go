@@ -52,12 +52,9 @@ func Create(realPath, fakePath string, removeOpts safeop.RemoveOptions) error {
 		}
 	}
 
-	absRealPath, err := filepath.Abs(realPath)
-	if err != nil {
-		return err
-	}
-
-	if err := os.Symlink(absRealPath, fakePath); err != nil {
+	// 直接使用调用方已规范化（绝对）的 realPath 作为链接目标，避免再次 filepath.Abs 依赖当前工作目录
+	// 否则在 workDir 与创建时不同的场景下，链接目标可能不一致，导致 check 阶段误报 TARGET_MISMATCH
+	if err := os.Symlink(realPath, fakePath); err != nil {
 		return err
 	}
 	return nil
