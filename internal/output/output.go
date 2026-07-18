@@ -127,7 +127,9 @@ func PrintCheckResults(format OutputFormat, results []CheckResult) error {
 		"SRC_MISSING":        "源文件缺失",
 		"DST_MISSING":        "目标文件缺失",
 		"BOTH_MISSING":       "两者都缺失",
-		"MOD_TIME_MISMATCH":  "修改时间不一致",
+		"NOT_REGULAR_FILE":   "不是普通文件",
+		"SIZE_MISMATCH":      "文件大小不一致",
+		"CONTENT_MISMATCH":   "文件内容不一致",
 	}
 	usedTypes := make(map[string]bool)
 	for _, r := range results {
@@ -166,6 +168,7 @@ func PrintCheckResults(format OutputFormat, results []CheckResult) error {
 		fmt.Println(string(data))
 	case Table:
 		termWidth := pterm.GetTerminalWidth()
+		colWidth := calcColWidth(termWidth)
 		table := pterm.TableData{{"编号", "类型", "设备", "源路径", "链接路径", "有效", "错误类型"}}
 		for i, r := range results {
 			num := fmt.Sprintf("%d", i+1)
@@ -173,19 +176,19 @@ func PrintCheckResults(format OutputFormat, results []CheckResult) error {
 			if !r.Valid {
 				valid = "否"
 			}
-			srcPath := truncateString(r.Real, (termWidth-7*3-4-8-4-10)/3-3)
+			srcPath := truncateString(r.Real, colWidth)
 			if srcPath == "" {
-				srcPath = truncateString(r.Prim, (termWidth-7*3-4-8-4-10)/3-3)
+				srcPath = truncateString(r.Prim, colWidth)
 			}
 			if srcPath == "" {
-				srcPath = truncateString(r.Src, (termWidth-7*3-4-8-4-10)/3-3)
+				srcPath = truncateString(r.Src, colWidth)
 			}
-			linkPath := truncateString(r.Fake, (termWidth-7*3-4-8-4-10)/3-3)
+			linkPath := truncateString(r.Fake, colWidth)
 			if linkPath == "" {
-				linkPath = truncateString(r.Seco, (termWidth-7*3-4-8-4-10)/3-3)
+				linkPath = truncateString(r.Seco, colWidth)
 			}
 			if linkPath == "" {
-				linkPath = truncateString(r.Dst, (termWidth-7*3-4-8-4-10)/3-3)
+				linkPath = truncateString(r.Dst, colWidth)
 			}
 			row := []string{num, truncateString(r.Type, 6), truncateString(r.Device, 8), srcPath, linkPath, valid, truncateString(r.ErrorType, 10)}
 			if r.Valid {
@@ -214,6 +217,7 @@ func PrintCheckResultsFix(format OutputFormat, results []CheckResult) error {
 	}
 
 	termWidth := pterm.GetTerminalWidth()
+	colWidth := calcColWidth(termWidth)
 	table := pterm.TableData{{"编号", "类型", "设备", "源路径", "链接路径", "有效", "错误类型"}}
 	for i, r := range results {
 		num := fmt.Sprintf("%d", i+1)
@@ -221,19 +225,19 @@ func PrintCheckResultsFix(format OutputFormat, results []CheckResult) error {
 		if !r.Valid {
 			valid = "否"
 		}
-		srcPath := truncateString(r.Real, (termWidth-7*3-4-8-4-10)/3-3)
+		srcPath := truncateString(r.Real, colWidth)
 		if srcPath == "" {
-			srcPath = truncateString(r.Prim, (termWidth-7*3-4-8-4-10)/3-3)
+			srcPath = truncateString(r.Prim, colWidth)
 		}
 		if srcPath == "" {
-			srcPath = truncateString(r.Src, (termWidth-7*3-4-8-4-10)/3-3)
+			srcPath = truncateString(r.Src, colWidth)
 		}
-		linkPath := truncateString(r.Fake, (termWidth-7*3-4-8-4-10)/3-3)
+		linkPath := truncateString(r.Fake, colWidth)
 		if linkPath == "" {
-			linkPath = truncateString(r.Seco, (termWidth-7*3-4-8-4-10)/3-3)
+			linkPath = truncateString(r.Seco, colWidth)
 		}
 		if linkPath == "" {
-			linkPath = truncateString(r.Dst, (termWidth-7*3-4-8-4-10)/3-3)
+			linkPath = truncateString(r.Dst, colWidth)
 		}
 
 		colorize := func(s string) string {
@@ -259,8 +263,25 @@ func PrintCheckResultsFix(format OutputFormat, results []CheckResult) error {
 	return nil
 }
 
+// calcColWidth 根据终端宽度计算表格中每列（源路径/链接路径）的可用宽度
+// 公式与表格表头及固定列宽保持一致，并对结果做下限保护，避免终端过窄时算出负数导致截断越界 panic
+func calcColWidth(termWidth int) int {
+	// 表头: 编号(7) 类型(4) 设备(8) 源路径 链接路径 有效(4) 错误类型(10)，间隔约 3 字符共 6 处
+	const fixed = 7 + 4 + 8 + 4 + 10 + 6*3
+	w := (termWidth - fixed) / 3 - 3
+	if w < 10 {
+		// 终端过窄时给出最小可用宽度，防止 truncateString 传入负数而越界
+		w = 10
+	}
+	return w
+}
+
 // truncateString 截断字符串，如果超过 maxLen
 func truncateString(raw string, maxLen int) string {
+	if maxLen < 3 {
+		// 宽度不足以容纳省略号时直接原样返回，避免 runes[:maxLen-3] 越界
+		return raw
+	}
 	runes := []rune(raw)
 	if len(runes) <= maxLen {
 		return raw
