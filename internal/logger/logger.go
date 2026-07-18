@@ -1,14 +1,18 @@
 package logger // 声明当前代码所属的包名为 logger
 import (       // 导入代码依赖的外部包列表
+	"io"       // 导入 io 包，用于构造多路输出 writer
 	"log/slog" // 导入 Go 标准库的 slog 包，用于实现结构化日志记录功能
 	"os"       // 导入 os 包，用于操作系统交互（如程序退出、文件操作）
+	"path/filepath" // 导入 filepath，用于创建日志目录
 
-	"github.com/pterm/pterm" // 导入 pterm 第三方库，提供美观的终端日志输出及与 slog 适配的处理器
+	"github.com/jy-eggroll/flk/internal/pathutil" // 导入 pathutil，用于展开日志文件路径中的 ~
+	"github.com/pterm/pterm"                      // 导入 pterm 第三方库，提供美观的终端日志输出及与 slog 适配的处理器
 )
 
 var ( // 声明包级别的全局变量组
 	globalLogger *slog.Logger  // 声明全局的 slog.Logger 类型指针，作为应用核心日志实例
 	ptermLogger  *pterm.Logger // 声明全局的 pterm.Logger 类型指针，用于配置 pterm 日志行为
+	logFile      *os.File      // 全局日志文件句柄，仅在启用文件输出时非 nil，用于退出前关闭
 )
 
 // Config 日志配置
@@ -17,9 +21,9 @@ type Config struct { // 定义日志配置结构体，封装所有日志相关�
 	ShowCaller bool           // 是否显示日志调用方信息（包含文件路径、行号等）
 	ShowTime   bool           // 是否在日志中显示时间戳
 	TimeFormat string         // 时间戳的格式化字符串，遵循 Go 语言的时间格式化规则
-	// 文件输出配置（预留）
-	FileOutput bool   // 是否启用日志文件输出功能（预留配置项，暂未实现完整逻辑）
-	FilePath   string // 日志文件的存储路径（预留配置项，暂未实现完整逻辑）
+	// 文件输出配置
+	FileOutput bool   // 是否启用日志文件输出功能（由 FLK_LOG_FILE_OUTPUT 控制）
+	FilePath   string // 日志文件的存储路径（由 FLK_LOG_FILE_PATH 控制，支持 ~ 展开）
 }
 
 // DefaultConfig 默认配置
@@ -52,11 +56,39 @@ func Init(config *Config) { // 定义初始化函数，入参为 Config 结构�
 		ptermLogger = ptermLogger.WithTimeFormat(config.TimeFormat) // 为 ptermLogger 设置自定义的时间格式化字符串
 	}
 
+	// 文件输出：启用时打开日志文件，并将 pterm 输出目标切换为"终端 + 文件"双写
+	// 这样 FLK_LOG_FILE_OUTPUT=true 才会真正生效，而不是只读取配置却什么都不做
+	if config.FileOutput {
+		expandedPath, err := pathutil.NormalizePath(config.FilePath)
+		if err != nil {
+			// 路径异常时降级为仅终端输出，避免阻塞主流程
+			pterm.Error.Println("日志文件路径展开失败，仅使用终端输出: " + err.Error())
+		} else {
+			if mkErr := os.MkdirAll(filepath.Dir(expandedPath), 0755); mkErr != nil {
+				pterm.Error.Println("创建日志目录失败，仅使用终端输出: " + mkErr.Error())
+			} else if f, openErr := os.OpenFile(expandedPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644); openErr != nil {
+				pterm.Error.Println("打开日志文件失败，仅使用终端输出: " + openErr.Error())
+			} else {
+				logFile = f
+				ptermLogger = ptermLogger.WithWriter(io.MultiWriter(os.Stderr, f))
+			}
+		}
+	}
+
 	// 创建 slog handler
 	handler := pterm.NewSlogHandler(ptermLogger) // 使用 ptermLogger 作为底层，创建适配 slog 库的 Handler 实例
 
 	globalLogger = slog.New(handler) // 使用创建好的 handler 初始化 slog.Logger 实例，并赋值给全局变量
 	slog.SetDefault(globalLogger)    // 将全局 slog.Logger 实例设为 Go 标准库 slog 的默认日志实例
+}
+
+// Close 关闭日志文件句柄（若已打开），建议在程序退出前调用，避免日志内容未落盘
+func Close() {
+	if logFile != nil {
+		_ = logFile.Sync()
+		_ = logFile.Close()
+		logFile = nil
+	}
 }
 
 // 便捷函数包装

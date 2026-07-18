@@ -4,6 +4,7 @@ import (
 	"runtime"
 
 	"github.com/jy-eggroll/flk/cmd"
+	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/pterm/pterm"
 )
 
@@ -21,4 +22,7 @@ func main() {
 
 	// 通用业务入口（全平台执行）
 	cmd.Execute()
+
+	// 程序退出前关闭日志文件句柄，确保日志内容落盘
+	logger.Close()
 }
