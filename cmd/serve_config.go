@@ -104,18 +104,33 @@ func runServeConfig(cmd *cobra.Command, args []string) error {
 		w.Write(configHTML)
 	})
 
-	// API：返回 store 的完整 JSON
+	// API：读写 store JSON
 	mux.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
+		switch r.Method {
+		case http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			if store.GlobalManager == nil {
+				w.Write([]byte("{}"))
+				return
+			}
+			w.Write([]byte(store.GlobalManager.ToJSON()))
+		case http.MethodPost:
+			var newData store.RootConfig
+			if err := json.NewDecoder(r.Body).Decode(&newData); err != nil {
+				http.Error(w, "JSON 解析失败: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			store.GlobalManager.Data = newData
+			if err := store.GlobalManager.Save(store.StorePath); err != nil {
+				http.Error(w, "保存失败: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			hub.notify()
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"success":true}`))
+		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		if store.GlobalManager == nil {
-			w.Write([]byte("{}"))
-			return
-		}
-		w.Write([]byte(store.GlobalManager.ToJSON()))
 	})
 
 	// API：返回文件元信息

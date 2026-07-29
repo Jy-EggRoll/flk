@@ -5,128 +5,625 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>flk 配置</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; color: #333; }
-  .header { background: #d97706; color: #fff; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
-  .header h1 { font-size: 18px; font-weight: 600; }
-  .status { display: flex; align-items: center; gap: 6px; font-size: 13px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-  .dot.online { background: #22c55e; }
-  .dot.offline { background: #ef4444; }
-  .container { max-width: 960px; margin: 0 auto; padding: 24px; }
-  .meta { font-size: 12px; color: #888; margin-bottom: 12px; display: flex; gap: 16px; }
-  pre { background: #1e1e2e; color: #cdd6f4; padding: 20px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6; font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "SF Mono", Consolas, monospace; tab-size: 2; }
-  .key { color: #89b4fa; }
-  .string { color: #a6e3a1; }
-  .number { color: #fab387; }
-  .boolean { color: #cba6f7; }
-  .null { color: #f38ba8; }
-  .bracket { color: #9399b2; }
-  .loading { text-align: center; padding: 60px 0; color: #888; }
-  .error-msg { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 12px 16px; border-radius: 6px; margin-bottom: 16px; font-size: 14px; }
-  .path-info { font-size: 12px; color: #aaa; }
+*,*::before,*::after { margin: 0; padding: 0; box-sizing: border-box; }
+html,body { height: 100%; }
+body { display: flex; flex-direction: column; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; color: #1c1917; font-size: 14px; }
+
+/* Header */
+.header { flex-shrink: 0; background: #d97706; color: #fff; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.header h1 { font-size: 18px; font-weight: 600; }
+.header-right { display: flex; align-items: center; gap: 12px; }
+.status { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot.online { background: #22c55e; }
+.dot.offline { background: #ef4444; }
+
+/* Buttons */
+.btn { border: none; border-radius: 5px; padding: 6px 14px; font-size: 13px; cursor: pointer; font-weight: 500; transition: background .15s, opacity .15s; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-edit { background: #fff; color: #d97706; } .btn-edit:hover { background: #fef3c7; }
+.btn-save { background: #16a34a; color: #fff; } .btn-save:hover { background: #15803d; }
+.btn-cancel { background: #dc2626; color: #fff; } .btn-cancel:hover { background: #b91c1c; }
+.btn-sm { padding: 3px 10px; font-size: 12px; border-radius: 4px; }
+.btn-add { background: #d97706; color: #fff; } .btn-add:hover { background: #b45309; }
+.btn-dell { background: transparent; color: #dc2626; border: 1px solid #fca5a5; } .btn-dell:hover { background: #fef2f2; }
+.btn-ghost { background: transparent; color: #d97706; } .btn-ghost:hover { background: #fef3c7; }
+.hidden { display: none !important; }
+
+/* Messages */
+.msg-bar { flex-shrink: 0; max-width: 960px; margin: 0 auto; width: 100%; padding: 12px 24px 0; }
+.error-msg { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 10px 16px; border-radius: 6px; font-size: 14px; display: none; margin-bottom: 8px; }
+.success-msg { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; padding: 10px 16px; border-radius: 6px; font-size: 14px; display: none; margin-bottom: 8px; }
+
+/* Main content area - scrollable */
+.main { flex: 1; overflow-y: auto; max-width: 960px; margin: 0 auto; width: 100%; padding: 20px 24px; }
+
+/* Section labels */
+.section-label { font-size: 11px; font-weight: 600; color: #a8a29e; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+
+/* Tab bars */
+.tab-bar { display: flex; gap: 0; margin-bottom: 16px; flex-wrap: wrap; background: #e7e5e4; border-radius: 6px; padding: 2px; }
+.tab { padding: 6px 16px; font-size: 13px; border-radius: 5px; cursor: pointer; border: none; background: transparent; color: #57534e; font-weight: 500; transition: all .12s; white-space: nowrap; }
+.tab:hover { color: #292524; }
+.tab.active { background: #fff; color: #d97706; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+
+/* Table */
+.table-wrap { background: #fff; border-radius: 8px; border: 1px solid #e7e5e4; overflow: hidden; }
+table { width: 100%; border-collapse: collapse; }
+th { font-size: 11px; font-weight: 600; color: #a8a29e; text-transform: uppercase; letter-spacing: .05em; text-align: left; padding: 10px 12px; border-bottom: 1px solid #e7e5e4; background: #fafaf9; white-space: nowrap; }
+td { padding: 6px 12px; border-bottom: 1px solid #f5f5f4; vertical-align: middle; }
+tr:last-child td { border-bottom: none; }
+tr.dragging { opacity: .4; }
+tr.drag-over { border-top: 2px solid #d97706; }
+.cell-text { font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace; font-size: 13px; color: #444; padding: 4px 0; word-break: break-all; }
+.cell-input { width: 100%; font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace; font-size: 13px; padding: 5px 8px; border: 1px solid #d6d3d1; border-radius: 4px; outline: none; background: #fff; transition: border-color .15s; }
+.cell-input:focus { border-color: #d97706; box-shadow: 0 0 0 2px rgba(217,119,6,.15); }
+.num-col { width: 32px; text-align: center; color: #a8a29e; font-size: 12px; }
+.drag-handle { cursor: grab; color: #d6d3d1; font-size: 16px; user-select: none; width: 24px; text-align: center; } .drag-handle:hover { color: #a8a29e; } .drag-handle:active { cursor: grabbing; }
+.action-col { width: 1%; white-space: nowrap; }
+
+/* Empty state */
+.empty-state { text-align: center; padding: 40px 20px; color: #a8a29e; font-size: 14px; }
+.empty-state p { margin-bottom: 12px; }
+
+/* Footer */
+.footer { flex-shrink: 0; max-width: 960px; margin: 0 auto; width: 100%; padding: 8px 24px 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px; }
+.path-info { font-size: 12px; color: #a8a29e; }
+.meta-info { font-size: 12px; color: #a8a29e; display: flex; gap: 16px; flex-wrap: wrap; }
+
+/* Add-bar below table */
+.add-bar { padding: 10px 12px; border-top: 1px solid #f5f5f4; }
+
+/* Add device inline */
+.add-device-form { display: flex; gap: 6px; align-items: center; }
+.add-device-form input { font-size: 13px; padding: 4px 10px; border: 1px solid #d6d3d1; border-radius: 4px; outline: none; }
+.add-device-form input:focus { border-color: #d97706; }
 </style>
 </head>
 <body>
-<div class="header">
+<header class="header">
   <h1>flk 配置</h1>
-  <div class="status">
-    <span class="dot offline" id="statusDot"></span>
-    <span id="statusText">连接中…</span>
+  <div class="header-right">
+    <div id="viewActions">
+      <button id="editBtn" class="btn btn-edit">编辑</button>
+    </div>
+    <div id="editActions" class="hidden">
+      <button id="saveBtn" class="btn btn-save">保存</button>
+      <button id="cancelBtn" class="btn btn-cancel">取消</button>
+    </div>
+    <div class="status">
+      <span class="dot offline" id="statusDot"></span>
+      <span id="statusText">连接中…</span>
+    </div>
+  </div>
+</header>
+
+<div class="msg-bar">
+  <div id="error" class="error-msg"></div>
+  <div id="success" class="success-msg"></div>
+</div>
+
+<div class="main" id="main">
+  <div id="loading" style="text-align:center;padding:60px 0;color:#a8a29e;">加载中…</div>
+  <div id="panel" class="hidden">
+    <!-- Platform -->
+    <div class="section-label">平台</div>
+    <div class="tab-bar" id="platformTabs"></div>
+    <!-- Device -->
+    <div class="section-label">设备</div>
+    <div class="tab-bar" id="deviceTabs"></div>
+    <div id="addDeviceArea" class="hidden" style="margin-bottom:16px;">
+      <div class="add-device-form">
+        <input id="newDeviceInput" placeholder="新建设备名称" maxlength="50">
+        <button class="btn btn-sm btn-add" id="addDeviceBtn">添加</button>
+        <button class="btn btn-sm btn-ghost" id="cancelAddDeviceBtn">取消</button>
+      </div>
+    </div>
+    <!-- Link Type -->
+    <div class="section-label">链接类型</div>
+    <div class="tab-bar" id="typeTabs"></div>
+    <!-- Entries Table -->
+    <div id="entriesArea">
+      <div class="table-wrap">
+        <table>
+          <thead><tr id="tableHead"></tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+        <div id="addBar" class="add-bar hidden">
+          <button id="addEntryBtn" class="btn btn-sm btn-add">+ 新增条目</button>
+        </div>
+      </div>
+      <div id="emptyState" class="empty-state hidden">
+        <p>暂无条目</p>
+        <button id="addEntryBtnEmpty" class="btn btn-sm btn-add hidden">+ 新增条目</button>
+      </div>
+    </div>
   </div>
 </div>
-<div class="container">
-  <div class="meta">
+
+<footer class="footer">
+  <div class="meta-info">
     <span id="fileInfo"></span>
     <span id="updateInfo"></span>
   </div>
-  <div id="error" class="error-msg" style="display:none"></div>
-  <pre id="output"><div class="loading">加载中…</div></pre>
   <div class="path-info" id="storePath"></div>
-</div>
+</footer>
 
 <script>
-const STORE_API = '/api/config';
-const EVENT_API = '/api/events';
+;(function () {
+'use strict';
 
-const output = document.getElementById('output');
-const statusDot = document.getElementById('statusDot');
-const statusText = document.getElementById('statusText');
-const errorDiv = document.getElementById('error');
-const fileInfo = document.getElementById('fileInfo');
-const updateInfo = document.getElementById('updateInfo');
-const storePathEl = document.getElementById('storePath');
+/* ---------- Constants ---------- */
+var STORE_API = '/api/config';
+var EVENT_API = '/api/events';
 
+/* 每种链接类型的字段定义 */
+var TYPE_FIELDS = {
+  symlink: [
+    { key: 'real', label: '真实路径' },
+    { key: 'fake', label: '链接路径' }
+  ],
+  hardlink: [
+    { key: 'prim', label: '主文件' },
+    { key: 'seco', label: '次文件' }
+  ],
+  copy: [
+    { key: 'src', label: '源文件' },
+    { key: 'dst', label: '目标文件' }
+  ]
+};
+
+var TYPE_NAMES = ['symlink', 'hardlink', 'copy'];
+
+/* ---------- DOM ---------- */
+var statusDot     = document.getElementById('statusDot');
+var statusText    = document.getElementById('statusText');
+var errorDiv      = document.getElementById('error');
+var successDiv    = document.getElementById('success');
+var fileInfo      = document.getElementById('fileInfo');
+var updateInfo    = document.getElementById('updateInfo');
+var storePathEl   = document.getElementById('storePath');
+var editBtn       = document.getElementById('editBtn');
+var saveBtn       = document.getElementById('saveBtn');
+var cancelBtn     = document.getElementById('cancelBtn');
+var viewActions   = document.getElementById('viewActions');
+var editActions   = document.getElementById('editActions');
+var loading       = document.getElementById('loading');
+var panel         = document.getElementById('panel');
+var platformTabs  = document.getElementById('platformTabs');
+var deviceTabs    = document.getElementById('deviceTabs');
+var typeTabs      = document.getElementById('typeTabs');
+var tableHead     = document.getElementById('tableHead');
+var tableBody     = document.getElementById('tableBody');
+var addBar        = document.getElementById('addBar');
+var emptyState    = document.getElementById('emptyState');
+var addEntryBtn   = document.getElementById('addEntryBtn');
+var addEntryBtnEmpty = document.getElementById('addEntryBtnEmpty');
+var addDeviceArea    = document.getElementById('addDeviceArea');
+var newDeviceInput   = document.getElementById('newDeviceInput');
+var addDeviceBtn     = document.getElementById('addDeviceBtn');
+var cancelAddDeviceBtn = document.getElementById('cancelAddDeviceBtn');
+
+/* ---------- State ---------- */
+var data       = null;    /* 完整配置数据 */
+var origin     = null;    /* 进入编辑前的数据快照，用于取消 */
+var isEditing  = false;
+var currentPlat = '';
+var currentDev  = '';
+var currentType = 'symlink';
+var dragSrcIdx  = -1;     /* 拖拽起始行索引 */
+
+/* ---------- UI Helpers ---------- */
 function setOnline(online) {
   statusDot.className = 'dot ' + (online ? 'online' : 'offline');
   statusText.textContent = online ? '已连接' : '已断开';
 }
 
-function escapeHtml(str) {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function showError(msg) {
+  errorDiv.textContent = msg; errorDiv.style.display = 'block';
 }
 
-/* 客户端 JSON 语法高亮 */
-function highlight(json) {
-  const str = JSON.stringify(json, null, 2);
-  return escapeHtml(str).replace(
-    /("(?:\\.|[^"\\])*")\s*:/g,
-    '<span class="key">$1</span>:'
-  ).replace(
-    /:\s*("(?:\\.|[^"\\])*")/g,
-    ': <span class="string">$1</span>'
-  ).replace(
-    /:\s*(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
-    ': <span class="number">$1</span>'
-  ).replace(
-    /:\s*(true|false)/g,
-    ': <span class="boolean">$1</span>'
-  ).replace(
-    /:\s*(null)/g,
-    ': <span class="null">$1</span>'
-  ).replace(
-    /([\{\}\[\]])/g,
-    '<span class="bracket">$1</span>'
-  );
+function hideError() { errorDiv.style.display = 'none'; }
+
+function showSuccess(msg) {
+  successDiv.textContent = msg; successDiv.style.display = 'block';
+  setTimeout(function () { successDiv.style.display = 'none'; }, 3000);
 }
 
+function setModeUI(editing) {
+  isEditing = editing;
+  viewActions.classList.toggle('hidden', editing);
+  editActions.classList.toggle('hidden', !editing);
+}
+
+/* ---------- Data access helpers ---------- */
+function ensurePath(plat, dev) {
+  if (!data[plat]) data[plat] = {};
+  if (!data[plat][dev]) data[plat][dev] = {};
+  TYPE_NAMES.forEach(function (t) {
+    if (!data[plat][dev][t]) data[plat][dev][t] = [];
+  });
+}
+
+function getEntries() {
+  if (!data || !data[currentPlat]) return [];
+  var devData = data[currentPlat][currentDev];
+  if (!devData) return [];
+  return devData[currentType] || [];
+}
+
+function setEntries(arr) {
+  if (!data[currentPlat]) data[currentPlat] = {};
+  if (!data[currentPlat][currentDev]) data[currentPlat][currentDev] = {};
+  data[currentPlat][currentDev][currentType] = arr;
+}
+
+/* ---------- Platforms / Devices discovery ---------- */
+function getPlatforms() {
+  if (!data) return [];
+  return Object.keys(data).sort();
+}
+
+function getDevices(plat) {
+  if (!data || !data[plat]) return [];
+  return Object.keys(data[plat]).sort();
+}
+
+/* ---------- Tab rendering ---------- */
+function renderPlatformTabs() {
+  var plats = getPlatforms();
+  platformTabs.innerHTML = plats.map(function (p) {
+    return '<button class="tab' + (p === currentPlat ? ' active' : '') + '" data-plat="' + p + '">' + p + '</button>';
+  }).join('');
+  if (plats.indexOf(currentPlat) < 0 && plats.length > 0) {
+    currentPlat = plats[0];
+  }
+  platformTabs.querySelectorAll('.tab').forEach(function (el) {
+    el.addEventListener('click', function () {
+      if (isEditing) return;
+      currentPlat = el.dataset.plat;
+      currentDev = getDevices(currentPlat)[0] || '';
+      renderAll();
+    });
+  });
+}
+
+function renderDeviceTabs() {
+  var devs = getDevices(currentPlat);
+  var html = devs.map(function (d) {
+    return '<button class="tab' + (d === currentDev ? ' active' : '') + '" data-dev="' + d + '">' + d + '</button>';
+  }).join('');
+  if (isEditing) {
+    html += '<button class="tab btn-ghost" id="showAddDeviceBtn" style="color:#d97706;">+ 新建设备</button>';
+  }
+  deviceTabs.innerHTML = html;
+  if (devs.indexOf(currentDev) < 0 && devs.length > 0) {
+    currentDev = devs[0];
+  }
+  deviceTabs.querySelectorAll('.tab[data-dev]').forEach(function (el) {
+    el.addEventListener('click', function () {
+      if (isEditing) return;
+      currentDev = el.dataset.dev;
+      renderAll();
+    });
+  });
+  var showAddBtn = document.getElementById('showAddDeviceBtn');
+  if (showAddBtn) {
+    showAddBtn.addEventListener('click', function () {
+      addDeviceArea.classList.remove('hidden');
+      newDeviceInput.focus();
+    });
+  }
+}
+
+function renderTypeTabs() {
+  typeTabs.innerHTML = TYPE_NAMES.map(function (t) {
+    return '<button class="tab' + (t === currentType ? ' active' : '') + '" data-type="' + t + '">' + t + '</button>';
+  }).join('');
+  typeTabs.querySelectorAll('.tab').forEach(function (el) {
+    el.addEventListener('click', function () {
+      currentType = el.dataset.type;
+      renderAll();
+    });
+  });
+}
+
+/* ---------- Table rendering ---------- */
+function renderTable() {
+  var entries = getEntries();
+  var fields = TYPE_FIELDS[currentType];
+
+  /* Head */
+  var headHtml = '';
+  if (isEditing) headHtml += '<th class="drag-handle"></th>';
+  headHtml += '<th class="num-col">#</th>';
+  fields.forEach(function (f) { headHtml += '<th>' + f.label + '</th>'; });
+  if (isEditing) headHtml += '<th class="action-col">操作</th>';
+  tableHead.innerHTML = headHtml;
+
+  /* Body */
+  if (entries.length === 0) {
+    tableBody.innerHTML = '';
+    emptyState.classList.remove('hidden');
+    addBar.classList.add('hidden');
+    addEntryBtnEmpty.classList.toggle('hidden', !isEditing);
+    return;
+  }
+
+  emptyState.classList.add('hidden');
+  addBar.classList.toggle('hidden', !isEditing);
+  addEntryBtnEmpty.classList.add('hidden');
+
+  var rowsHtml = '';
+  entries.forEach(function (entry, idx) {
+    rowsHtml += '<tr data-idx="' + idx + '" draggable="' + isEditing + '">';
+    if (isEditing) {
+      rowsHtml += '<td class="drag-handle" draggable="true">⣿</td>';
+    }
+    rowsHtml += '<td class="num-col">' + (idx + 1) + '</td>';
+    fields.forEach(function (f) {
+      var val = entry[f.key] || '';
+      if (isEditing) {
+        rowsHtml += '<td><input class="cell-input" data-key="' + f.key + '" value="' + attrEsc(val) + '"></td>';
+      } else {
+        rowsHtml += '<td><div class="cell-text">' + escHtml(val) + '</div></td>';
+      }
+    });
+    if (isEditing) {
+      rowsHtml += '<td class="action-col"><button class="btn btn-sm btn-dell" data-idx="' + idx + '">删除</button></td>';
+    }
+    rowsHtml += '</tr>';
+  });
+  tableBody.innerHTML = rowsHtml;
+
+  /* Drag-and-drop events */
+  if (isEditing) {
+    tableBody.querySelectorAll('tr').forEach(function (tr) {
+      tr.addEventListener('dragstart', onDragStart);
+      tr.addEventListener('dragover',  onDragOver);
+      tr.addEventListener('dragleave', onDragLeave);
+      tr.addEventListener('drop',      onDrop);
+      tr.addEventListener('dragend',   onDragEnd);
+    });
+    /* Delete buttons */
+    tableBody.querySelectorAll('.btn-dell').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var idx = parseInt(btn.dataset.idx);
+        var arr = getEntries().slice();
+        arr.splice(idx, 1);
+        setEntries(arr);
+        renderTable();
+      });
+    });
+    /* Input change track */
+    tableBody.querySelectorAll('.cell-input').forEach(function (inp) {
+      inp.addEventListener('change', onCellChange);
+      inp.addEventListener('blur', onCellChange);
+    });
+  }
+}
+
+function attrEsc(s) { return String(s).replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function escHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+function onCellChange(e) {
+  var inp = e.target;
+  var tr = inp.closest('tr');
+  if (!tr) return;
+  var idx = parseInt(tr.dataset.idx);
+  var key = inp.dataset.key;
+  var entries = getEntries().slice();
+  if (!entries[idx]) return;
+  entries[idx][key] = inp.value;
+  setEntries(entries);
+}
+
+/* Drag & Drop */
+function onDragStart(e) {
+  var tr = e.target.closest('tr');
+  if (!tr) return;
+  dragSrcIdx = parseInt(tr.dataset.idx);
+  tr.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', dragSrcIdx);
+}
+
+function onDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  var tr = e.target.closest('tr');
+  if (!tr || parseInt(tr.dataset.idx) === dragSrcIdx) return;
+  tr.classList.add('drag-over');
+}
+
+function onDragLeave(e) {
+  var tr = e.target.closest('tr');
+  if (tr) tr.classList.remove('drag-over');
+}
+
+function onDrop(e) {
+  e.preventDefault();
+  var tr = e.target.closest('tr');
+  if (!tr) return;
+  var targetIdx = parseInt(tr.dataset.idx);
+  if (dragSrcIdx === targetIdx) return;
+  var entries = getEntries().slice();
+  var item = entries.splice(dragSrcIdx, 1)[0];
+  entries.splice(targetIdx, 0, item);
+  setEntries(entries);
+  renderTable();
+}
+
+function onDragEnd(e) {
+  var tr = e.target.closest('tr');
+  if (tr) tr.classList.remove('dragging');
+  tableBody.querySelectorAll('tr').forEach(function (t) { t.classList.remove('drag-over'); });
+  dragSrcIdx = -1;
+}
+
+/* ---------- Add entry ---------- */
+function addEntry() {
+  var entry = {};
+  var fields = TYPE_FIELDS[currentType];
+  fields.forEach(function (f) { entry[f.key] = ''; });
+  var arr = getEntries().slice();
+  arr.push(entry);
+  setEntries(arr);
+  renderTable();
+  /* 滚动到底部 */
+  var lastRow = tableBody.lastElementChild;
+  if (lastRow) lastRow.scrollIntoView({ block: 'nearest' });
+}
+
+/* ---------- Add device ---------- */
+function addDevice() {
+  var name = newDeviceInput.value.trim();
+  if (!name) { showError('设备名不能为空'); return; }
+  if (name.indexOf(',') >= 0 || name.indexOf(' ') >= 0) {
+    showError('设备名不能包含逗号或空格'); return;
+  }
+  ensurePath(currentPlat, name);
+  currentDev = name;
+  newDeviceInput.value = '';
+  addDeviceArea.classList.add('hidden');
+  renderAll();
+  /* 进入编辑模式 */
+  if (!isEditing) { enterEditMode(); }
+}
+
+/* ---------- Navigation ---------- */
+function renderAll() {
+  renderPlatformTabs();
+  renderDeviceTabs();
+  renderTypeTabs();
+  renderTable();
+}
+
+/* ---------- Load / Save ---------- */
 async function loadConfig() {
   try {
-    const resp = await fetch(STORE_API);
+    var resp = await fetch(STORE_API);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
-    output.innerHTML = highlight(data);
+    data = await resp.json();
 
-    const meta = await fetch('/api/meta').then(r => r.json()).catch(() => ({}));
-    if (meta.storePath) storePathEl.textContent = '路径: ' + meta.storePath;
-    if (meta.modTime) fileInfo.textContent = '修改时间: ' + meta.modTime;
-    if (meta.fileSize) fileInfo.textContent += ' | 大小: ' + meta.fileSize;
+    try {
+      var meta = await fetch('/api/meta').then(function (r) { return r.json(); });
+      if (meta.storePath) storePathEl.textContent = '路径: ' + meta.storePath;
+      var info = '';
+      if (meta.modTime) info += '修改时间: ' + meta.modTime;
+      if (meta.fileSize) info += ' | 大小: ' + meta.fileSize;
+      fileInfo.textContent = info;
+    } catch (_) {}
 
-    errorDiv.style.display = 'none';
+    /* 初始化导航到第一个有数据的平台/设备 */
+    var plats = getPlatforms();
+    if (plats.length > 0) {
+      if (plats.indexOf(currentPlat) < 0) currentPlat = plats[0];
+      var devs = getDevices(currentPlat);
+      if (devs.length > 0 && devs.indexOf(currentDev) < 0) currentDev = devs[0];
+    }
+    loading.classList.add('hidden');
+    panel.classList.remove('hidden');
+    renderAll();
+    hideError();
     setOnline(true);
   } catch (err) {
-    errorDiv.textContent = '加载配置失败: ' + err.message;
-    errorDiv.style.display = 'block';
+    showError('加载配置失败: ' + err.message);
     setOnline(false);
   }
 }
 
-let lastUpdate = Date.now();
+async function saveConfig() {
+  saveBtn.disabled = true;
+  saveBtn.textContent = '保存中…';
+  hideError();
 
+  /* 收集所有 input 最新值 */
+  if (isEditing) collectInputs();
+
+  try {
+    var resp = await fetch(STORE_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!resp.ok) { var txt = await resp.text(); throw new Error(txt || 'HTTP ' + resp.status); }
+    showSuccess('保存成功');
+    origin = JSON.parse(JSON.stringify(data));
+    setModeUI(false);
+    renderAll();
+  } catch (err) {
+    showError('保存失败: ' + err.message);
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = '保存';
+  }
+}
+
+/* 收集编辑中的 input 值，确保保存时是最新数据 */
+function collectInputs() {
+  tableBody.querySelectorAll('.cell-input').forEach(function (inp) {
+    var tr = inp.closest('tr');
+    if (!tr) return;
+    var idx = parseInt(tr.dataset.idx);
+    var key = inp.dataset.key;
+    var entries = getEntries();
+    if (entries[idx]) entries[idx][key] = inp.value;
+  });
+}
+
+/* ---------- Edit / Cancel ---------- */
+function enterEditMode() {
+  hideError();
+  origin = JSON.parse(JSON.stringify(data));
+  setModeUI(true);
+  renderAll();
+}
+
+function cancelEdit() {
+  data = JSON.parse(JSON.stringify(origin));
+  setModeUI(false);
+  renderAll();
+}
+
+/* ---------- SSE ---------- */
 function connectSSE() {
-  const es = new EventSource(EVENT_API);
-  es.onopen = () => { setOnline(true); };
-  es.onerror = () => { setOnline(false); };
-  es.addEventListener('updated', () => {
-    lastUpdate = Date.now();
+  var es = new EventSource(EVENT_API);
+  es.onopen  = function () { setOnline(true); };
+  es.onerror = function () { setOnline(false); };
+  es.addEventListener('updated', function () {
     updateInfo.textContent = '最后更新: ' + new Date().toLocaleTimeString();
+    if (isEditing) return;
     loadConfig();
   });
 }
 
-storePathEl.textContent = '连接服务端…';
-loadConfig();
-connectSSE();
+/* ---------- Init ---------- */
+function init() {
+  storePathEl.textContent = '连接服务端…';
+
+  editBtn.addEventListener('click', enterEditMode);
+  saveBtn.addEventListener('click', saveConfig);
+  cancelBtn.addEventListener('click', cancelEdit);
+  addEntryBtn.addEventListener('click', addEntry);
+  addEntryBtnEmpty.addEventListener('click', addEntry);
+  addDeviceBtn.addEventListener('click', addDevice);
+  cancelAddDeviceBtn.addEventListener('click', function () {
+    addDeviceArea.classList.add('hidden');
+    newDeviceInput.value = '';
+  });
+  newDeviceInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') addDevice();
+    if (e.key === 'Escape') { addDeviceArea.classList.add('hidden'); newDeviceInput.value = ''; }
+  });
+
+  loadConfig();
+  setTimeout(connectSSE, 2000);
+}
+
+init();
+
+})();
 </script>
 </body>
 </html>
