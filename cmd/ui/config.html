@@ -9,75 +9,109 @@
 html,body { height: 100%; }
 body { display: flex; flex-direction: column; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; color: #1c1917; font-size: 14px; }
 
-/* Header */
-.header { flex-shrink: 0; background: #d97706; color: #fff; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
-.header h1 { font-size: 18px; font-weight: 600; }
-.header-right { display: flex; align-items: center; gap: 12px; }
-.status { display: flex; align-items: center; gap: 6px; font-size: 13px; }
-.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+/* Header — 渐变 + 柔和阴影 */
+.header { flex-shrink: 0; background: #d97706; color: #fff; padding: 14px 28px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+.header h1 { font-size: 18px; font-weight: 700; letter-spacing: -.01em; }
+.header-right { display: flex; align-items: center; gap: 14px; }
+.status { display: flex; align-items: center; gap: 7px; font-size: 13px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; box-shadow: 0 0 0 2px rgba(255,255,255,.25); }
 .dot.online { background: #22c55e; }
 .dot.offline { background: #ef4444; }
 
-/* Buttons */
-.btn { border: none; border-radius: 5px; padding: 6px 14px; font-size: 13px; cursor: pointer; font-weight: 500; transition: background .15s, opacity .15s; }
-.btn:disabled { opacity: .5; cursor: not-allowed; }
-.btn-edit { background: #fff; color: #d97706; } .btn-edit:hover { background: #fef3c7; }
-.btn-save { background: #16a34a; color: #fff; } .btn-save:hover { background: #15803d; }
-.btn-cancel { background: #dc2626; color: #fff; } .btn-cancel:hover { background: #b91c1c; }
-.btn-sm { padding: 3px 10px; font-size: 12px; border-radius: 4px; }
+/* Buttons — 现代感, 统一圆角, 微阴影 */
+.btn { border: none; border-radius: 6px; padding: 7px 16px; font-size: 13px; cursor: pointer; font-weight: 600; transition: all .18s ease; outline: none; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn:active { transform: scale(.96); }
+.btn-edit { background: #fff; color: #d97706; box-shadow: 0 1px 3px rgba(0,0,0,.08); } .btn-edit:hover { background: #fef3c7; box-shadow: 0 2px 6px rgba(217,119,6,.15); }
+.btn-save { background: #16a34a; color: #fff; box-shadow: 0 1px 3px rgba(22,163,74,.25); } .btn-save:hover { background: #15803d; box-shadow: 0 3px 10px rgba(22,163,74,.35); }
+.btn-cancel { background: #dc2626; color: #fff; box-shadow: 0 1px 3px rgba(239,68,68,.25); } .btn-cancel:hover { background: #b91c1c; box-shadow: 0 3px 10px rgba(239,68,68,.35); }
+.btn-sm { padding: 4px 12px; font-size: 12px; border-radius: 5px; }
 .btn-add { background: #d97706; color: #fff; } .btn-add:hover { background: #b45309; }
-.btn-dell { background: transparent; color: #dc2626; border: 1px solid #fca5a5; } .btn-dell:hover { background: #fef2f2; }
+.btn-dell { background: transparent; color: #dc2626; border: 1px solid #fca5a5; } .btn-dell:hover { background: #fef2f2; border-color: #f87171; }
 .btn-ghost { background: transparent; color: #d97706; } .btn-ghost:hover { background: #fef3c7; }
 .hidden { display: none !important; }
 
 /* Messages */
-.msg-bar { flex-shrink: 0; max-width: 960px; margin: 0 auto; width: 100%; padding: 12px 24px 0; }
-.error-msg { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 10px 16px; border-radius: 6px; font-size: 14px; display: none; margin-bottom: 8px; }
-.success-msg { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; padding: 10px 16px; border-radius: 6px; font-size: 14px; display: none; margin-bottom: 8px; }
+.msg-bar { flex-shrink: 0; max-width: 94%; margin: 0 auto; width: 100%; padding: 12px 24px 0; }
+.error-msg { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 10px 16px; border-radius: 8px; font-size: 14px; display: none; margin-bottom: 8px; }
+.success-msg { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; padding: 10px 16px; border-radius: 8px; font-size: 14px; display: none; margin-bottom: 8px; }
 
-/* Main content area - scrollable */
-.main { flex: 1; overflow-y: auto; max-width: 960px; margin: 0 auto; width: 100%; padding: 20px 24px; }
+/* Main content area — 自定义滚动条 */
+.main { flex: 1; overflow-y: auto; max-width: 94%; margin: 0 auto; width: 100%; padding: 24px 28px; }
+.main::-webkit-scrollbar { width: 6px; }
+.main::-webkit-scrollbar-track { background: transparent; }
+.main::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 3px; }
+.main::-webkit-scrollbar-thumb:hover { background: #a8a29e; }
 
 /* Section labels */
-.section-label { font-size: 11px; font-weight: 600; color: #a8a29e; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+.section-label { font-size: 10px; font-weight: 700; color: #a8a29e; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 5px; padding-left: 2px; }
 
-/* Tab bars */
-.tab-bar { display: flex; gap: 0; margin-bottom: 16px; flex-wrap: wrap; background: #e7e5e4; border-radius: 6px; padding: 2px; }
-.tab { padding: 6px 16px; font-size: 13px; border-radius: 5px; cursor: pointer; border: none; background: transparent; color: #57534e; font-weight: 500; transition: all .12s; white-space: nowrap; }
+/* Tab bar — iOS 风格 segmented control */
+.tab-bar { display: flex; gap: 0; margin-bottom: 16px; flex-wrap: wrap; background: #e7e5e4; border-radius: 8px; padding: 3px; }
+.tab { flex: 1; min-width: 0; padding: 7px 14px; font-size: 12px; border-radius: 6px; cursor: pointer; border: none; background: transparent; color: #57534e; font-weight: 600; transition: all .18s ease; white-space: nowrap; text-align: center; }
 .tab:hover { color: #292524; }
-.tab.active { background: #fff; color: #d97706; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+.tab.active { background: #fff; color: #d97706; box-shadow: 0 1px 4px rgba(0,0,0,.1), 0 0 0 1px rgba(0,0,0,.02); }
+.tab.active:hover { color: #d97706; }
 
-/* Table */
-.table-wrap { background: #fff; border-radius: 8px; border: 1px solid #e7e5e4; overflow: hidden; }
+/* Table — 卡片式, 行悬停 */
+.table-wrap { background: #fff; border-radius: 10px; border: 1px solid #e7e5e4; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.04); }
 table { width: 100%; border-collapse: collapse; }
-th { font-size: 11px; font-weight: 600; color: #a8a29e; text-transform: uppercase; letter-spacing: .05em; text-align: left; padding: 10px 12px; border-bottom: 1px solid #e7e5e4; background: #fafaf9; white-space: nowrap; }
-td { padding: 6px 12px; border-bottom: 1px solid #f5f5f4; vertical-align: middle; }
-tr:last-child td { border-bottom: none; }
-tr.dragging { opacity: .4; }
+th { font-size: 10px; font-weight: 700; color: #a8a29e; text-transform: uppercase; letter-spacing: .06em; text-align: left; padding: 10px 14px; border-bottom: 1px solid #e7e5e4; background: #fafaf9; white-space: nowrap; user-select: none; }
+td { padding: 7px 14px; border-bottom: 1px solid #f0efed; vertical-align: middle; }
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: #fafaf9; }
+tr.dragging { opacity: .35; background: #fef3c7 !important; }
 tr.drag-over { border-top: 2px solid #d97706; }
 .cell-text { font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace; font-size: 13px; color: #444; padding: 4px 0; word-break: break-all; }
-.cell-input { width: 100%; font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace; font-size: 13px; padding: 5px 8px; border: 1px solid #d6d3d1; border-radius: 4px; outline: none; background: #fff; transition: border-color .15s; }
-.cell-input:focus { border-color: #d97706; box-shadow: 0 0 0 2px rgba(217,119,6,.15); }
+.cell-input { width: 100%; font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace; font-size: 13px; padding: 6px 10px; border: 1px solid #d6d3d1; border-radius: 6px; outline: none; background: #fff; transition: border-color .15s, box-shadow .15s; }
+.cell-input:focus { border-color: #d97706; box-shadow: 0 0 0 3px rgba(217,119,6,.12); }
 .num-col { width: 32px; text-align: center; color: #a8a29e; font-size: 12px; }
-.drag-handle { cursor: grab; color: #d6d3d1; font-size: 16px; user-select: none; width: 24px; text-align: center; } .drag-handle:hover { color: #a8a29e; } .drag-handle:active { cursor: grabbing; }
+.drag-handle { cursor: grab; color: #d6d3d1; font-size: 18px; user-select: none; width: 28px; text-align: center; line-height: 1; } .drag-handle:hover { color: #a8a29e; } .drag-handle:active { cursor: grabbing; }
 .action-col { width: 1%; white-space: nowrap; }
 
 /* Empty state */
-.empty-state { text-align: center; padding: 40px 20px; color: #a8a29e; font-size: 14px; }
-.empty-state p { margin-bottom: 12px; }
+.empty-state { text-align: center; padding: 48px 20px; color: #a8a29e; font-size: 14px; }
+.empty-state p { margin-bottom: 14px; }
 
 /* Footer */
-.footer { flex-shrink: 0; max-width: 960px; margin: 0 auto; width: 100%; padding: 8px 24px 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px; }
+.footer { flex-shrink: 0; max-width: 94%; margin: 0 auto; width: 100%; padding: 10px 28px 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px; }
 .path-info { font-size: 12px; color: #a8a29e; }
 .meta-info { font-size: 12px; color: #a8a29e; display: flex; gap: 16px; flex-wrap: wrap; }
 
 /* Add-bar below table */
-.add-bar { padding: 10px 12px; border-top: 1px solid #f5f5f4; }
+.add-bar { padding: 10px 12px; border-top: 1px solid #f0efed; }
+
+/* Device delete button — 圆形悬浮 × */
+.btn-dev-del { background: none; border: none; cursor: pointer; font-size: 15px; color: #a8a29e; display: inline-flex; align-items: center; justify-content: center; padding: 2px 5px; border-radius: 4px; transition: all .15s; }
+.btn-dev-del:hover { color: #dc2626; background: #fef2f2; }
 
 /* Add device inline */
-.add-device-form { display: flex; gap: 6px; align-items: center; }
-.add-device-form input { font-size: 13px; padding: 4px 10px; border: 1px solid #d6d3d1; border-radius: 4px; outline: none; }
-.add-device-form input:focus { border-color: #d97706; }
+.add-device-form { display: flex; gap: 8px; align-items: center; }
+.add-device-form input { font-size: 13px; padding: 5px 12px; border: 1px solid #d6d3d1; border-radius: 6px; outline: none; transition: border-color .15s; }
+.add-device-form input:focus { border-color: #d97706; box-shadow: 0 0 0 3px rgba(217,119,6,.12); }
+
+/* Checkbox — 自定义样式 */
+.cb-col { width: 36px; text-align: center; }
+.cb-all, .cb-row { cursor: pointer; width: 16px; height: 16px; accent-color: #d97706; }
+
+/* Action bar */
+.action-bar { padding: 10px 14px; border-top: 1px solid #f0efed; display: flex; align-items: center; gap: 12px; font-size: 13px; }
+.action-bar .sel-count { color: #a8a29e; font-size: 12px; }
+
+/* Modal overlay — 毛玻璃背景 + 弹入动画 */
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,.35); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; animation: fadeIn .15s ease; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { opacity: 0; transform: translateY(20px) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.modal-box { background: #fff; border-radius: 14px; padding: 28px; width: 420px; max-width: 90vw; box-shadow: 0 25px 80px rgba(0,0,0,.2); animation: slideUp .2s ease; }
+.modal-box h2 { font-size: 17px; font-weight: 700; margin-bottom: 18px; letter-spacing: -.01em; }
+.modal-box .field { margin-bottom: 16px; }
+.modal-box label { display: block; font-size: 12px; font-weight: 600; color: #57534e; margin-bottom: 5px; letter-spacing: .02em; }
+.modal-box select, .modal-box input[type="text"] { width: 100%; padding: 9px 12px; font-size: 14px; border: 1px solid #d6d3d1; border-radius: 8px; outline: none; background: #fff; transition: border-color .15s, box-shadow .15s; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a8a29e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px; }
+.modal-box select:focus, .modal-box input[type="text"]:focus { border-color: #d97706; box-shadow: 0 0 0 3px rgba(217,119,6,.12); }
+.modal-box .radio-group { display: flex; gap: 24px; }
+.modal-box .radio-group label { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; color: #1c1917; cursor: pointer; }
+.modal-box .radio-group input[type="radio"] { accent-color: #d97706; width: 16px; height: 16px; }
+.modal-box .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
 </style>
 </head>
 <body>
@@ -129,7 +163,10 @@ tr.drag-over { border-top: 2px solid #d97706; }
           <thead><tr id="tableHead"></tr></thead>
           <tbody id="tableBody"></tbody>
         </table>
-        <div id="addBar" class="add-bar hidden">
+        <div id="actionBar" class="action-bar hidden">
+          <span id="selCount" class="sel-count">已选 0 条</span>
+          <button id="migrateBtn" class="btn btn-sm btn-add hidden">迁移</button>
+          <span style="flex:1"></span>
           <button id="addEntryBtn" class="btn btn-sm btn-add">+ 新增条目</button>
         </div>
       </div>
@@ -148,6 +185,36 @@ tr.drag-over { border-top: 2px solid #d97706; }
   </div>
   <div class="path-info" id="storePath"></div>
 </footer>
+
+<div id="migrateModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <h2>跨设备迁移</h2>
+    <div class="field"><span id="migrateCount" style="font-size:13px;color:#a8a29e;"></span></div>
+    <div class="field">
+      <label>目标平台</label>
+      <select id="migrateTargetPlat"></select>
+    </div>
+    <div class="field">
+      <label>目标设备</label>
+      <select id="migrateTargetDev"></select>
+    </div>
+    <div class="field">
+      <label>目标链接类型</label>
+      <select id="migrateTargetType"></select>
+    </div>
+    <div class="field">
+      <label>操作方式</label>
+      <div class="radio-group">
+        <label><input type="radio" name="migrateAction" value="copy" checked> 复制（保留源条目）</label>
+        <label><input type="radio" name="migrateAction" value="move"> 移动（删除源条目）</label>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button id="migrateCancelBtn" class="btn btn-ghost">取消</button>
+      <button id="migrateConfirmBtn" class="btn btn-save">确认迁移</button>
+    </div>
+  </div>
+</div>
 
 <script>
 ;(function () {
@@ -195,7 +262,8 @@ var deviceTabs    = document.getElementById('deviceTabs');
 var typeTabs      = document.getElementById('typeTabs');
 var tableHead     = document.getElementById('tableHead');
 var tableBody     = document.getElementById('tableBody');
-var addBar        = document.getElementById('addBar');
+var actionBar     = document.getElementById('actionBar');
+var migrateBtn    = document.getElementById('migrateBtn');
 var emptyState    = document.getElementById('emptyState');
 var addEntryBtn   = document.getElementById('addEntryBtn');
 var addEntryBtnEmpty = document.getElementById('addEntryBtnEmpty');
@@ -203,6 +271,16 @@ var addDeviceArea    = document.getElementById('addDeviceArea');
 var newDeviceInput   = document.getElementById('newDeviceInput');
 var addDeviceBtn     = document.getElementById('addDeviceBtn');
 var cancelAddDeviceBtn = document.getElementById('cancelAddDeviceBtn');
+
+/* ---------- Migration DOM ---------- */
+var migrateModal       = document.getElementById('migrateModal');
+var migrateCount       = document.getElementById('migrateCount');
+var migrateTargetPlat  = document.getElementById('migrateTargetPlat');
+var migrateTargetDev   = document.getElementById('migrateTargetDev');
+var migrateTargetType  = document.getElementById('migrateTargetType');
+var migrateConfirmBtn  = document.getElementById('migrateConfirmBtn');
+var migrateCancelBtn   = document.getElementById('migrateCancelBtn');
+var migrateActionRadios = document.querySelectorAll('input[name="migrateAction"]');
 
 /* ---------- State ---------- */
 var data       = null;    /* 完整配置数据 */
@@ -212,6 +290,7 @@ var currentPlat = '';
 var currentDev  = '';
 var currentType = 'symlink';
 var dragSrcIdx  = -1;     /* 拖拽起始行索引 */
+var selectedIndices = {}; /* 当前选中的行索引（编辑模式） */
 
 /* ---------- UI Helpers ---------- */
 function setOnline(online) {
@@ -280,7 +359,6 @@ function renderPlatformTabs() {
   }
   platformTabs.querySelectorAll('.tab').forEach(function (el) {
     el.addEventListener('click', function () {
-      if (isEditing) return;
       currentPlat = el.dataset.plat;
       currentDev = getDevices(currentPlat)[0] || '';
       renderAll();
@@ -291,7 +369,14 @@ function renderPlatformTabs() {
 function renderDeviceTabs() {
   var devs = getDevices(currentPlat);
   var html = devs.map(function (d) {
-    return '<button class="tab' + (d === currentDev ? ' active' : '') + '" data-dev="' + d + '">' + d + '</button>';
+    var active = d === currentDev ? ' active' : '';
+    if (isEditing) {
+      return '<span class="tab' + active + '" data-dev="' + d + '" style="display:inline-flex;align-items:center;gap:4px;">' +
+        d +
+        '<button class="btn-dev-del" data-dev="' + d + '" title="删除设备 ' + d + '">&times;</button>' +
+        '</span>';
+    }
+    return '<button class="tab' + active + '" data-dev="' + d + '">' + d + '</button>';
   }).join('');
   if (isEditing) {
     html += '<button class="tab btn-ghost" id="showAddDeviceBtn" style="color:#d97706;">+ 新建设备</button>';
@@ -302,8 +387,21 @@ function renderDeviceTabs() {
   }
   deviceTabs.querySelectorAll('.tab[data-dev]').forEach(function (el) {
     el.addEventListener('click', function () {
-      if (isEditing) return;
       currentDev = el.dataset.dev;
+      renderAll();
+    });
+  });
+  /* 设备删除按钮 */
+  deviceTabs.querySelectorAll('.btn-dev-del').forEach(function (btn) {
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var dev = btn.dataset.dev;
+      if (!confirm('确定要删除设备 "' + dev + '" 及其所有配置条目吗？')) return;
+      delete data[currentPlat][dev];
+      if (currentDev === dev) {
+        var devs = getDevices(currentPlat);
+        currentDev = devs.length > 0 ? devs[0] : '';
+      }
       renderAll();
     });
   });
@@ -330,11 +428,14 @@ function renderTypeTabs() {
 
 /* ---------- Table rendering ---------- */
 function renderTable() {
+  if (!isEditing) { selectedIndices = {}; }
   var entries = getEntries();
   var fields = TYPE_FIELDS[currentType];
+  var allSelected = entries.length > 0 && entries.every(function (_, i) { return selectedIndices[i]; });
 
   /* Head */
   var headHtml = '';
+  if (isEditing) headHtml += '<th class="cb-col"><input type="checkbox" class="cb-all"' + (allSelected ? ' checked' : '') + ' id="cbAll"></th>';
   if (isEditing) headHtml += '<th class="drag-handle"></th>';
   headHtml += '<th class="num-col">#</th>';
   fields.forEach(function (f) { headHtml += '<th>' + f.label + '</th>'; });
@@ -345,19 +446,21 @@ function renderTable() {
   if (entries.length === 0) {
     tableBody.innerHTML = '';
     emptyState.classList.remove('hidden');
-    addBar.classList.add('hidden');
+    actionBar.classList.add('hidden');
     addEntryBtnEmpty.classList.toggle('hidden', !isEditing);
+    updateMigrateBtn();
     return;
   }
 
   emptyState.classList.add('hidden');
-  addBar.classList.toggle('hidden', !isEditing);
+  actionBar.classList.toggle('hidden', !isEditing);
   addEntryBtnEmpty.classList.add('hidden');
 
   var rowsHtml = '';
   entries.forEach(function (entry, idx) {
     rowsHtml += '<tr data-idx="' + idx + '" draggable="' + isEditing + '">';
     if (isEditing) {
+      rowsHtml += '<td class="cb-col"><input type="checkbox" class="cb-row"' + (selectedIndices[idx] ? ' checked' : '') + ' data-idx="' + idx + '"></td>';
       rowsHtml += '<td class="drag-handle" draggable="true">⣿</td>';
     }
     rowsHtml += '<td class="num-col">' + (idx + 1) + '</td>';
@@ -376,8 +479,27 @@ function renderTable() {
   });
   tableBody.innerHTML = rowsHtml;
 
-  /* Drag-and-drop events */
+  updateMigrateBtn();
+
   if (isEditing) {
+    /* 全选 */
+    var cbAll = document.getElementById('cbAll');
+    if (cbAll) {
+      cbAll.addEventListener('change', function () {
+        var entries = getEntries();
+        entries.forEach(function (_, i) { selectedIndices[i] = cbAll.checked; });
+        renderTable();
+      });
+    }
+    /* 行复选框 */
+    tableBody.querySelectorAll('.cb-row').forEach(function (cb) {
+      cb.addEventListener('change', function () {
+        var idx = parseInt(cb.dataset.idx);
+        selectedIndices[idx] = cb.checked ? true : false;
+        renderTable();
+      });
+    });
+    /* Drag-and-drop events */
     tableBody.querySelectorAll('tr').forEach(function (tr) {
       tr.addEventListener('dragstart', onDragStart);
       tr.addEventListener('dragover',  onDragOver);
@@ -392,6 +514,14 @@ function renderTable() {
         var arr = getEntries().slice();
         arr.splice(idx, 1);
         setEntries(arr);
+        /* 清理被删条目的选中状态 */
+        var newSel = {};
+        Object.keys(selectedIndices).forEach(function (k) {
+          var ki = parseInt(k);
+          if (ki < idx) newSel[ki] = selectedIndices[ki];
+          if (ki > idx) newSel[ki - 1] = selectedIndices[ki];
+        });
+        selectedIndices = newSel;
         renderTable();
       });
     });
@@ -401,6 +531,16 @@ function renderTable() {
       inp.addEventListener('blur', onCellChange);
     });
   }
+}
+
+function updateMigrateBtn() {
+  var count = Object.keys(selectedIndices).filter(function (k) { return selectedIndices[k]; }).length;
+  var migrateBtn = document.getElementById('migrateBtn');
+  if (migrateBtn) {
+    migrateBtn.classList.toggle('hidden', count === 0);
+  }
+  var selLabel = document.getElementById('selCount');
+  if (selLabel) { selLabel.textContent = '已选 ' + count + ' 条'; }
 }
 
 function attrEsc(s) { return String(s).replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -489,6 +629,89 @@ function addDevice() {
   renderAll();
   /* 进入编辑模式 */
   if (!isEditing) { enterEditMode(); }
+}
+
+/* ---------- Migration ---------- */
+function openMigrateModal() {
+  collectInputs();
+  var count = Object.keys(selectedIndices).filter(function (k) { return selectedIndices[k]; }).length;
+  if (count === 0) { showError('请先勾选要迁移的条目'); return; }
+  migrateCount.textContent = '已选 ' + count + ' 条条目';
+
+  /* 填充目标平台列表 */
+  var plats = getPlatforms();
+  migrateTargetPlat.innerHTML = plats.map(function (p) {
+    return '<option value="' + p + '"' + (p === currentPlat ? ' selected' : '') + '>' + p + '</option>';
+  }).join('');
+
+  /* 填充目标类型列表 */
+  migrateTargetType.innerHTML = TYPE_NAMES.map(function (t) {
+    return '<option value="' + t + '"' + (t === currentType ? ' selected' : '') + '>' + t + '</option>';
+  }).join('');
+
+  /* 填充目标设备列表（根据当前选中的平台动态变化） */
+  fillTargetDevs();
+
+  migrateTargetPlat.onchange = fillTargetDevs;
+
+  migrateModal.classList.remove('hidden');
+}
+
+function fillTargetDevs() {
+  var plat = migrateTargetPlat.value;
+  var devs = getDevices(plat);
+  migrateTargetDev.innerHTML = devs.map(function (d) {
+    return '<option value="' + d + '">' + d + '</option>';
+  }).join('');
+  if (devs.length === 0) {
+    /* 目标平台没有设备，自动添加一个 */
+    migrateTargetDev.innerHTML = '<option value="">-- 请先建建设备 --</option>';
+  }
+}
+
+function doMigrate() {
+  collectInputs();
+  var targetPlat = migrateTargetPlat.value;
+  var targetDev  = migrateTargetDev.value;
+  var targetType = migrateTargetType.value;
+  var isMove = false;
+  migrateActionRadios.forEach(function (r) { if (r.checked && r.value === 'move') isMove = true; });
+
+  if (!targetDev) { showError('请选择目标设备'); return; }
+
+  /* 确保目标路径存在 */
+  ensurePath(targetPlat, targetDev);
+
+  /* 收集选中的条目 */
+  var sourceEntries = getEntries();
+  var toMigrate = [];
+  Object.keys(selectedIndices).sort(function (a, b) { return a - b; }).forEach(function (k) {
+    if (selectedIndices[k] && sourceEntries[parseInt(k)]) {
+      toMigrate.push(JSON.parse(JSON.stringify(sourceEntries[parseInt(k)])));
+    }
+  });
+
+  if (toMigrate.length === 0) { showError('没有选中任何条目'); return; }
+
+  /* 追加到目标 */
+  var targetArr = data[targetPlat][targetDev][targetType] || [];
+  toMigrate.forEach(function (e) { targetArr.push(e); });
+  data[targetPlat][targetDev][targetType] = targetArr;
+
+  /* 移动则从源删除 */
+  if (isMove) {
+    var remaining = [];
+    sourceEntries.forEach(function (e, i) {
+      if (!selectedIndices[i]) remaining.push(e);
+    });
+    setEntries(remaining);
+    selectedIndices = {};
+  }
+
+  migrateModal.classList.add('hidden');
+  updateMigrateBtn();
+  renderTable();
+  showSuccess('迁移成功，共 ' + toMigrate.length + ' 条');
 }
 
 /* ---------- Navigation ---------- */
@@ -607,6 +830,9 @@ function init() {
   cancelBtn.addEventListener('click', cancelEdit);
   addEntryBtn.addEventListener('click', addEntry);
   addEntryBtnEmpty.addEventListener('click', addEntry);
+  migrateBtn.addEventListener('click', openMigrateModal);
+  migrateConfirmBtn.addEventListener('click', doMigrate);
+  migrateCancelBtn.addEventListener('click', function () { migrateModal.classList.add('hidden'); });
   addDeviceBtn.addEventListener('click', addDevice);
   cancelAddDeviceBtn.addEventListener('click', function () {
     addDeviceArea.classList.add('hidden');

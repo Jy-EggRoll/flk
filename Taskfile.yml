@@ -10,6 +10,14 @@ vars:
     sh: printf '%s' "${TYPE:-release}"
   LDFLAGS: '-s -w -X github.com/jy-eggroll/flk/cmd.Version={{.VERSION}} -X github.com/jy-eggroll/flk/cmd.BuildTime={{.BUILDTIME}}'
 
+# 所有 build 任务共享的 sources 列表，包含嵌入式模板文件
+x-sources: &build-sources
+  sources:
+    - ./**/*.go
+    - cmd/ui/*
+    - go.mod
+    - go.sum
+
 tasks:
   default:
     desc: Build for all platforms
@@ -35,10 +43,7 @@ tasks:
     desc: Build for current platform
     cmds:
       - go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}{{exeExt}} .
-    sources:
-      - ./**/*.go
-      - go.mod
-      - go.sum
+    <<: *build-sources
     generates:
       - build/{{.APP}}{{exeExt}}
 
@@ -47,10 +52,7 @@ tasks:
     cmds:
       - mkdir -p build
       - CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-windows-386.exe .
-    sources:
-      - ./**/*.go
-      - go.mod
-      - go.sum
+    <<: *build-sources
     generates:
       - build/{{.APP}}-windows-386.exe
 
@@ -59,10 +61,7 @@ tasks:
     cmds:
       - mkdir -p build
       - CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-windows-amd64.exe .
-    sources:
-      - ./**/*.go
-      - go.mod
-      - go.sum
+    <<: *build-sources
     generates:
       - build/{{.APP}}-windows-amd64.exe
 
@@ -71,10 +70,7 @@ tasks:
     cmds:
       - mkdir -p build
       - CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-windows-arm64.exe .
-    sources:
-      - ./**/*.go
-      - go.mod
-      - go.sum
+    <<: *build-sources
     generates:
       - build/{{.APP}}-windows-arm64.exe
 
@@ -83,10 +79,7 @@ tasks:
     cmds:
       - mkdir -p build
       - CGO_ENABLED=0 GOOS=linux GOARCH=386 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-linux-386 .
-    sources:
-      - ./**/*.go
-      - go.mod
-      - go.sum
+    <<: *build-sources
     generates:
       - build/{{.APP}}-linux-386
 
@@ -95,10 +88,7 @@ tasks:
     cmds:
       - mkdir -p build
       - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-linux-amd64 .
-    sources:
-      - ./**/*.go
-      - go.mod
-      - go.sum
+    <<: *build-sources
     generates:
       - build/{{.APP}}-linux-amd64
 
@@ -107,10 +97,7 @@ tasks:
     cmds:
       - mkdir -p build
       - CGO_ENABLED=0 GOOS=linux GOARCH=arm go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-linux-arm .
-    sources:
-      - ./**/*.go
-      - go.mod
-      - go.sum
+    <<: *build-sources
     generates:
       - build/{{.APP}}-linux-arm
 
@@ -119,10 +106,7 @@ tasks:
     cmds:
       - mkdir -p build
       - CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-linux-arm64 .
-    sources:
-      - ./**/*.go
-      - go.mod
-      - go.sum
+    <<: *build-sources
     generates:
       - build/{{.APP}}-linux-arm64
 
@@ -131,10 +115,7 @@ tasks:
     cmds:
       - mkdir -p build
       - CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-darwin-amd64 .
-    sources:
-      - ./**/*.go
-      - go.mod
-      - go.sum
+    <<: *build-sources
     generates:
       - build/{{.APP}}-darwin-amd64
 
@@ -143,10 +124,7 @@ tasks:
     cmds:
       - mkdir -p build
       - CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-darwin-arm64 .
-    sources:
-      - ./**/*.go
-      - go.mod
-      - go.sum
+    <<: *build-sources
     generates:
       - build/{{.APP}}-darwin-arm64
 
@@ -155,10 +133,7 @@ tasks:
     cmds:
       - mkdir -p build
       - CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-freebsd-amd64 .
-    sources:
-      - ./**/*.go
-      - go.mod
-      - go.sum
+    <<: *build-sources
     generates:
       - build/{{.APP}}-freebsd-amd64
 
@@ -167,10 +142,7 @@ tasks:
     cmds:
       - mkdir -p build
       - CGO_ENABLED=0 GOOS=freebsd GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-freebsd-arm64 .
-    sources:
-      - ./**/*.go
-      - go.mod
-      - go.sum
+    <<: *build-sources
     generates:
       - build/{{.APP}}-freebsd-arm64
 
