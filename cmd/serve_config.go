@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jy-eggroll/flk/internal/logger"
+	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/spf13/cobra"
@@ -152,6 +153,30 @@ func runServeConfig(cmd *cobra.Command, args []string) error {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(info)
+	})
+
+	// API：可用性检测，全量检查当前平台所有记录并逐条返回有效/无效结果
+	// 只读操作故用 GET；performCheck 与本文件同属 cmd 包，直接复用，无需过滤参数（数据量小，前端自行匹配）
+	// 响应 platform 字段告知前端结果属于哪个平台，前端仅在浏览该平台页签时展示状态徽标
+	mux.HandleFunc("/api/check", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		results, err := performCheck(CheckOptions{})
+		if err != nil {
+			http.Error(w, "检查失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// 空结果时保证序列化为 [] 而非 null，前端无需判空
+		if results == nil {
+			results = []output.CheckResult{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"platform": runtime.GOOS,
+			"results":  results,
+		})
 	})
 
 	// API：SSE 事件推送，客户端连接后持续接收文件变更通知

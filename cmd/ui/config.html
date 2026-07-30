@@ -94,6 +94,13 @@ tr.drag-over { border-top: 2px solid #d97706; }
 .cb-col { width: 36px; text-align: center; }
 .cb-all, .cb-row { cursor: pointer; width: 16px; height: 16px; accent-color: #d97706; }
 
+/* 可用性状态徽标 — 查看模式专用列 */
+.health-col { width: 1%; white-space: nowrap; }
+.health-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.health-ok { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+.health-bad { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; cursor: help; }
+.health-none { background: transparent; color: #a8a29e; border: 1px solid #e7e5e4; }
+
 /* Action bar */
 .action-bar { padding: 10px 14px; border-top: 1px solid #f0efed; display: flex; align-items: center; gap: 12px; font-size: 13px; }
 .action-bar .sel-count { color: #a8a29e; font-size: 12px; }
@@ -119,6 +126,7 @@ tr.drag-over { border-top: 2px solid #d97706; }
   <h1>flk 配置</h1>
   <div class="header-right">
     <div id="viewActions">
+      <button id="recheckBtn" class="btn btn-edit" title="重新检测当前平台所有条目的链接可用性">重新检测</button>
       <button id="editBtn" class="btn btn-edit">编辑</button>
     </div>
     <div id="editActions" class="hidden">
@@ -181,6 +189,7 @@ tr.drag-over { border-top: 2px solid #d97706; }
 <footer class="footer">
   <div class="meta-info">
     <span id="fileInfo"></span>
+    <span id="checkInfo"></span>
     <span id="updateInfo"></span>
   </div>
   <div class="path-info" id="storePath"></div>
@@ -223,6 +232,7 @@ tr.drag-over { border-top: 2px solid #d97706; }
 /* ---------- Constants ---------- */
 var STORE_API = '/api/config';
 var EVENT_API = '/api/events';
+var CHECK_API = '/api/check';
 
 /* 每种链接类型的字段定义 */
 var TYPE_FIELDS = {
@@ -248,9 +258,11 @@ var statusText    = document.getElementById('statusText');
 var errorDiv      = document.getElementById('error');
 var successDiv    = document.getElementById('success');
 var fileInfo      = document.getElementById('fileInfo');
+var checkInfoEl   = document.getElementById('checkInfo');
 var updateInfo    = document.getElementById('updateInfo');
 var storePathEl   = document.getElementById('storePath');
 var editBtn       = document.getElementById('editBtn');
+var recheckBtn    = document.getElementById('recheckBtn');
 var saveBtn       = document.getElementById('saveBtn');
 var cancelBtn     = document.getElementById('cancelBtn');
 var viewActions   = document.getElementById('viewActions');
@@ -291,6 +303,9 @@ var currentDev  = '';
 var currentType = 'symlink';
 var dragSrcIdx  = -1;     /* 拖拽起始行索引 */
 var selectedIndices = {}; /* 当前选中的行索引（编辑模式） */
+var checkPlatform = '';   /* 可用性检测结果所属平台（仅该平台页签下展示状态） */
+var checkMap      = {};   /* key: device|type|字段值… → {valid, error} */
+var checkLoaded   = false;/* 是否已成功完成过一次检测（区分「未检测」与「无匹配」） */
 
 /* ---------- UI Helpers ---------- */
 function setOnline(online) {
@@ -439,6 +454,8 @@ function renderTable() {
   if (isEditing) headHtml += '<th class="drag-handle"></th>';
   headHtml += '<th class="num-col">#</th>';
   fields.forEach(function (f) { headHtml += '<th>' + f.label + '</th>'; });
+  /* 可用性状态列仅查看模式展示：编辑模式下条目值可能被改动，旧状态会误导 */
+  if (!isEditing) headHtml += '<th class="health-col">状态</th>';
   if (isEditing) headHtml += '<th class="action-col">操作</th>';
   tableHead.innerHTML = headHtml;
 
@@ -472,6 +489,9 @@ function renderTable() {
         rowsHtml += '<td><div class="cell-text">' + escHtml(val) + '</div></td>';
       }
     });
+    if (!isEditing) {
+      rowsHtml += '<td class="health-col">' + healthBadge(entry) + '</td>';
+    }
     if (isEditing) {
       rowsHtml += '<td class="action-col"><button class="btn btn-sm btn-dell" data-idx="' + idx + '">删除</button></td>';
     }
@@ -545,6 +565,50 @@ function updateMigrateBtn() {
 
 function attrEsc(s) { return String(s).replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 function escHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+/* ---------- 可用性检测 ---------- */
+/* 检测状态匹配 key：device|type|各字段值
+   后端 CheckResult 的 JSON 字段名（real/fake/prim/seco/src/dst）与条目 key 天然一致，
+   故同一个函数对配置条目和检测结果都适用 */
+function buildCheckKey(device, type, entry) {
+  var parts = [device, type];
+  (TYPE_FIELDS[type] || []).forEach(function (f) { parts.push(entry[f.key] || ''); });
+  return parts.join('|');
+}
+
+/* 查看模式状态列单元格：有效/无效/未知三态，无效时 tooltip 展示后端返回的错误详情 */
+function healthBadge(entry) {
+  if (!checkLoaded || currentPlat !== checkPlatform) {
+    return '<span class="health-badge health-none">—</span>';
+  }
+  var st = checkMap[buildCheckKey(currentDev, currentType, entry)];
+  if (!st) return '<span class="health-badge health-none">—</span>';
+  if (st.valid) return '<span class="health-badge health-ok">有效</span>';
+  return '<span class="health-badge health-bad" title="' + attrEsc(st.error) + '">无效</span>';
+}
+
+/* 调用 /api/check 全量检测当前平台，完成后非编辑态下刷新状态列
+   检测涉及文件系统操作可能较慢，异步执行不阻塞主渲染 */
+async function loadCheckStatus() {
+  checkInfoEl.textContent = '检测中…';
+  try {
+    var resp = await fetch(CHECK_API);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    var payload = await resp.json();
+    checkPlatform = payload.platform || '';
+    checkMap = {};
+    (payload.results || []).forEach(function (r) {
+      checkMap[buildCheckKey(r.device, r.type, r)] = { valid: r.valid, error: r.error || '' };
+    });
+    checkLoaded = true;
+    checkInfoEl.textContent = '检测时间: ' + new Date().toLocaleTimeString();
+  } catch (err) {
+    checkLoaded = false;
+    checkInfoEl.textContent = '可用性检测失败: ' + err.message;
+  }
+  /* 编辑模式下不重绘表格，避免打断用户输入；状态会在退出编辑后自然更新 */
+  if (!isEditing) renderTable();
+}
 
 function onCellChange(e) {
   var inp = e.target;
@@ -750,6 +814,9 @@ async function loadConfig() {
     renderAll();
     hideError();
     setOnline(true);
+    /* 配置加载完成后异步检测可用性，不阻塞主渲染；
+       这也使 SSE updated 触发的 loadConfig 自动带动状态刷新，形成自动刷新闭环 */
+    loadCheckStatus();
   } catch (err) {
     showError('加载配置失败: ' + err.message);
     setOnline(false);
@@ -826,6 +893,7 @@ function init() {
   storePathEl.textContent = '连接服务端…';
 
   editBtn.addEventListener('click', enterEditMode);
+  recheckBtn.addEventListener('click', loadCheckStatus);
   saveBtn.addEventListener('click', saveConfig);
   cancelBtn.addEventListener('click', cancelEdit);
   addEntryBtn.addEventListener('click', addEntry);
