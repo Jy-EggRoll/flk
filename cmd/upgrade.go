@@ -26,9 +26,11 @@ func init() {
 }
 
 func runUpgrade(cmd *cobra.Command, args []string) {
-	checkOnly := cmd.Flags().Changed("check")
-	forceUpdate := cmd.Flags().Changed("force")
-	checkDev := cmd.Flags().Changed("dev")
+	// 之前用 cmd.Flags().Changed(name) 判断，返回的是「该 flag 是否在命令行出现过」而非其布尔值
+	// 导致 --check=false / --force=false 也会被当作 true。这里改用 GetBool 读取真实的布尔值
+	checkOnly, _ := cmd.Flags().GetBool("check")
+	forceUpdate, _ := cmd.Flags().GetBool("force")
+	checkDev, _ := cmd.Flags().GetBool("dev")
 
 	channel := "正式版"
 	if checkDev {

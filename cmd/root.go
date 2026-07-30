@@ -49,6 +49,13 @@ var rootCmd = &cobra.Command{
 		}
 		logger.Init(config)
 
+		// 校验 --output 取值：仅支持 json / table，非法值静默落到 switch 之外会导致无任何输出
+		// 这里统一回退为 table 并给出 warn，避免用户因拼写错误而看不到结果
+		if outputFormat != "json" && outputFormat != "table" {
+			logger.Warn("未知的输出格式 " + outputFormat + "，已回退为 table")
+			outputFormat = "table"
+		}
+
 		// 设置工作目录用于路径解析
 		pathutil.SetWorkDir(WorkDir)
 		// 在命令执行前初始化持久化存储，使用当前 storePath 配置

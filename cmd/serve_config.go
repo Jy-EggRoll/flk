@@ -120,6 +120,11 @@ func runServeConfig(cmd *cobra.Command, args []string) error {
 				http.Error(w, "JSON 解析失败: "+err.Error(), http.StatusBadRequest)
 				return
 			}
+			// 防御性判空：InitStore 失败时 GlobalManager 可能为 nil，直接赋值 .Data 会 panic
+			// 这里按需新建一个空 Manager 承接写入，保证服务不崩溃
+			if store.GlobalManager == nil {
+				store.GlobalManager = &store.Manager{Data: make(store.RootConfig)}
+			}
 			store.GlobalManager.Data = newData
 			if err := store.GlobalManager.Save(store.StorePath); err != nil {
 				http.Error(w, "保存失败: "+err.Error(), http.StatusInternalServerError)
@@ -236,7 +241,12 @@ func watchStoreFile(hub *sseHub) {
 			logger.Warn("重新加载存储文件失败: " + err.Error())
 			continue
 		}
-		store.GlobalManager.Data = newMgr.Data
+		// 防御性判空：GlobalManager 可能因 InitStore 失败而为 nil，避免解引用 panic
+		if store.GlobalManager == nil {
+			store.GlobalManager = newMgr
+		} else {
+			store.GlobalManager.Data = newMgr.Data
+		}
 		hub.notify()
 	}
 }
