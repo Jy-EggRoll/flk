@@ -3,7 +3,6 @@ package updater
 import (
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"regexp"
 	"runtime"
@@ -16,19 +15,6 @@ import (
 // http.DefaultClient 无任何超时，服务端不响应时请求会永久挂起
 var apiClient = &http.Client{
 	Timeout: 30 * time.Second,
-}
-
-// downloadClient 用于下载二进制。二进制体积可能较大且网络可能较慢，
-// 因此不设整体 Timeout（否则会误杀正常的慢速下载），
-// 改为限制建连与「等待响应头」的时间：服务端不响应时快速失败，但一旦开始传输就允许持续下载
-var downloadClient = &http.Client{
-	Transport: &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout: 15 * time.Second,
-		}).DialContext,
-		ResponseHeaderTimeout: 30 * time.Second,
-		TLSHandshakeTimeout:   15 * time.Second,
-	},
 }
 
 const (
@@ -106,6 +92,10 @@ func fetchAllReleases() ([]Release, error) {
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", "flk-updater")
+
+	if token := getGitHubToken(); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 
 	resp, err := apiClient.Do(req)
 	if err != nil {
