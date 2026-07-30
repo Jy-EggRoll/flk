@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -51,7 +52,8 @@ func download(url, destPath string) error {
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("User-Agent", "flk-updater")
 
-	resp, err := http.DefaultClient.Do(req)
+	// 使用带超时的 http.Client，避免服务端不响应时永久挂起（http.DefaultClient 无超时）
+	resp, err := downloadClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("请求失败: %w", err)
 	}
@@ -73,21 +75,37 @@ func download(url, destPath string) error {
 	total := resp.ContentLength
 
 	for {
-		n, err := resp.Body.Read(buf)
+		n, readErr := resp.Body.Read(buf)
 		if n > 0 {
-			tmpFile.Write(buf[:n])
+			// 之前未检查写入错误，磁盘满或临时文件异常时会静默丢数据，最终安装损坏的二进制
+			if _, writeErr := tmpFile.Write(buf[:n]); writeErr != nil {
+				return fmt.Errorf("写入临时文件失败: %w", writeErr)
+			}
 			downloaded += int64(n)
 			if total > 0 {
 				fmt.Printf("\r下载进度: %.1f%%", float64(downloaded)/float64(total)*100)
 			}
 		}
-		if err != nil {
-			break
+		if readErr != nil {
+			// 之前对任何 readErr 都直接 break 当作成功，会把网络中断当成下载完成
+			// 现在只有 io.EOF 才是正常结束，其余错误一律向上返回
+			if errors.Is(readErr, io.EOF) {
+				break
+			}
+			return fmt.Errorf("读取下载数据失败: %w", readErr)
 		}
 	}
 
 	fmt.Println()
-	tmpFile.Close()
+
+	// 若服务端声明了 Content-Length，校验实际下载字节数，防止安装被截断的文件
+	if total > 0 && downloaded != total {
+		return fmt.Errorf("下载不完整: 已下载 %d 字节，期望 %d 字节", downloaded, total)
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("关闭临时文件失败: %w", err)
+	}
 
 	if err := os.Rename(tmpFile.Name(), destPath); err != nil {
 		return err
@@ -151,21 +169,4 @@ rm "$0"
 
 	os.Exit(0)
 	return nil
-}
-
-func copyFile(dst, src string) error {
-	from, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer from.Close()
-
-	to, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer to.Close()
-
-	_, err = io.Copy(to, from)
-	return err
 }
