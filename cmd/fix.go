@@ -29,6 +29,7 @@ func init() {
 	fixCmd.Flags().StringVarP(&fixDevice, "device", "d", "", "设备名称，用于过滤检查，可用逗号分隔多个设备")
 	fixCmd.Flags().BoolVar(&fixSymlink, "symlink", false, "仅检查符号链接")
 	fixCmd.Flags().BoolVar(&fixHardlink, "hardlink", false, "仅检查硬链接")
+	fixCmd.Flags().BoolVar(&fixCopy, "copy", false, "仅检查复制")
 	fixCmd.Flags().StringVar(&fixDir, "dir", "", "仅检查包含该路径的记录")
 	fixCmd.Flags().BoolVar(&fixForce, "force", false, "修复时跳过删除确认，直接执行")
 	fixCmd.Flags().BoolVar(&fixAll, "all", false, "自动修复所有无效链接，跳过交互模式")
@@ -38,6 +39,7 @@ var (
 	fixDevice   string
 	fixSymlink  bool
 	fixHardlink bool
+	fixCopy     bool
 	fixDir      string
 	fixForce    bool
 	fixAll      bool
@@ -50,7 +52,7 @@ func RunFix(cmd *cobra.Command, args []string) {
 			DeviceFilters: deviceFilters,
 			CheckSymlink:  fixSymlink,
 			CheckHardlink: fixHardlink,
-			CheckCopy:     false,
+			CheckCopy:     fixCopy,
 			CheckDir:      fixDir,
 		})
 		if err != nil {
@@ -261,6 +263,10 @@ func repairResult(result output.CheckResult, idx int) error {
 		}
 
 		var from, to string
+		// 修复方向决策（此分支只会在 copy 记录无效时进入，即内容不一致或有一方缺失）：
+		// 1. 源缺失 → 用目标回填源
+		// 2. 目标缺失 → 用源生成目标
+		// 3. 两者都在但内容不一致 → 以修改时间较新的一方为准，覆盖较旧的一方
 		if srcErr != nil {
 			from, to = expandedDst, expandedSrc
 		} else if dstErr != nil {

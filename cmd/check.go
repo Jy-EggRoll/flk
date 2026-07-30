@@ -79,6 +79,11 @@ func performCheck(options CheckOptions) ([]output.CheckResult, error) {
 	platform := runtime.GOOS
 	var results []CheckResult
 
+	// 防御性判空：若 InitStore 失败，GlobalManager 可能为 nil，直接解引用 .Data 会 panic
+	if store.GlobalManager == nil {
+		return results, nil
+	}
+
 	data := store.GlobalManager.Data
 	if data == nil {
 		return results, nil
@@ -95,6 +100,18 @@ func performCheck(options CheckOptions) ([]output.CheckResult, error) {
 		options.CheckCopy = true
 	}
 
+	// --dir 过滤值预处理：存储中的路径统一为折叠绝对路径（~ 形式），
+	// 而用户输入可能是 ~/.config、/root/.config 等各种写法，直接与折叠值做 Contains 往往匹配不上
+	// 这里预先算出「折叠后的过滤串」，与存储形式对齐；同时保留原始输入用于宽松的子串匹配
+	var foldedDirFilter string
+	if options.CheckDir != "" {
+		if normalized, err := pathutil.NormalizePath(options.CheckDir); err == nil {
+			if folded, ferr := pathutil.FoldHome(normalized); ferr == nil {
+				foldedDirFilter = folded
+			}
+		}
+	}
+
 	for device, deviceData := range platformData {
 		if len(options.DeviceFilters) > 0 && !contains(options.DeviceFilters, device) {
 			continue
@@ -109,10 +126,12 @@ func performCheck(options CheckOptions) ([]output.CheckResult, error) {
 
 			for _, entry := range entries {
 				// --dir 过滤：匹配任意路径字段
+				// 存储值为折叠形式，故同时用「折叠后的过滤串」和「原始输入」两种方式做子串匹配，任一命中即保留
 				if options.CheckDir != "" {
 					matches := false
 					for _, v := range entry {
-						if strings.Contains(v, options.CheckDir) {
+						if strings.Contains(v, options.CheckDir) ||
+							(foldedDirFilter != "" && strings.Contains(v, foldedDirFilter)) {
 							matches = true
 							break
 						}
@@ -150,6 +169,11 @@ func performCheck(options CheckOptions) ([]output.CheckResult, error) {
 	return results, nil
 }
 
+// checkCopyValid 校验一条 copy 记录是否有效
+// 语义（按需求）：以「文件内容」为准，而非修改时间。
+// 只要 src、dst 内容完全一致，即认为该 copy 有效，即便两者的修改时间不同也不算失效；
+// 仅当大小不同（SIZE_MISMATCH）或大小相同但内容不同（CONTENT_MISMATCH）时才判为无效。
+// 之前的实现仅比较 ModTime，会出现「内容不同但时间恰好相同 → 误判有效」的漏洞
 func checkCopyValid(src, dst string) (bool, string, string) {
 	expandedSrc, err := pathutil.NormalizePath(src)
 	if err != nil {
@@ -171,11 +195,28 @@ func checkCopyValid(src, dst string) (bool, string, string) {
 		return false, fmt.Sprintf("源文件 %s 不存在", src), "SRC_MISSING"
 	case dstErr != nil:
 		return false, fmt.Sprintf("目标文件 %s 不存在", dst), "DST_MISSING"
-	case !srcInfo.ModTime().Equal(dstInfo.ModTime()):
-		return false, "源文件和目标文件的修改时间不一致，需要同步", "MOD_TIME_MISMATCH"
-	default:
-		return true, "", ""
 	}
+
+	// 先比大小：不同必然内容不同，可快速判定，省去哈希整份文件的开销
+	if srcInfo.Size() != dstInfo.Size() {
+		return false, fmt.Sprintf("源文件与目标文件大小不一致 (%d vs %d)", srcInfo.Size(), dstInfo.Size()), "SIZE_MISMATCH"
+	}
+
+	// 大小相同再逐字节比较内容（通过 sha256 哈希）
+	srcHash, err := pathutil.FileHash(expandedSrc)
+	if err != nil {
+		return false, fmt.Sprintf("无法计算源文件 %s 的哈希: %v", src, err), "SRC_ACCESS_FAIL"
+	}
+	dstHash, err := pathutil.FileHash(expandedDst)
+	if err != nil {
+		return false, fmt.Sprintf("无法计算目标文件 %s 的哈希: %v", dst, err), "DST_ACCESS_FAIL"
+	}
+	if srcHash != dstHash {
+		return false, "源文件和目标文件内容不一致，需要同步", "CONTENT_MISMATCH"
+	}
+
+	// 内容一致即视为有效，忽略 ModTime 差异
+	return true, "", ""
 }
 
 func checkSymlinkValid(real, fake string) (bool, string, string) {

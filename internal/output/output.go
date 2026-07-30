@@ -126,6 +126,8 @@ func PrintCheckResults(format OutputFormat, results []CheckResult) error {
 		"NOT_SAME_FILE":      "不是同一文件",
 		"SRC_MISSING":        "源文件缺失",
 		"DST_MISSING":        "目标文件缺失",
+		"SRC_ACCESS_FAIL":    "源文件访问失败",
+		"DST_ACCESS_FAIL":    "目标文件访问失败",
 		"BOTH_MISSING":       "两者都缺失",
 		"NOT_REGULAR_FILE":   "不是普通文件",
 		"SIZE_MISMATCH":      "文件大小不一致",
@@ -136,13 +138,6 @@ func PrintCheckResults(format OutputFormat, results []CheckResult) error {
 		if r.ErrorType != "" {
 			usedTypes[r.ErrorType] = true
 		}
-	}
-	if len(usedTypes) > 0 {
-		fmt.Println("Error Types:")
-		for et := range usedTypes {
-			fmt.Printf("  %s: %s\n", et, errorTypes[et])
-		}
-		fmt.Println()
 	}
 
 	switch format {
@@ -167,6 +162,14 @@ func PrintCheckResults(format OutputFormat, results []CheckResult) error {
 		}
 		fmt.Println(string(data))
 	case Table:
+		// 错误类型图例只在表格模式打印，避免污染 JSON 输出（此前无条件打印导致 --output json 前面掺入非 JSON 文本，无法被机器解析）
+		if len(usedTypes) > 0 {
+			fmt.Println("Error Types:")
+			for et := range usedTypes {
+				fmt.Printf("  %s: %s\n", et, errorTypes[et])
+			}
+			fmt.Println()
+		}
 		termWidth := pterm.GetTerminalWidth()
 		colWidth := calcColWidth(termWidth)
 		table := pterm.TableData{{"编号", "类型", "设备", "源路径", "链接路径", "有效", "错误类型"}}
