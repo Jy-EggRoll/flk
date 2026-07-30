@@ -1,6 +1,8 @@
 package pathutil
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -84,15 +86,28 @@ func (e *ExistsButNotDirectoryError) Is(target error) bool {
 }
 
 // FoldHome 函数，接收原始路径字符串，返回将用户主目录替换为~的简化路径
+// 注意：折叠必须按「路径段」边界判断，不能简单用 strings.HasPrefix(normPath, home)
+// 反例：home=/root 时，/rootother/config 会被误判为以家目录为前缀，错误折叠成 ~other/config
+// 因此仅当 normPath 恰等于 home，或 normPath 以 home+分隔符 开头时才折叠，与 ValidateSafePath 的边界判断保持一致
 func FoldHome(path string) (string, error) { // 定义 fold
 
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	normPath, _ := NormalizePath(path)
-	if strings.HasPrefix(normPath, home) { // 判断传入的原始路径是否以用户主目录路径为前缀
-		return strings.Replace(normPath, home, "~", 1), nil // 若路径包含主目录前缀，将第一个主目录子串替换为~后返回
+	// 之前此处用 normPath, _ := NormalizePath(path) 吞掉了错误，导致非法 ~ 前缀等错误被静默
+	// 现在显式向上传播错误，避免得到一个不可信的路径继续参与折叠
+	normPath, err := NormalizePath(path)
+	if err != nil {
+		return "", err
+	}
+	// normPath 恰好就是家目录本身，直接折叠为 ~
+	if normPath == home {
+		return "~", nil
+	}
+	// 仅当以 home + 路径分隔符 为前缀时才折叠，保证是家目录的真正子项而非同名前缀目录
+	if strings.HasPrefix(normPath, home+string(os.PathSeparator)) {
+		return "~" + normPath[len(home):], nil // 保留分隔符及其后内容，拼接到 ~ 之后
 	}
 	return normPath, nil
 }
@@ -177,6 +192,22 @@ func EnsureDirExists(path string) error {
 	}
 
 	return nil
+}
+
+// FileHash 计算文件内容的 sha256 十六进制摘要，用于 copy 记录的内容一致性校验
+// 采用流式读取，避免一次性把大文件读进内存
+func FileHash(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // CopyFile 复制单个文件，保留权限

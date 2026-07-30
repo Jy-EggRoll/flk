@@ -85,9 +85,16 @@ func (m *Manager) AddRecord(device, linkType string, fields map[string]string) {
 	logger.Info("结构创建成功")
 }
 
+// ToJSON 将当前数据序列化为格式化 JSON 字符串
+// 之前用 jsonResult, _ := 忽略了错误，序列化失败会静默返回空串，调用方（如 serve 的 /api/config）
+// 无法区分「空数据」与「序列化失败」。现在出错时记 warn 并返回 "{}"，保证返回值始终是合法 JSON
 func (m *Manager) ToJSON() string {
 	sortRootConfig(m.Data)
-	jsonResult, _ := json.MarshalIndent(m.Data, "", "    ")
+	jsonResult, err := json.MarshalIndent(m.Data, "", "    ")
+	if err != nil {
+		logger.Warn("序列化存储数据失败: " + err.Error())
+		return "{}"
+	}
 	return string(jsonResult)
 }
 

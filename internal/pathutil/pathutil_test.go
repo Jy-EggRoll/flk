@@ -3,8 +3,77 @@ package pathutil
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+// TestFoldHome_Boundary 验证 FoldHome 按路径段边界折叠，
+// 修复前 /rootother 这类与家目录同名前缀的路径会被误折叠成 ~other
+func TestFoldHome_Boundary(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("无法获取家目录: %v", err)
+	}
+
+	sep := string(os.PathSeparator)
+
+	// 家目录本身应折叠为 ~
+	if got, _ := FoldHome(home); got != "~" {
+		t.Fatalf("家目录折叠错误: got %s, want ~", got)
+	}
+
+	// 家目录真正的子项应折叠为 ~/子路径
+	child := home + sep + ".config"
+	if got, _ := FoldHome(child); got != "~"+sep+".config" {
+		t.Fatalf("子项折叠错误: got %s, want %s", got, "~"+sep+".config")
+	}
+
+	// 与家目录同名前缀但不是子项的路径，绝不能被折叠
+	sibling := home + "other" + sep + "config"
+	got, _ := FoldHome(sibling)
+	if strings.HasPrefix(got, "~") {
+		t.Fatalf("同名前缀路径被错误折叠: %s => %s", sibling, got)
+	}
+}
+
+// TestFileHash 验证内容相同哈希相同、内容不同哈希不同
+func TestFileHash(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	a := filepath.Join(tmpDir, "a.txt")
+	b := filepath.Join(tmpDir, "b.txt")
+	c := filepath.Join(tmpDir, "c.txt")
+
+	if err := os.WriteFile(a, []byte("same content"), 0644); err != nil {
+		t.Fatalf("写 a 失败: %v", err)
+	}
+	if err := os.WriteFile(b, []byte("same content"), 0644); err != nil {
+		t.Fatalf("写 b 失败: %v", err)
+	}
+	if err := os.WriteFile(c, []byte("different"), 0644); err != nil {
+		t.Fatalf("写 c 失败: %v", err)
+	}
+
+	ha, err := FileHash(a)
+	if err != nil {
+		t.Fatalf("FileHash a 失败: %v", err)
+	}
+	hb, err := FileHash(b)
+	if err != nil {
+		t.Fatalf("FileHash b 失败: %v", err)
+	}
+	hc, err := FileHash(c)
+	if err != nil {
+		t.Fatalf("FileHash c 失败: %v", err)
+	}
+
+	if ha != hb {
+		t.Fatalf("内容相同哈希应相同: %s vs %s", ha, hb)
+	}
+	if ha == hc {
+		t.Fatalf("内容不同哈希应不同")
+	}
+}
 
 func TestCopyFile(t *testing.T) {
 	tmpDir := t.TempDir()
