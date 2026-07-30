@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/jy-eggroll/flk/internal/pathutil"
+	"github.com/jy-eggroll/flk/internal/trash"
 	"github.com/pterm/pterm"
 )
 
@@ -99,13 +99,8 @@ func RemoveWithConfirm(path string, opts RemoveOptions) ([]string, error) {
 		}
 	}
 
-	// 删除前对顶层目标做强安全校验（而非逐个子文件），保证校验对象与删除对象一致，避免 TOCTOU 竞态
-	// ValidateSafePath 已禁止删除根目录、家目录本身及家目录顶层子项（如 ~/.ssh、~/.config）
-	if err := pathutil.ValidateSafePath(path); err != nil {
-		return nil, err
-	}
-
-	if err := os.RemoveAll(path); err != nil {
+	// 移入回收站替代真实删除，所有数据都可恢复，无需安全校验
+	if err := trash.MoveToTrash(path); err != nil {
 		return nil, err
 	}
 	return paths, nil
@@ -114,7 +109,7 @@ func RemoveWithConfirm(path string, opts RemoveOptions) ([]string, error) {
 func printDeletePlan(out io.Writer, paths []string) error {
 	// 如果输出是标准输出（交互模式），使用 pterm 更醒目的样式
 	if out == os.Stdout {
-		pterm.Warning.Println("以下位置会在执行过程中被删除:")
+		pterm.Warning.Println("以下位置会在执行过程中被移至回收站:")
 		for _, p := range paths {
 			_, _ = fmt.Fprintln(out, pterm.Red(p))
 		}

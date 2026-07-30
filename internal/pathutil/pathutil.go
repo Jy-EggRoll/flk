@@ -8,59 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
-
-// ValidateSafePath 检查路径是否安全删除
-// 受保护目标包括：根目录、家目录本身、以及家目录的直接一级子项（如 ~/.ssh、~/.config）
-// 这样做既能避免误删整个家目录子树下的系统关键目录，又允许删除用户通过 flk 管理的更深层子目录
-func ValidateSafePath(path string) error {
-	if path == "" {
-		return errors.New("路径为空")
-	}
-
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return err
-	}
-	// 统一使用分隔符，避免 Windows 上混合分隔符导致的前缀判断失效
-	absPath = filepath.Clean(absPath)
-
-	home, herr := os.UserHomeDir()
-	if herr == nil {
-		homeAbs := filepath.Clean(home)
-		// 家目录本身
-		if absPath == homeAbs {
-			return errors.New("不能删除家目录本身")
-		}
-		// 家目录的直接一级子项（~/xxx 或 ~\xxx）：路径段数比家目录多 1 且以家目录为前缀
-		if strings.HasPrefix(absPath, homeAbs+string(os.PathSeparator)) {
-			rel, relErr := filepath.Rel(homeAbs, absPath)
-			if relErr == nil && !strings.ContainsRune(rel, os.PathSeparator) {
-				return fmt.Errorf("不能删除家目录下的顶层目录或文件: %s", absPath)
-			}
-		}
-	}
-
-	// 检查根目录（跨平台统一处理，Windows 下覆盖 C:\、C:、C:\ 等变体）
-	if absPath == string(os.PathSeparator) {
-		return errors.New("不能删除根目录")
-	}
-	if runtime.GOOS == "windows" {
-		// Windows 盘符根目录形如 C:\，也可能出现 C: 或尾部带多余分隔符的写法，统一归一化后判断
-		if len(absPath) >= 2 && absPath[1] == ':' {
-			drive := absPath[:2]
-			rest := absPath[2:]
-			// 去掉开头的反斜杠后应为空，才表示盘符根目录
-			if rest == "" || rest == "\\" || rest == "/" {
-				return fmt.Errorf("不能删除根目录: %s", drive)
-			}
-		}
-	}
-
-	return nil
-}
 
 var workDir string
 
@@ -88,7 +37,7 @@ func (e *ExistsButNotDirectoryError) Is(target error) bool {
 // FoldHome 函数，接收原始路径字符串，返回将用户主目录替换为~的简化路径
 // 注意：折叠必须按「路径段」边界判断，不能简单用 strings.HasPrefix(normPath, home)
 // 反例：home=/root 时，/rootother/config 会被误判为以家目录为前缀，错误折叠成 ~other/config
-// 因此仅当 normPath 恰等于 home，或 normPath 以 home+分隔符 开头时才折叠，与 ValidateSafePath 的边界判断保持一致
+// 因此仅当 normPath 恰等于 home，或 normPath 以 home+分隔符 开头时才折叠
 func FoldHome(path string) (string, error) { // 定义 fold
 
 	home, err := os.UserHomeDir()

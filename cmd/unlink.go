@@ -13,6 +13,7 @@ import (
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/safeop"
 	"github.com/jy-eggroll/flk/internal/store"
+	"github.com/jy-eggroll/flk/internal/trash"
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 )
@@ -20,9 +21,10 @@ import (
 // unlink 命令：解除已建立的链接关系
 //
 // 语义说明（与 create/check/fix 的字段约定保持一致）：
-//   real/prim/src 是「权威源」，fake/seco/dst 是「派生位置」。
-//   本命令用权威源的「实际文件」替换派生位置上由 flk 创建的符号链接 / 硬链接 / 副本，
-//   使派生位置成为一份独立的真实数据，从此与权威源不再存在链接关系，并从存储中移除该追踪记录。
+//
+//	real/prim/src 是「权威源」，fake/seco/dst 是「派生位置」。
+//	本命令用权威源的「实际文件」替换派生位置上由 flk 创建的符号链接 / 硬链接 / 副本，
+//	使派生位置成为一份独立的真实数据，从此与权威源不再存在链接关系，并从存储中移除该追踪记录。
 //
 // 三类记录的处理方式：
 //   - symlink：fake 当前是指向 real 的符号链接。删除该符号链接，并把 real 的实际文件/目录
@@ -241,11 +243,8 @@ func unlinkResult(result output.CheckResult) error {
 //   - 先用 filepath.EvalSymlinks 解析 source 的真实路径：若 source 自身是符号链接，会跟随到其最终
 //     指向的真实文件/目录，满足需求「如果是符号链接，则是实际目录」，确保复制出的是真实数据而非又一个链接
 //   - source 不可用（缺失/无法解析）时立即报错并跳过，绝不删除派生位置，避免破坏数据（源缺失不破坏）
-//   - 删除派生位置前需用户确认（--force 跳过）。这里删除的要么是符号链接、要么是硬链接名，删除本身
-//     不会造成真实数据丢失（符号链接仅是指针；硬链接删除后数据仍由权威源持有），因此使用轻量的 os.Remove，
-//     不经过 safeop.ValidateSafePath 的家目录顶层保护——那套保护是为防止误删真实数据子树而设，对本场景
-//     属于过度拦截（例如把 ~/.config 的符号链接还原为真实目录是本命令的核心用途）
-//   - 删除后用 pathutil.Copy 把真实数据复制到派生位置；Copy 会正确处理文件与目录（目录递归复制）
+//   - 将派生位置的旧链接移入回收站（而非真实删除），所有数据都可恢复
+//   - 移动后用 pathutil.Copy 把真实数据复制到派生位置；Copy 会正确处理文件与目录（目录递归复制）
 func replaceWithReal(source, derived, sourceLabel, derivedLabel string) error {
 	actualSource, err := filepath.EvalSymlinks(source)
 	if err != nil {
@@ -253,7 +252,7 @@ func replaceWithReal(source, derived, sourceLabel, derivedLabel string) error {
 	}
 
 	if !unlinkForce {
-		pterm.Warning.Println("即将删除并替换为真实文件: " + derived)
+		pterm.Warning.Println("即将解除链接并替换为真实文件: " + derived)
 		confirm, cerr := pterm.DefaultInteractiveConfirm.WithDefaultValue(false).Show("确认解除该链接关系？")
 		if cerr != nil {
 			return fmt.Errorf("获取确认输入失败: %w", cerr)
@@ -263,9 +262,9 @@ func replaceWithReal(source, derived, sourceLabel, derivedLabel string) error {
 		}
 	}
 
-	// 删除派生位置（符号链接或硬链接名，均为单个条目，os.Remove 足够；不存在则视为已就绪）
-	if err := os.Remove(derived); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("删除 %s 失败: %w", derivedLabel, err)
+	// 将派生位置的旧链接移入回收站；不存在则视为已就绪
+	if err := trash.MoveToTrash(derived); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("移动 %s 至回收站失败: %w", derivedLabel, err)
 	}
 
 	// 用权威源的真实内容在派生位置生成一份独立副本，至此二者不再共享链接关系
