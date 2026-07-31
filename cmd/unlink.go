@@ -1,14 +1,15 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 
-	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/safeop"
@@ -44,10 +45,12 @@ var unlinkCmd = &cobra.Command{
 	Aliases: []string{"ul"},
 	Short:   "解除链接关系，用真实文件替换链接/副本",
 	Long:    "用 real/prim/src 的实际文件替换已创建的符号链接、硬链接、副本，解除对应关系并移除追踪记录（仅处理当前有效的记录）",
-	Run:     RunUnlink,
+	RunE:    RunUnlink,
 }
 
 func init() {
+	MarkNeedsStore(unlinkCmd)
+	MarkSupportsJSON(unlinkCmd)
 	rootCmd.AddCommand(unlinkCmd)
 	unlinkCmd.Flags().StringVarP(&unlinkDevice, "device", "d", "", "设备名称，用于过滤，可用逗号分隔多个设备")
 	unlinkCmd.Flags().BoolVar(&unlinkSymlink, "symlink", false, "仅处理符号链接")
@@ -71,9 +74,15 @@ var (
 )
 
 // RunUnlink 执行解除链接流程：列出当前有效记录，交互或批量地将其还原为独立真实文件
-func RunUnlink(cmd *cobra.Command, args []string) {
-	// checkAndDisplay 复用 check 的检查逻辑，仅保留「有效」记录并渲染出带编号的表格
-	checkAndDisplay := func() []output.CheckResult {
+// 结果集写 stdout，提示和逐项状态写 stderr；一批操作会尽可能全部执行，再聚合操作及存储落盘错误
+func RunUnlink(cmd *cobra.Command, args []string) error {
+	out := cmd.OutOrStdout()
+	errOut := cmd.ErrOrStderr()
+	format := output.OutputFormat(outputFormat)
+
+	// checkAndDisplay 复用 check 的检查逻辑并仅保留有效记录
+	// JSON 空集必须输出 [] 供脚本稳定解析；表格模式继续显示原有的“没有可解除”提示
+	checkAndDisplay := func() ([]output.CheckResult, error) {
 		deviceFilters := parseDeviceFilters(unlinkDevice)
 		results, err := performCheck(CheckOptions{
 			DeviceFilters: deviceFilters,
@@ -83,82 +92,97 @@ func RunUnlink(cmd *cobra.Command, args []string) {
 			CheckDir:      unlinkDir,
 		})
 		if err != nil {
-			logger.Error("检查失败: " + err.Error())
-			return nil
+			return nil, fmt.Errorf("检查失败: %w", err)
 		}
 
-		var validResults []output.CheckResult
-		for _, r := range results {
-			if r.Valid {
-				validResults = append(validResults, r)
+		validResults := make([]output.CheckResult, 0)
+		for _, result := range results {
+			if result.Valid {
+				validResults = append(validResults, result)
 			}
 		}
 
-		if len(validResults) > 0 {
-			format := output.OutputFormat(outputFormat)
-			if err := output.PrintCheckResults(format, validResults); err != nil {
-				logger.Error("输出失败: " + err.Error())
-				return validResults
+		if format == output.JSON || len(validResults) > 0 {
+			if err := output.PrintCheckResults(out, format, validResults); err != nil {
+				return nil, fmt.Errorf("输出失败: %w", err)
 			}
 		} else {
-			pterm.Info.Println("没有可解除的有效链接")
+			pterm.Info.WithWriter(errOut).Println("没有可解除的有效链接")
 		}
 
-		return validResults
+		return validResults, nil
 	}
 
-	validResults := checkAndDisplay()
+	validResults, err := checkAndDisplay()
+	if err != nil {
+		return err
+	}
 	if len(validResults) == 0 {
-		return
+		return nil
 	}
 
-	// JSON 输出模式为非交互模式：JSON 供机器解析，进入交互 TUI 既无意义、又会因非 TTY 的 stdin
-	// 阻塞而挂起。此模式下仅列出待解除项（上面 checkAndDisplay 已输出纯净 JSON），需实际解除请配合 --all
-	if output.OutputFormat(outputFormat) == output.JSON && !unlinkAll {
-		return
+	// JSON 非 --all 模式只列出待解除项；--all 也只保留首次 JSON，后续状态进入 stderr
+	if format == output.JSON && !unlinkAll {
+		return nil
 	}
 
-	// --all：批量解除所有有效链接，跳过交互
-	if unlinkAll {
-		pterm.Info.Println("自动解除所有有效链接...")
-		for idx, result := range validResults {
-			if err := unlinkResult(result); err != nil {
-				pterm.Error.Printf("解除失败 #%d %v\n", idx+1, err)
+	var operationErrors []error
+	unlinkSelected := func(indices []int) {
+		for _, idx := range indices {
+			result := validResults[idx]
+			if err := unlinkResult(result, errOut); err != nil {
+				pterm.Error.WithWriter(errOut).Printf("解除失败 #%d %v\n", idx+1, err)
+				operationErrors = append(operationErrors, fmt.Errorf("解除 #%d 失败: %w", idx+1, err))
 			} else {
-				pterm.Success.Printf("解除成功 #%d\n", idx+1)
+				pterm.Success.WithWriter(errOut).Printf("解除成功 #%d\n", idx+1)
 			}
 		}
-		saveStoreAfterUnlink()
-		return
+	}
+	saveStore := func() {
+		if err := saveStoreAfterUnlink(); err != nil {
+			pterm.Error.WithWriter(errOut).Println("保存失败 " + err.Error())
+			operationErrors = append(operationErrors, fmt.Errorf("保存失败: %w", err))
+		}
 	}
 
-	// 交互模式：输入编号解除对应项，all/a 全部解除，exit/q 退出
+	// --all：批量解除所有有效链接，单项失败不阻断其余记录，结束后统一决定退出码
+	if unlinkAll {
+		pterm.Info.WithWriter(errOut).Println("自动解除所有有效链接...")
+		indices := make([]int, len(validResults))
+		for idx := range validResults {
+			indices[idx] = idx
+		}
+		unlinkSelected(indices)
+		saveStore()
+		return errors.Join(operationErrors...)
+	}
+
+	// 交互模式：输入编号解除对应项，all/a 全部解除，exit/q 主动退出仍视为成功
 	for {
-		pterm.DefaultBox.WithTitle("INFO").Println(pterm.Green("输入 all 或 a 解除所有\n输入 exit 或 q 退出程序\n输入数字以解除对应项\n使用空格分隔"))
+		pterm.DefaultBox.WithWriter(errOut).WithTitle("INFO").Println(pterm.Green("输入 all 或 a 解除所有\n输入 exit 或 q 退出程序\n输入数字以解除对应项\n使用空格分隔"))
 		input, err := pterm.DefaultInteractiveTextInput.WithMultiLine(false).Show("请输入")
 		if err != nil {
-			// 输入错误（典型如 stdin 被关闭/EOF）时必须退出循环而非 continue：
-			// 若 continue，下一轮仍会立即拿到同样的错误，形成不可中断的死循环（CPU 空转）
-			logger.Error("输入错误 " + err.Error())
-			break
+			// EOF 等输入错误必须向上传播；若继续下一轮会反复得到同一错误并形成 CPU 空转
+			operationErrors = append(operationErrors, fmt.Errorf("输入错误: %w", err))
+			return errors.Join(operationErrors...)
 		}
 
 		input = strings.TrimSpace(input)
 		if input == "exit" || input == "q" {
-			break
+			return errors.Join(operationErrors...)
 		}
 
 		var indices []int
 		if input == "all" || input == "a" {
-			for i := range validResults {
-				indices = append(indices, i)
+			for idx := range validResults {
+				indices = append(indices, idx)
 			}
 		} else {
 			parts := strings.Fields(input)
 			for _, part := range parts {
 				idx, err := strconv.Atoi(part)
 				if err != nil || idx < 1 || idx > len(validResults) {
-					pterm.Warning.Printf("无效编号 %s\n", part)
+					pterm.Warning.WithWriter(errOut).Printf("无效编号 %s\n", part)
 					continue
 				}
 				indices = append(indices, idx-1)
@@ -169,19 +193,16 @@ func RunUnlink(cmd *cobra.Command, args []string) {
 			continue
 		}
 
-		for _, idx := range indices {
-			result := validResults[idx]
-			if err := unlinkResult(result); err != nil {
-				pterm.Error.Printf("解除失败 #%d %v\n", idx+1, err)
-			} else {
-				pterm.Success.Printf("解除成功 #%d\n", idx+1)
-			}
-		}
-		saveStoreAfterUnlink()
+		unlinkSelected(indices)
+		saveStore()
 
-		validResults = checkAndDisplay()
+		validResults, err = checkAndDisplay()
+		if err != nil {
+			operationErrors = append(operationErrors, err)
+			return errors.Join(operationErrors...)
+		}
 		if len(validResults) == 0 {
-			break
+			return errors.Join(operationErrors...)
 		}
 	}
 }
@@ -190,7 +211,13 @@ func RunUnlink(cmd *cobra.Command, args []string) {
 // 成功完成物理替换后，默认从全局存储中移除该记录；--keep-record 模式下保留记录，
 // 仅解除文件系统层面的链接关系（记录随后会被 check 判为无效，可用 fix 按原记录重建链接）
 // 注意：本函数只更新内存中的 store，落盘由调用方在一批操作后统一执行 saveStoreAfterUnlink，减少重复写盘
-func unlinkResult(result output.CheckResult) error {
+func unlinkResult(result output.CheckResult, errorOutput ...io.Writer) error {
+	// 解除过程中的确认、警告和状态都属于交互诊断信息，默认写 stderr，并允许命令注入 Cobra 的错误输出 writer
+	errOut := io.Writer(os.Stderr)
+	if len(errorOutput) > 0 && errorOutput[0] != nil {
+		errOut = errorOutput[0]
+	}
+
 	switch result.Type {
 	case "symlink":
 		expandedReal, err := pathutil.NormalizePath(result.Real)
@@ -201,7 +228,7 @@ func unlinkResult(result output.CheckResult) error {
 		if err != nil {
 			return fmt.Errorf("展开链接路径失败: %w", err)
 		}
-		if err := replaceWithReal(expandedReal, expandedFake, "real", "fake"); err != nil {
+		if err := replaceWithReal(expandedReal, expandedFake, "real", "fake", errOut); err != nil {
 			return err
 		}
 	case "hardlink":
@@ -213,7 +240,7 @@ func unlinkResult(result output.CheckResult) error {
 		if err != nil {
 			return fmt.Errorf("展开次文件路径失败: %w", err)
 		}
-		if err := replaceWithReal(expandedPrim, expandedSeco, "prim", "seco"); err != nil {
+		if err := replaceWithReal(expandedPrim, expandedSeco, "prim", "seco", errOut); err != nil {
 			return err
 		}
 	case "copy":
@@ -221,7 +248,7 @@ func unlinkResult(result output.CheckResult) error {
 		// --keep-record 模式下连记录也保留，对 copy 而言没有任何可执行的动作，
 		// 明确提示后按成功返回，避免用户误以为「解除成功」是做了什么实际变更
 		if unlinkKeepRecord {
-			pterm.Warning.Println("copy 记录无文件系统层面的链接可解除，--keep-record 模式下跳过: " + result.Dst)
+			pterm.Warning.WithWriter(errOut).Println("copy 记录无文件系统层面的链接可解除，--keep-record 模式下跳过: " + result.Dst)
 			return nil
 		}
 	default:
@@ -245,14 +272,19 @@ func unlinkResult(result output.CheckResult) error {
 //   - source 不可用（缺失/无法解析）时立即报错并跳过，绝不删除派生位置，避免破坏数据（源缺失不破坏）
 //   - 将派生位置的旧链接移入回收站（而非真实删除），所有数据都可恢复
 //   - 移动后用 pathutil.Copy 把真实数据复制到派生位置；Copy 会正确处理文件与目录（目录递归复制）
-func replaceWithReal(source, derived, sourceLabel, derivedLabel string) error {
+func replaceWithReal(source, derived, sourceLabel, derivedLabel string, errorOutput ...io.Writer) error {
+	errOut := io.Writer(os.Stderr)
+	if len(errorOutput) > 0 && errorOutput[0] != nil {
+		errOut = errorOutput[0]
+	}
+
 	actualSource, err := filepath.EvalSymlinks(source)
 	if err != nil {
 		return fmt.Errorf("%s 不可用（%v），已跳过以避免数据丢失", sourceLabel, err)
 	}
 
 	if !unlinkForce {
-		pterm.Warning.Println("即将解除链接并替换为真实文件: " + derived)
+		pterm.Warning.WithWriter(errOut).Println("即将解除链接并替换为真实文件: " + derived)
 		confirm, cerr := pterm.DefaultInteractiveConfirm.WithDefaultValue(false).Show("确认解除该链接关系？")
 		if cerr != nil {
 			return fmt.Errorf("获取确认输入失败: %w", cerr)
@@ -295,12 +327,11 @@ func removeUnlinkRecord(result output.CheckResult) {
 
 // saveStoreAfterUnlink 将内存中的存储改动落盘，供一批解除操作完成后统一调用
 // --keep-record 模式下内存 store 未发生变化，此时落盘只是重写一份内容等价（仅排序）的文件，无害
-func saveStoreAfterUnlink() {
+// 保存错误必须返回给 RunUnlink，与单项解除错误一起决定最终退出码，不能只记录日志后伪装成功
+func saveStoreAfterUnlink() error {
 	mgr := store.GlobalManager
 	if mgr == nil {
-		return
+		return nil
 	}
-	if err := mgr.Save(store.StorePath); err != nil {
-		logger.Error("保存失败 " + err.Error())
-	}
+	return mgr.Save(store.StorePath)
 }

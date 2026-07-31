@@ -22,7 +22,8 @@ jobs:
             - name: Setup Go
               uses: actions/setup-go@v5
               with:
-                  go-version: "1.26.0"
+                  # 始终以 go.mod 为 Go 版本的唯一来源，避免工作流与项目配置漂移
+                  go-version-file: go.mod
 
             - name: Get version info
               id: get_version
@@ -48,6 +49,10 @@ jobs:
               run: |
                   BUILDTIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
                   echo "buildtime=$BUILDTIME" >> $GITHUB_OUTPUT
+
+            # 发布构建必须先通过完整验证，失败时不会生成或上传产物
+            - name: Verify source
+              run: task verify
 
             - name: Build binaries for all platforms
               run: task build-all

@@ -92,7 +92,7 @@ func (m *Manager) ToJSON() string {
 	sortRootConfig(m.Data)
 	jsonResult, err := json.MarshalIndent(m.Data, "", "    ")
 	if err != nil {
-		logger.Warn("序列化存储数据失败: " + err.Error())
+		logger.Warn("序列化存储数据失败", "error", err)
 		return "{}"
 	}
 	return string(jsonResult)
@@ -199,7 +199,7 @@ func LoadFromFile(filePath string) (*Manager, error) {
 	// 自动写回新格式
 	manager := &Manager{Data: data}
 	if saveErr := manager.Save(filePath); saveErr != nil {
-		logger.Warn("自动迁移存储格式后保存失败: " + saveErr.Error())
+		logger.Warn("自动迁移存储格式后保存失败", "error", saveErr)
 	}
 
 	return manager, nil

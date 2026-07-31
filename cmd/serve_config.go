@@ -71,6 +71,8 @@ var serveConfigCmd = &cobra.Command{
 }
 
 func init() {
+	// Web 配置服务依赖已加载的 store，但尚未定义机器可读的启动结果，因此只声明存储能力、不声明 JSON 能力
+	MarkNeedsStore(serveConfigCmd)
 	serveCmd.AddCommand(serveConfigCmd)
 	serveConfigCmd.Flags().Bool("no-open", false, "不自动打开浏览器")
 }
@@ -207,7 +209,10 @@ func runServeConfig(cmd *cobra.Command, args []string) error {
 	})
 
 	logger.Info("启动服务", "addr", addr)
-	fmt.Printf("服务已启动: http://localhost:%d\n", usedPort)
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "服务已启动: http://localhost:%d\n", usedPort); err != nil {
+		_ = listener.Close()
+		return fmt.Errorf("输出服务地址失败: %w", err)
+	}
 
 	if !noOpen {
 		tryOpenBrowser(fmt.Sprintf("http://localhost:%d", usedPort))
@@ -228,7 +233,7 @@ func listenWithRetry(host string, startPort, maxAttempts int) (net.Listener, int
 		if err == nil {
 			return listener, port, nil
 		}
-		logger.Debug(fmt.Sprintf("端口 %d 被占用，尝试下一个", port))
+		logger.Debug("端口被占用，尝试下一个", "port", port)
 	}
 	return nil, 0, fmt.Errorf("端口 %d-%d 均被占用", startPort, startPort+maxAttempts-1)
 }
@@ -237,7 +242,7 @@ func listenWithRetry(host string, startPort, maxAttempts int) (net.Listener, int
 func watchStoreFile(hub *sseHub) {
 	normalizedPath, err := pathutil.NormalizePath(store.StorePath)
 	if err != nil {
-		logger.Error("无法解析存储路径: " + err.Error())
+		logger.Error("无法解析存储路径", "error", err)
 		return
 	}
 
@@ -263,7 +268,7 @@ func watchStoreFile(hub *sseHub) {
 		// 文件有变化，重新加载到 GlobalManager
 		newMgr, err := store.LoadFromFile(store.StorePath)
 		if err != nil {
-			logger.Warn("重新加载存储文件失败: " + err.Error())
+			logger.Warn("重新加载存储文件失败", "error", err)
 			continue
 		}
 		// 防御性判空：GlobalManager 可能因 InitStore 失败而为 nil，避免解引用 panic
@@ -288,7 +293,7 @@ func tryOpenBrowser(url string) {
 		err = exec.Command("cmd", "/c", "start", url).Start()
 	}
 	if err != nil {
-		logger.Debug("自动打开浏览器失败: " + err.Error())
+		logger.Debug("自动打开浏览器失败", "error", err)
 	}
 }
 

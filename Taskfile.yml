@@ -10,19 +10,47 @@ vars:
     sh: printf '%s' "${TYPE:-release}"
   LDFLAGS: '-s -w -X github.com/jy-eggroll/flk/cmd.Version={{.VERSION}} -X github.com/jy-eggroll/flk/cmd.BuildTime={{.BUILDTIME}}'
 
-# 所有 build 任务共享的 sources 列表，包含嵌入式模板文件
-x-sources: &build-sources
-  sources:
-    - ./**/*.go
-    - cmd/ui/*
-    - go.mod
-    - go.sum
-
 tasks:
   default:
-    desc: Build for all platforms
-    deps:
-      - build-all
+    desc: Verify and build for all platforms
+    # cmds 按声明顺序执行，避免 deps 并行导致构建在验证完成前开始
+    cmds:
+      - task: verify
+      - task: build-all
+
+  fmt:check:
+    desc: Check Go source formatting
+    cmds:
+      - |
+        unformatted="$(gofmt -l $(git ls-files --cached --others --exclude-standard '*.go'))"
+        if [ -n "$unformatted" ]; then
+          printf '以下 Go 文件未通过 gofmt 检查：\n%s\n' "$unformatted" >&2
+          exit 1
+        fi
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  test:
+    desc: Run all Go tests without cached results
+    cmds:
+      - go test ./... -count=1
+
+  test:race:
+    desc: Run all Go tests with the race detector
+    cmds:
+      - go test -race ./... -count=1
+
+  verify:
+    desc: Run all verification checks
+    # 验证项顺序执行，保证失败时立即停止且日志归属清晰
+    cmds:
+      - task: fmt:check
+      - task: vet
+      - task: test
+      - task: test:race
 
   build-all:
     desc: Build all platform binaries in parallel
@@ -39,117 +67,79 @@ tasks:
       - build:freebsd:amd64
       - build:freebsd:arm64
 
+  # 构建任务不声明 sources/generates，因为 VERSION 和 BUILDTIME 不参与文件时间戳判断
+  # 这样每次显式调用都会真正执行 go build，避免复用嵌入旧版本信息的二进制文件
   build:
     desc: Build for current platform
     cmds:
+      - mkdir -p build
       - go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}{{exeExt}} .
-    <<: *build-sources
-    generates:
-      - build/{{.APP}}{{exeExt}}
 
   build:windows:386:
     desc: Cross-compile windows/386
     cmds:
       - mkdir -p build
       - CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-windows-386.exe .
-    <<: *build-sources
-    generates:
-      - build/{{.APP}}-windows-386.exe
 
   build:windows:amd64:
     desc: Cross-compile windows/amd64
     cmds:
       - mkdir -p build
       - CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-windows-amd64.exe .
-    <<: *build-sources
-    generates:
-      - build/{{.APP}}-windows-amd64.exe
 
   build:windows:arm64:
     desc: Cross-compile windows/arm64
     cmds:
       - mkdir -p build
       - CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-windows-arm64.exe .
-    <<: *build-sources
-    generates:
-      - build/{{.APP}}-windows-arm64.exe
 
   build:linux:386:
     desc: Cross-compile linux/386
     cmds:
       - mkdir -p build
       - CGO_ENABLED=0 GOOS=linux GOARCH=386 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-linux-386 .
-    <<: *build-sources
-    generates:
-      - build/{{.APP}}-linux-386
 
   build:linux:amd64:
     desc: Cross-compile linux/amd64
     cmds:
       - mkdir -p build
       - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-linux-amd64 .
-    <<: *build-sources
-    generates:
-      - build/{{.APP}}-linux-amd64
 
   build:linux:arm:
     desc: Cross-compile linux/arm (armv7)
     cmds:
       - mkdir -p build
       - CGO_ENABLED=0 GOOS=linux GOARCH=arm go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-linux-arm .
-    <<: *build-sources
-    generates:
-      - build/{{.APP}}-linux-arm
 
   build:linux:arm64:
     desc: Cross-compile linux/arm64
     cmds:
       - mkdir -p build
       - CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-linux-arm64 .
-    <<: *build-sources
-    generates:
-      - build/{{.APP}}-linux-arm64
 
   build:darwin:amd64:
     desc: Cross-compile darwin/amd64
     cmds:
       - mkdir -p build
       - CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-darwin-amd64 .
-    <<: *build-sources
-    generates:
-      - build/{{.APP}}-darwin-amd64
 
   build:darwin:arm64:
     desc: Cross-compile darwin/arm64 (Apple Silicon)
     cmds:
       - mkdir -p build
       - CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-darwin-arm64 .
-    <<: *build-sources
-    generates:
-      - build/{{.APP}}-darwin-arm64
 
   build:freebsd:amd64:
     desc: Cross-compile freebsd/amd64
     cmds:
       - mkdir -p build
       - CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-freebsd-amd64 .
-    <<: *build-sources
-    generates:
-      - build/{{.APP}}-freebsd-amd64
 
   build:freebsd:arm64:
     desc: Cross-compile freebsd/arm64
     cmds:
       - mkdir -p build
       - CGO_ENABLED=0 GOOS=freebsd GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-freebsd-arm64 .
-    <<: *build-sources
-    generates:
-      - build/{{.APP}}-freebsd-arm64
-
-  test:
-    desc: Run all Go tests
-    cmds:
-      - go test ./... -count=1
 
   changelog:
     desc: '生成发布更新日志并输出到 stdout（用法: task changelog VERSION=x.y.z [TYPE=release|dev]）'

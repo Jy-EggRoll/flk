@@ -3,6 +3,7 @@ package output
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"reflect"
 	"sort"
 	"strings"
@@ -105,33 +106,34 @@ func resultMapValues(m map[string]interface{}) []string {
 	return vals
 }
 
-// PrintCheckResults 打印检查结果
-func PrintCheckResults(format OutputFormat, results []CheckResult) error {
-	// 收集错误类型并打印解释
+// PrintCheckResults 将检查结果按指定格式写入 writer
+// JSON 模式只编码一个数组文档，表格模式则把错误类型图例和表格全部写入同一 writer，便于调用方重定向并感知写入失败
+func PrintCheckResults(writer io.Writer, format OutputFormat, results []CheckResult) error {
+	// 收集本次结果实际出现的错误类型，表格模式仅展示相关图例，避免无关说明占用终端空间
 	errorTypes := map[string]string{
-		"PATH_EXPAND_FAIL":   "路径展开失败",
-		"LINK_MISSING":       "链接文件缺失",
-		"LINK_ACCESS_FAIL":   "链接访问失败",
-		"NOT_SYMLINK":        "不是符号链接",
-		"READLINK_FAIL":      "读取链接失败",
-		"TARGET_MISSING":     "目标文件缺失",
-		"TARGET_ACCESS_FAIL": "目标访问失败",
-		"EXPECTED_MISSING":   "期望文件缺失",
+		"PATH_EXPAND_FAIL":     "路径展开失败",
+		"LINK_MISSING":         "链接文件缺失",
+		"LINK_ACCESS_FAIL":     "链接访问失败",
+		"NOT_SYMLINK":          "不是符号链接",
+		"READLINK_FAIL":        "读取链接失败",
+		"TARGET_MISSING":       "目标文件缺失",
+		"TARGET_ACCESS_FAIL":   "目标访问失败",
+		"EXPECTED_MISSING":     "期望文件缺失",
 		"EXPECTED_ACCESS_FAIL": "期望访问失败",
-		"TARGET_MISMATCH":    "目标不匹配",
-		"PRIM_MISSING":       "主文件缺失",
-		"PRIM_ACCESS_FAIL":   "主文件访问失败",
-		"SECO_MISSING":       "次文件缺失",
-		"SECO_ACCESS_FAIL":   "次文件访问失败",
-		"NOT_SAME_FILE":      "不是同一文件",
-		"SRC_MISSING":        "源文件缺失",
-		"DST_MISSING":        "目标文件缺失",
-		"SRC_ACCESS_FAIL":    "源文件访问失败",
-		"DST_ACCESS_FAIL":    "目标文件访问失败",
-		"BOTH_MISSING":       "两者都缺失",
-		"NOT_REGULAR_FILE":   "不是普通文件",
-		"SIZE_MISMATCH":      "文件大小不一致",
-		"CONTENT_MISMATCH":   "文件内容不一致",
+		"TARGET_MISMATCH":      "目标不匹配",
+		"PRIM_MISSING":         "主文件缺失",
+		"PRIM_ACCESS_FAIL":     "主文件访问失败",
+		"SECO_MISSING":         "次文件缺失",
+		"SECO_ACCESS_FAIL":     "次文件访问失败",
+		"NOT_SAME_FILE":        "不是同一文件",
+		"SRC_MISSING":          "源文件缺失",
+		"DST_MISSING":          "目标文件缺失",
+		"SRC_ACCESS_FAIL":      "源文件访问失败",
+		"DST_ACCESS_FAIL":      "目标文件访问失败",
+		"BOTH_MISSING":         "两者都缺失",
+		"NOT_REGULAR_FILE":     "不是普通文件",
+		"SIZE_MISMATCH":        "文件大小不一致",
+		"CONTENT_MISMATCH":     "文件内容不一致",
 	}
 	usedTypes := make(map[string]bool)
 	for _, r := range results {
@@ -142,6 +144,7 @@ func PrintCheckResults(format OutputFormat, results []CheckResult) error {
 
 	switch format {
 	case JSON:
+		// 沿用既有的结果排序规则和字段 map，既保持数组顺序稳定，也保持 JSON 字段结构及字典序输出不变
 		sort.SliceStable(results, func(i, j int) bool {
 			vi := resultMapValues(toSortedMap(results[i]))
 			vj := resultMapValues(toSortedMap(results[j]))
@@ -156,19 +159,32 @@ func PrintCheckResults(format OutputFormat, results []CheckResult) error {
 		for i, r := range results {
 			sortedResults[i] = toSortedMap(r)
 		}
-		data, err := json.MarshalIndent(sortedResults, "", "    ")
-		if err != nil {
+
+		// Encoder 只调用一次，确保输出是一个完整 JSON 文档；非 nil 的空切片保证无结果时编码为 [] 而不是 null
+		encoder := json.NewEncoder(writer)
+		encoder.SetIndent("", "    ")
+		if err := encoder.Encode(sortedResults); err != nil {
 			return err
 		}
-		fmt.Println(string(data))
 	case Table:
-		// 错误类型图例只在表格模式打印，避免污染 JSON 输出（此前无条件打印导致 --output json 前面掺入非 JSON 文本，无法被机器解析）
+		// 错误类型图例只在表格模式打印，避免污染 JSON；map 键必须先排序，防止 Go 的随机遍历顺序造成输出抖动
 		if len(usedTypes) > 0 {
-			fmt.Println("Error Types:")
-			for et := range usedTypes {
-				fmt.Printf("  %s: %s\n", et, errorTypes[et])
+			if _, err := fmt.Fprintln(writer, "Error Types:"); err != nil {
+				return err
 			}
-			fmt.Println()
+			usedTypeNames := make([]string, 0, len(usedTypes))
+			for errorType := range usedTypes {
+				usedTypeNames = append(usedTypeNames, errorType)
+			}
+			sort.Strings(usedTypeNames)
+			for _, errorType := range usedTypeNames {
+				if _, err := fmt.Fprintf(writer, "  %s: %s\n", errorType, errorTypes[errorType]); err != nil {
+					return err
+				}
+			}
+			if _, err := fmt.Fprintln(writer); err != nil {
+				return err
+			}
 		}
 		termWidth := pterm.GetTerminalWidth()
 		colWidth := calcColWidth(termWidth)
@@ -208,15 +224,18 @@ func PrintCheckResults(format OutputFormat, results []CheckResult) error {
 				})
 			}
 		}
-		pterm.DefaultTable.WithHasHeader().WithBoxed(false).WithData(table).Render()
+		if err := writeTable(writer, table); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-// PrintCheckResultsFix 打印 fix 命令的检查结果（table 模式带斑马条纹）
-func PrintCheckResultsFix(format OutputFormat, results []CheckResult) error {
+// PrintCheckResultsFix 将 fix 命令的检查结果写入 writer，表格模式保留既有的红色与浅紫色斑马条纹
+// 非表格格式复用 PrintCheckResults，确保 JSON 的单文档结构、排序和写错误处理完全一致
+func PrintCheckResultsFix(writer io.Writer, format OutputFormat, results []CheckResult) error {
 	if format != Table {
-		return PrintCheckResults(format, results)
+		return PrintCheckResults(writer, format, results)
 	}
 
 	termWidth := pterm.GetTerminalWidth()
@@ -262,8 +281,18 @@ func PrintCheckResultsFix(format OutputFormat, results []CheckResult) error {
 		table = append(table, row)
 	}
 
-	pterm.DefaultTable.WithHasHeader().WithBoxed(false).WithData(table).Render()
-	return nil
+	return writeTable(writer, table)
+}
+
+// writeTable 使用 pterm 生成与既有终端表格一致的文本，再显式写入调用方提供的 writer
+// pterm.TablePrinter.Render 会忽略底层写错误，因此这里必须调用 Srender 并自行写入，才能把磁盘满、管道关闭等错误原样返回
+func writeTable(writer io.Writer, data pterm.TableData) error {
+	rendered, err := pterm.DefaultTable.WithHasHeader().WithBoxed(false).WithData(data).Srender()
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(writer, rendered+"\n")
+	return err
 }
 
 // calcColWidth 根据终端宽度计算表格中每列（源路径/链接路径）的可用宽度
@@ -271,7 +300,7 @@ func PrintCheckResultsFix(format OutputFormat, results []CheckResult) error {
 func calcColWidth(termWidth int) int {
 	// 表头: 编号(7) 类型(4) 设备(8) 源路径 链接路径 有效(4) 错误类型(10)，间隔约 3 字符共 6 处
 	const fixed = 7 + 4 + 8 + 4 + 10 + 6*3
-	w := (termWidth - fixed) / 3 - 3
+	w := (termWidth-fixed)/3 - 3
 	if w < 10 {
 		// 终端过窄时给出最小可用宽度，防止 truncateString 传入负数而越界
 		w = 10
@@ -292,20 +321,29 @@ func truncateString(raw string, maxLen int) string {
 	return string(runes[:maxLen-3]) + "..."
 }
 
-// PrintCreateResult 打印创建结果
-func PrintCreateResult(format OutputFormat, result CreateResult) error {
+// PrintCreateResult 将创建结果按指定格式写入 writer
+// JSON 模式保持既有对象结构和四空格缩进，人类可读模式保留 pterm 的成功、失败前缀及原有文案
+func PrintCreateResult(writer io.Writer, format OutputFormat, result CreateResult) error {
 	switch format {
 	case JSON:
-		data, err := json.MarshalIndent(toSortedMap(result), "", "    ")
-		if err != nil {
+		// 使用一次 Encode 输出一个完整对象文档，并保留 toSortedMap 提供的字段命名、omitempty 与稳定键序
+		encoder := json.NewEncoder(writer)
+		encoder.SetIndent("", "    ")
+		if err := encoder.Encode(toSortedMap(result)); err != nil {
 			return err
 		}
-		fmt.Println(string(data))
 	case Table:
+		var text string
 		if result.Success && result.Message != "" {
-			pterm.Success.Println(result.Type + ": " + result.Message)
+			text = pterm.Success.Sprintln(result.Type + ": " + result.Message)
 		} else if !result.Success && result.Error != "" {
-			pterm.Error.Println(result.Type + ": " + result.Error)
+			text = pterm.Error.Sprintln(result.Type + ": " + result.Error)
+		}
+		if text != "" {
+			// 不调用 PrefixPrinter.Println，因为 pterm 会吞掉底层 writer 错误，显式写入才能兑现本函数的 error 返回值
+			if _, err := io.WriteString(writer, text); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"strconv"
@@ -24,10 +26,12 @@ var fixCmd = &cobra.Command{
 	Aliases: []string{"fx"},
 	Short:   "交互式修复无效链接",
 	Long:    "检查链接状态并进入交互模式，允许用户选择编号修复无效链接",
-	Run:     RunFix,
+	RunE:    RunFix,
 }
 
 func init() {
+	MarkNeedsStore(fixCmd)
+	MarkSupportsJSON(fixCmd)
 	rootCmd.AddCommand(fixCmd)
 	fixCmd.Flags().StringVarP(&fixDevice, "device", "d", "", "设备名称，用于过滤检查，可用逗号分隔多个设备")
 	fixCmd.Flags().BoolVar(&fixSymlink, "symlink", false, "仅检查符号链接")
@@ -48,8 +52,16 @@ var (
 	fixAll      bool
 )
 
-func RunFix(cmd *cobra.Command, args []string) {
-	checkAndDisplay := func() []output.CheckResult {
+// RunFix 检查并修复无效记录，业务结果始终写 stdout，交互提示和逐项状态始终写 stderr
+// 批量或交互操作会尽可能处理完用户选择的全部记录，再用 errors.Join 聚合真实失败，避免单项失败掩盖其余可修复项
+func RunFix(cmd *cobra.Command, args []string) error {
+	out := cmd.OutOrStdout()
+	errOut := cmd.ErrOrStderr()
+	format := output.OutputFormat(outputFormat)
+
+	// checkAndDisplay 复用 check 的检查逻辑并只保留无效记录
+	// JSON 即使没有记录也必须输出 []，便于脚本稳定解析；表格模式继续保留原有的人类可读提示
+	checkAndDisplay := func() ([]output.CheckResult, error) {
 		deviceFilters := parseDeviceFilters(fixDevice)
 		results, err := performCheck(CheckOptions{
 			DeviceFilters: deviceFilters,
@@ -59,65 +71,76 @@ func RunFix(cmd *cobra.Command, args []string) {
 			CheckDir:      fixDir,
 		})
 		if err != nil {
-			logger.Error("检查失败: " + err.Error())
-			return nil
+			return nil, fmt.Errorf("检查失败: %w", err)
 		}
 
-		var invalidResults []output.CheckResult
-		for _, r := range results {
-			if !r.Valid {
-				invalidResults = append(invalidResults, r)
+		invalidResults := make([]output.CheckResult, 0)
+		for _, result := range results {
+			if !result.Valid {
+				invalidResults = append(invalidResults, result)
 			}
 		}
 
-		if len(invalidResults) > 0 {
-			format := output.OutputFormat(outputFormat)
-			if err := output.PrintCheckResultsFix(format, invalidResults); err != nil {
-				logger.Error("输出失败: " + err.Error())
-				return invalidResults
+		if format == output.JSON || len(invalidResults) > 0 {
+			if err := output.PrintCheckResultsFix(out, format, invalidResults); err != nil {
+				return nil, fmt.Errorf("输出失败: %w", err)
 			}
 		} else {
-			pterm.Info.Println("所有链接都有效，无需修复")
+			pterm.Info.WithWriter(errOut).Println("所有链接都有效，无需修复")
 		}
 
-		return invalidResults
+		return invalidResults, nil
 	}
 
-	invalidResults := checkAndDisplay()
+	invalidResults, err := checkAndDisplay()
+	if err != nil {
+		return err
+	}
 	if len(invalidResults) == 0 {
-		return
+		return nil
 	}
 
-	// JSON 输出模式为非交互模式：JSON 供机器解析，进入交互 TUI 既无意义、又会因非 TTY 的 stdin
-	// 阻塞而挂起。此模式下仅列出无效项（checkAndDisplay 已输出纯净 JSON），需实际修复请配合 --all
-	if output.OutputFormat(outputFormat) == output.JSON && !fixAll {
-		return
+	// JSON 非 --all 模式只负责列出无效项，不进入会污染机器输出或等待 stdin 的交互流程
+	// JSON --all 也只在上面的首次检查输出一个文档，后续逐项状态全部进入 stderr
+	if format == output.JSON && !fixAll {
+		return nil
+	}
+
+	var operationErrors []error
+	repairSelected := func(indices []int) {
+		for _, idx := range indices {
+			result := invalidResults[idx]
+			if err := repairResult(result, idx, errOut); err != nil {
+				pterm.Error.WithWriter(errOut).Printf("修复失败 #%d %v\n", idx+1, err)
+				operationErrors = append(operationErrors, fmt.Errorf("修复 #%d 失败: %w", idx+1, err))
+			} else {
+				pterm.Success.WithWriter(errOut).Printf("修复成功 #%d\n", idx+1)
+			}
+		}
 	}
 
 	if fixAll {
-		for idx, result := range invalidResults {
-			if err := repairResult(result, idx); err != nil {
-				pterm.Error.Printf("修复失败 #%d %v\n", idx+1, err)
-			} else {
-				pterm.Success.Printf("修复成功 #%d\n", idx+1)
-			}
+		indices := make([]int, len(invalidResults))
+		for idx := range invalidResults {
+			indices[idx] = idx
 		}
-		return
+		repairSelected(indices)
+		return errors.Join(operationErrors...)
 	}
 
 	for {
-		pterm.DefaultBox.WithTitle("INFO").Println(pterm.Green("输入 all 或 a 修复所有\n输入 d<编号> 删除条目，如 d7，单次只能删除一个\n输入 exit 或 q 退出程序\n输入数字以修复对应项\n使用空格分隔"))
+		pterm.DefaultBox.WithWriter(errOut).WithTitle("INFO").Println(pterm.Green("输入 all 或 a 修复所有\n输入 d<编号> 删除条目，如 d7，单次只能删除一个\n输入 exit 或 q 退出程序\n输入数字以修复对应项\n使用空格分隔"))
 		input, err := pterm.DefaultInteractiveTextInput.WithMultiLine(false).Show("请输入")
 		if err != nil {
-			// 输入错误（典型如 stdin 被关闭/EOF）时必须退出循环而非 continue：
-			// 若 continue，下一轮仍会立即拿到同样的错误，形成不可中断的死循环（CPU 空转）
-			logger.Error("输入错误 " + err.Error())
-			break
+			// EOF 等输入错误必须向上传播；若继续下一轮会反复得到同一错误并形成 CPU 空转
+			operationErrors = append(operationErrors, fmt.Errorf("输入错误: %w", err))
+			return errors.Join(operationErrors...)
 		}
 
 		input = strings.TrimSpace(input)
 		if input == "exit" || input == "q" {
-			break
+			// 用户主动退出不是失败，但此前已经发生的实际操作失败仍需决定最终退出码
+			return errors.Join(operationErrors...)
 		}
 
 		if strings.HasPrefix(input, "d") {
@@ -126,7 +149,7 @@ func RunFix(cmd *cobra.Command, args []string) {
 			for _, part := range parts {
 				idx, err := strconv.Atoi(part)
 				if err != nil || idx < 1 || idx > len(invalidResults) {
-					pterm.Warning.Printf("无效编号 %s\n", part)
+					pterm.Warning.WithWriter(errOut).Printf("无效编号 %s\n", part)
 					continue
 				}
 				indices = append(indices, idx-1)
@@ -152,28 +175,34 @@ func RunFix(cmd *cobra.Command, args []string) {
 				mgr.RemoveMatchingEntry(platform, result.Device, result.Type, entry)
 			}
 			if err := mgr.Save(store.StorePath); err != nil {
-				logger.Error("保存失败 " + err.Error())
+				pterm.Error.WithWriter(errOut).Println("保存失败 " + err.Error())
+				operationErrors = append(operationErrors, fmt.Errorf("保存失败: %w", err))
+			} else {
+				pterm.Success.WithWriter(errOut).Println("删除完成")
 			}
 
-			pterm.Success.Println("删除完成")
-			invalidResults = checkAndDisplay()
+			invalidResults, err = checkAndDisplay()
+			if err != nil {
+				operationErrors = append(operationErrors, err)
+				return errors.Join(operationErrors...)
+			}
 			if len(invalidResults) == 0 {
-				break
+				return errors.Join(operationErrors...)
 			}
 			continue
 		}
 
 		var indices []int
 		if input == "all" || input == "a" {
-			for i := range invalidResults {
-				indices = append(indices, i)
+			for idx := range invalidResults {
+				indices = append(indices, idx)
 			}
 		} else {
 			parts := strings.Fields(input)
 			for _, part := range parts {
 				idx, err := strconv.Atoi(part)
 				if err != nil || idx < 1 || idx > len(invalidResults) {
-					pterm.Warning.Printf("无效编号 %s\n", part)
+					pterm.Warning.WithWriter(errOut).Printf("无效编号 %s\n", part)
 					continue
 				}
 				indices = append(indices, idx-1)
@@ -184,23 +213,26 @@ func RunFix(cmd *cobra.Command, args []string) {
 			continue
 		}
 
-		for _, idx := range indices {
-			result := invalidResults[idx]
-			if err := repairResult(result, idx); err != nil {
-				pterm.Error.Printf("修复失败 #%d %v\n", idx+1, err)
-			} else {
-				pterm.Success.Printf("修复成功 #%d\n", idx+1)
-			}
-		}
+		repairSelected(indices)
 
-		invalidResults = checkAndDisplay()
+		invalidResults, err = checkAndDisplay()
+		if err != nil {
+			operationErrors = append(operationErrors, err)
+			return errors.Join(operationErrors...)
+		}
 		if len(invalidResults) == 0 {
-			break
+			return errors.Join(operationErrors...)
 		}
 	}
 }
 
-func repairResult(result output.CheckResult, idx int) error {
+func repairResult(result output.CheckResult, idx int, errorOutput ...io.Writer) error {
+	// 删除计划属于交互诊断信息，必须与业务结果分流到 stderr；可选参数保留内部直接调用时的兼容性
+	removeOutput := io.Writer(os.Stderr)
+	if len(errorOutput) > 0 && errorOutput[0] != nil {
+		removeOutput = errorOutput[0]
+	}
+
 	// 路径已存储为折叠绝对路径，直接展开即可，无需 WorkDir hack
 	//
 	// 修复语义统一说明（与 copy 分支保持一致）：
@@ -233,7 +265,7 @@ func repairResult(result output.CheckResult, idx int) error {
 			return err
 		}
 
-		return symlink.Create(expandedReal, expandedFake, safeop.RemoveOptions{Force: fixForce})
+		return symlink.Create(expandedReal, expandedFake, safeop.RemoveOptions{Force: fixForce, Output: removeOutput})
 	case "hardlink":
 		expandedPrim, err := pathutil.NormalizePath(result.Prim)
 		if err != nil {
@@ -249,7 +281,7 @@ func repairResult(result output.CheckResult, idx int) error {
 			return err
 		}
 
-		return hardlink.Create(expandedPrim, expandedSeco, safeop.RemoveOptions{Force: fixForce})
+		return hardlink.Create(expandedPrim, expandedSeco, safeop.RemoveOptions{Force: fixForce, Output: removeOutput})
 	case "copy":
 		expandedSrc, err := pathutil.NormalizePath(result.Src)
 		if err != nil {
@@ -282,7 +314,7 @@ func repairResult(result output.CheckResult, idx int) error {
 			from, to = expandedDst, expandedSrc
 		}
 
-		return copy.Create(from, to, fixForce, false)
+		return copy.Create(from, to, fixForce, false, removeOutput)
 	}
 	return fmt.Errorf("未知类型 %s", result.Type)
 }

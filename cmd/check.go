@@ -19,10 +19,12 @@ var checkCmd = &cobra.Command{
 	Aliases: []string{"ck"},
 	Short:   "检查全局软硬链接的生效情况",
 	Long:    "检查全局软硬链接的生效情况",
-	Run:     RunCheck,
+	RunE:    RunCheck,
 }
 
 func init() {
+	MarkNeedsStore(checkCmd)
+	MarkSupportsJSON(checkCmd)
 	rootCmd.AddCommand(checkCmd)
 	checkCmd.Flags().StringVarP(&checkDevice, "device", "d", "", "设备名称，用于过滤检查，可用逗号分隔多个设备")
 	checkCmd.Flags().BoolVar(&checkSymlink, "symlink", false, "仅检查符号链接")
@@ -42,8 +44,9 @@ var (
 // CheckResult 单个链接的检查结果
 type CheckResult = output.CheckResult
 
-// RunCheck 执行链接检查并输出结果
-func RunCheck(cmd *cobra.Command, args []string) {
+// RunCheck 执行链接检查并把业务结果写入命令标准输出
+// 检查或输出失败由 Cobra 统一处理并转换为非零退出；记录无效属于正常业务结果，不应作为命令错误返回
+func RunCheck(cmd *cobra.Command, args []string) error {
 	deviceFilters := parseDeviceFilters(checkDevice)
 	results, err := performCheck(CheckOptions{
 		DeviceFilters: deviceFilters,
@@ -53,17 +56,16 @@ func RunCheck(cmd *cobra.Command, args []string) {
 		CheckDir:      checkDir,
 	})
 	if err != nil {
-		logger.Error("检查失败 " + err.Error())
-		return
+		return fmt.Errorf("检查失败: %w", err)
 	}
 
 	format := output.OutputFormat(outputFormat)
-	if err := output.PrintCheckResults(format, results); err != nil {
-		logger.Error("输出失败 " + err.Error())
-		return
+	if err := output.PrintCheckResults(cmd.OutOrStdout(), format, results); err != nil {
+		return fmt.Errorf("输出失败: %w", err)
 	}
 
 	logger.Info("检查完成")
+	return nil
 }
 
 // CheckOptions 检查选项
@@ -146,20 +148,20 @@ func performCheck(options CheckOptions) ([]output.CheckResult, error) {
 					Device: device,
 				}
 
-			switch linkType {
-			case "symlink":
-				result.Real = entry["real"]
-				result.Fake = entry["fake"]
-				result.Valid, result.Error, result.ErrorType = checkSymlinkValid(result.Real, result.Fake)
-			case "hardlink":
-				result.Prim = entry["prim"]
-				result.Seco = entry["seco"]
-				result.Valid, result.Error, result.ErrorType = checkHardlinkValid(result.Prim, result.Seco)
-			case "copy":
-				result.Src = entry["src"]
-				result.Dst = entry["dst"]
-				result.Valid, result.Error, result.ErrorType = checkCopyValid(result.Src, result.Dst)
-			}
+				switch linkType {
+				case "symlink":
+					result.Real = entry["real"]
+					result.Fake = entry["fake"]
+					result.Valid, result.Error, result.ErrorType = checkSymlinkValid(result.Real, result.Fake)
+				case "hardlink":
+					result.Prim = entry["prim"]
+					result.Seco = entry["seco"]
+					result.Valid, result.Error, result.ErrorType = checkHardlinkValid(result.Prim, result.Seco)
+				case "copy":
+					result.Src = entry["src"]
+					result.Dst = entry["dst"]
+					result.Valid, result.Error, result.ErrorType = checkCopyValid(result.Src, result.Dst)
+				}
 
 				results = append(results, result)
 			}

@@ -1,0 +1,34 @@
+name: Continuous Integration
+
+on:
+    # 所有拉取请求都执行完整验证与跨平台构建，尽早发现合并风险
+    pull_request: {}
+    push:
+        branches:
+            - main
+
+permissions:
+    contents: read
+
+jobs:
+    ci:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Setup Go
+              uses: actions/setup-go@v5
+              with:
+                  # 始终以 go.mod 为 Go 版本的唯一来源，避免工作流与项目配置漂移
+                  go-version-file: go.mod
+
+            - name: Setup Task
+              uses: go-task/setup-task@v2
+              with:
+                  version: 3.x
+
+            # 默认任务严格先执行 verify，再构建全部 11 个发布目标
+            - name: Verify and build all targets
+              run: task

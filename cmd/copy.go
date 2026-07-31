@@ -2,17 +2,16 @@ package cmd
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 
-	"github.com/jy-eggroll/flk/internal/create/copy"
+	createcopy "github.com/jy-eggroll/flk/internal/create/copy"
 	"github.com/jy-eggroll/flk/internal/create/shared"
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/safeop"
-	"github.com/jy-eggroll/flk/internal/store"
-	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 )
 
@@ -31,6 +30,9 @@ var copyCmd = &cobra.Command{
 
 func init() {
 	createCmd.AddCommand(copyCmd)
+	// copy 会持久化记录，并保证 JSON 模式的 stdout 只有一个最终 CreateResult
+	MarkNeedsStore(copyCmd)
+	MarkSupportsJSON(copyCmd)
 	copyCmd.Flags().StringVar(&copySrc, "src", "", "源文件路径")
 	copyCmd.Flags().StringVar(&copyDst, "dst", "", "目标文件路径")
 	copyCmd.Flags().BoolVar(&createSmart, "smart", false, "智能模式：当 dst 存在时，自动将 dst 备份到 src 再复制")
@@ -40,41 +42,50 @@ func init() {
 	copyCmd.MarkFlagRequired("dst")
 }
 
+// Copy 复制普通文件，并覆盖“目标反向备份为源文件”的智能恢复分支
+// 无论走常规复制还是智能备份，最终都会执行同一套绝对路径检查、store 保存和唯一结果渲染
 func Copy(cmd *cobra.Command, args []string) error {
 	format := output.OutputFormat(outputFormat)
+	const resultType = "复制"
+
+	failure := func(message string, cause error) error {
+		if cause == nil {
+			cause = errors.New(message)
+		}
+		return renderCreateResult(cmd, format, output.CreateResult{Success: false, Type: resultType, Error: message}, cause)
+	}
 
 	if strings.Contains(createDevice, ",") || strings.Contains(createDevice, " ") {
-		result := output.CreateResult{Success: false, Type: "复制", Error: "设备名称不能包含逗号或空格"}
-		output.PrintCreateResult(format, result)
-		return errors.New(result.Error)
+		const message = "设备名称不能包含逗号或空格"
+		return failure(message, errors.New(message))
 	}
+
+	logger.Info("开始复制文件", "src", copySrc, "dst", copyDst, "device", createDevice, "force", createForce)
 
 	normalizedSrc, err := pathutil.NormalizePath(copySrc)
 	if err != nil {
-		result := output.CreateResult{Success: false, Type: "复制", Error: "源文件路径标准化失败: " + err.Error()}
-		output.PrintCreateResult(format, result)
-		return errors.New(result.Error)
+		message := "源文件路径标准化失败: " + err.Error()
+		return failure(message, fmt.Errorf("源文件路径标准化失败: %w", err))
 	}
 
 	normalizedDst, err := pathutil.NormalizePath(copyDst)
 	if err != nil {
-		result := output.CreateResult{Success: false, Type: "复制", Error: "目标文件路径标准化失败: " + err.Error()}
-		output.PrintCreateResult(format, result)
-		return errors.New(result.Error)
+		message := "目标文件路径标准化失败: " + err.Error()
+		return failure(message, fmt.Errorf("目标文件路径标准化失败: %w", err))
+	}
+	logger.Debug("路径标准化完成", "normalizedSrc", normalizedSrc, "normalizedDst", normalizedDst)
+
+	srcInfo, _ := os.Stat(normalizedSrc)
+	dstInfo, _ := os.Stat(normalizedDst)
+	if srcInfo == nil && dstInfo != nil && dstInfo.IsDir() {
+		// copy 只支持普通文件；该分支保留原有决策，不尝试把目标目录反向备份为源目录
+		const message = "源文件不存在，目标路径是目录，不支持复制"
+		return failure(message, errors.New(message))
 	}
 
-	srcExists, _ := os.Stat(normalizedSrc)
-	dstExists, _ := os.Stat(normalizedDst)
-
-	if srcExists == nil && dstExists != nil && dstExists.IsDir() {
-		// 仅在不涉及目录时提示备份（copy 只支持文件）
-		logger.Error("src 不存在，dst 是目录，复制不支持目录")
-		result := output.CreateResult{Success: false, Type: "复制", Error: "源文件不存在，目标路径是目录，不支持复制"}
-		output.PrintCreateResult(format, result)
-		return errors.New(result.Error)
-	}
-
-	if srcExists == nil && dstExists != nil {
+	// 智能恢复中，src 不存在而 dst 存在时，备份动作本身已经完成复制目标；其余情况继续走常规 Create
+	operationCompleted := false
+	if srcInfo == nil && dstInfo != nil {
 		backupResult, err := shared.HandleTargetBackup(shared.BackupOptions{
 			SourcePath:  normalizedSrc,
 			TargetPath:  normalizedDst,
@@ -82,71 +93,40 @@ func Copy(cmd *cobra.Command, args []string) error {
 			Force:       createForce,
 			SourceLabel: "src",
 			TargetLabel: "dst",
+			Output:      cmd.ErrOrStderr(),
 		})
 		if err != nil {
 			if errors.Is(err, safeop.ErrOperationCancelled) {
-				pterm.Info.Println("已取消操作")
-				return nil
+				return renderCreateCancellation(cmd, format, resultType)
 			}
-			result := output.CreateResult{Success: false, Type: "复制", Error: err.Error()}
-			output.PrintCreateResult(format, result)
-			return err
+			return failure(err.Error(), err)
 		}
+		operationCompleted = backupResult.BackedUp
+	}
 
-		if backupResult.BackedUp {
-			// 对于复制操作，备份本身就是操作本身，不需要后续的删除和链接步骤
-			// HandleTargetBackup 已输出"复制成功"，此处只做持久化和结束
-			if store.GlobalManager == nil {
-				if err := store.InitStore(store.StorePath); err != nil {
-					logger.Error("初始化存储失败 " + err.Error())
-				}
+	if !operationCompleted {
+		if err := createcopy.Create(normalizedSrc, normalizedDst, createForce, createSmart, cmd.ErrOrStderr()); err != nil {
+			if errors.Is(err, safeop.ErrOperationCancelled) {
+				return renderCreateCancellation(cmd, format, resultType)
 			}
-			mgr := store.GlobalManager
-			if mgr != nil {
-				absDstPath, _ := pathutil.ToAbsolute(normalizedDst)
-				fields := map[string]string{
-					"src": normalizedSrc,
-					"dst": absDstPath,
-				}
-				mgr.AddRecord(createDevice, "copy", fields)
-				if err := mgr.Save(store.StorePath); err != nil {
-					logger.Error("持久化失败 " + err.Error())
-				}
-			}
-			return nil
+			return failure(err.Error(), err)
 		}
 	}
 
-	var result output.CreateResult
-	if err := copy.Create(normalizedSrc, normalizedDst, createForce, createSmart); err != nil {
-		if errors.Is(err, safeop.ErrOperationCancelled) {
-			pterm.Info.Println("已取消操作")
-			return nil
-		}
-		result = output.CreateResult{Success: false, Type: "复制", Error: err.Error()}
-	} else {
-		result = output.CreateResult{Success: true, Type: "复制", Message: "复制成功"}
-		if store.GlobalManager == nil {
-			if err := store.InitStore(store.StorePath); err != nil {
-				logger.Error("初始化存储失败 " + err.Error())
-			}
-		}
-		mgr := store.GlobalManager
-		if mgr != nil {
-			absDstPath, _ := pathutil.ToAbsolute(normalizedDst)
-			fields := map[string]string{
-				"src": normalizedSrc,
-				"dst": absDstPath,
-			}
-			mgr.AddRecord(createDevice, "copy", fields)
-			if err := mgr.Save(store.StorePath); err != nil {
-				logger.Error("持久化失败 " + err.Error())
-			}
-		}
+	// 复制或智能备份已经产生文件系统结果；后续记录失败返回非零并说明不回滚，避免错误地报告整体成功
+	absDstPath, err := pathutil.ToAbsolute(normalizedDst)
+	if err != nil {
+		persistenceErr := createPersistenceError("复制操作", fmt.Errorf("生成目标文件绝对路径失败: %w", err))
+		return failure(persistenceErr.Error(), persistenceErr)
 	}
-	output.PrintCreateResult(format, result)
-	if result.Success {
-		return nil
+	fields := map[string]string{
+		"src": normalizedSrc,
+		"dst": absDstPath,
 	}
-	return errors.New(result.Error)
+	if err := persistCreateRecord(createDevice, "copy", fields); err != nil {
+		persistenceErr := createPersistenceError("复制操作", err)
+		return failure(persistenceErr.Error(), persistenceErr)
+	}
+
+	return renderCreateResult(cmd, format, output.CreateResult{Success: true, Type: resultType, Message: "复制成功"}, nil)
 }
