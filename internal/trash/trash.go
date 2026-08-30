@@ -50,8 +50,9 @@ func MoveToTrash(path string) error {
 	now := time.Now()
 	sessionDir := filepath.Join(trashRoot, now.Format("2006-01-02-150405"))
 
-	// 去掉前导 / 后，将原绝对路径作为相对路径拼接到 sessionDir 下
-	relPath := strings.TrimPrefix(absPath, string(os.PathSeparator))
+	// 去掉盘符（Windows）和前导路径分隔符，将原绝对路径作为相对路径拼接到 sessionDir 下
+	relPath := strings.ReplaceAll(absPath, ":", "")
+	relPath = strings.TrimPrefix(relPath, string(os.PathSeparator))
 	dest := filepath.Join(sessionDir, relPath)
 
 	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
