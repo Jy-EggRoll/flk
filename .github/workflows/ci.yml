@@ -1,17 +1,21 @@
 name: Continuous Integration
 
 on:
-    # 所有拉取请求都执行完整验证与跨平台构建，尽早发现合并风险
+    # 拉取请求与推送的分工不同：PR 只要快速验证反馈，推送才需要留下可下载的构建产物
     pull_request: {}
+    # 只匹配分支推送而不匹配标签推送：标签由 package/publish 工作流负责，
+    # 否则打标签时会再触发一次完全相同的全平台构建，白白消耗 CI 时间
     push:
         branches:
-            - main
+            - "**"
 
 permissions:
     contents: read
 
 jobs:
-    ci:
+    # PR 只做验证不构建，反馈更快；跨平台编译问题由推送触发的 build 任务负责发现
+    verify:
+        if: github.event_name == 'pull_request'
         runs-on: ubuntu-latest
 
         steps:
@@ -29,6 +33,58 @@ jobs:
               with:
                   version: 3.x
 
-            # 默认任务严格先执行 verify，再构建全部 11 个发布目标
-            - name: Verify and build all targets
-              run: task
+            - name: Verify source
+              run: task verify
+
+    # 推送时验证并构建全部平台，产物保留下来，使任意分支都能直接下载二进制做实测
+    build:
+        if: github.event_name == 'push'
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Setup Go
+              uses: actions/setup-go@v5
+              with:
+                  # 始终以 go.mod 为 Go 版本的唯一来源，避免工作流与项目配置漂移
+                  go-version-file: go.mod
+
+            - name: Setup Task
+              uses: go-task/setup-task@v2
+              with:
+                  version: 3.x
+
+            # 推送构建使用时间戳版本号，与发布构建的语义化版本号清楚区分，
+            # 也避免本地开发构建被误认为某个正式版本
+            - name: Get version
+              id: get_version
+              run: |
+                  VERSION=$(date '+%Y-%m-%d-%H-%M-%S')
+                  echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+            - name: Get build time
+              id: get_build_time
+              run: |
+                  BUILDTIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+                  echo "buildtime=$BUILDTIME" >> $GITHUB_OUTPUT
+
+            # 先验证再构建：验证失败时不会产出任何可执行文件，避免把有问题的二进制交到手上
+            - name: Verify source
+              run: task verify
+
+            - name: Build binaries for all platforms
+              run: task build-all
+              env:
+                  VERSION: ${{ steps.get_version.outputs.version }}
+                  BUILDTIME: ${{ steps.get_build_time.outputs.buildtime }}
+
+            - name: Upload build artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                  name: flk-${{ steps.get_version.outputs.version }}
+                  path: build/*
+                  # 单次构建 11 个平台约 90MB，保留 3 天足够验证使用，
+                  # 时间过长会在频繁推送时占满免费存储配额并导致后续上传失败
+                  retention-days: 3

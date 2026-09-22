@@ -18,6 +18,19 @@ tasks:
       - task: verify
       - task: build-all
 
+  # mod-tidy 与 mod-tidy:check 是一对：前者整理依赖，后者只校验不修改
+  # 门禁刻意使用 -diff 而不是直接执行 tidy：直接执行只会就地改掉 go.mod，
+  # 检查本身永远不会失败，形同虚设
+  mod-tidy:
+    desc: 整理 Go 模块依赖 (go mod tidy)
+    cmds:
+      - go mod tidy
+
+  mod-tidy:check:
+    desc: 校验 go.mod/go.sum 已整理（只读，不修改文件）
+    cmds:
+      - go mod tidy -diff
+
   fmt:check:
     desc: Check Go source formatting
     cmds:
@@ -27,6 +40,13 @@ tasks:
           printf '以下 Go 文件未通过 gofmt 检查：\n%s\n' "$unformatted" >&2
           exit 1
         fi
+
+  # fmt 是 fmt:check 的修复动作，仅用于本地，不纳入 verify
+  # 与 fmt:check 使用同一份文件集（受版本控制的 Go 文件），避免两处标准不一致
+  fmt:
+    desc: 格式化 Go 代码 (gofmt)
+    cmds:
+      - gofmt -w $(git ls-files --cached --others --exclude-standard '*.go')
 
   vet:
     desc: Run go vet
@@ -46,7 +66,9 @@ tasks:
   verify:
     desc: Run all verification checks
     # 验证项顺序执行，保证失败时立即停止且日志归属清晰
+    # 依赖整理排在最前：go.mod/go.sum 与源码不一致时，后续检查的结论都不可信
     cmds:
+      - task: mod-tidy:check
       - task: fmt:check
       - task: vet
       - task: test
