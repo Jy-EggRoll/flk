@@ -106,16 +106,25 @@ func (p *ptermProgress) Update(done, total int64) {
 	startedAt := p.startedAt
 	p.mu.Unlock()
 
-	line := fmt.Sprintf("\r%s: %.1f%% (%s/%s)",
-		p.label, float64(done)/float64(total)*100, updater.FormatSize(done), updater.FormatSize(total))
+	percent := float64(done) / float64(total) * 100
+	// 最后一块数据到达前不能显示 100.0%：浮点除法会把 99.99% 四舍五入成 100.0%，
+	// 让用户以为下载已经收尾
+	if done < total && percent >= 100 {
+		percent = 99.9
+	}
+
+	line := fmt.Sprintf("\r%s: %.1f%% (%s/%s)", p.label, percent, updater.FormatSize(done), updater.FormatSize(total))
 
 	// 仅在未完成时给出速率与剩余时间，完成时这两项已无意义
 	if done < total {
 		// 速率取整体平均值而非瞬时值：瞬时值在抖动网络下会让剩余时间剧烈跳动
 		if elapsed := now.Sub(startedAt); elapsed > 0 {
 			if speed := float64(done) / elapsed.Seconds(); speed > 0 {
-				remaining := time.Duration(float64(total-done) / speed * float64(time.Second))
-				line += fmt.Sprintf("  %s/s  剩余 %s", updater.FormatSize(int64(speed)), updater.FormatDuration(remaining))
+				line += fmt.Sprintf("  %s/s", updater.FormatSize(int64(speed)))
+				// 不足一秒的剩余时间显示出来只是噪音，反而让人以为卡住了
+				if remaining := time.Duration(float64(total-done) / speed * float64(time.Second)); remaining >= time.Second {
+					line += fmt.Sprintf("  剩余 %s", updater.FormatDuration(remaining))
+				}
 			}
 		}
 	}

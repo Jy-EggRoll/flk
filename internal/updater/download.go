@@ -58,12 +58,7 @@ type transferOutcome struct {
 // 返回暂存文件而非最终路径，是为了让调用方在确认完整接收之后再执行替换，
 // 使下载过程中的任何失败都不会触碰现有的可执行文件
 func (u *Updater) fetch(info *UpdateInfo, dir string) (string, error) {
-	progress := u.cfg.Reporter.Progress("下载进度")
-
-	result, err := u.transfer(info, dir, progress)
-
-	// 无论成败都先结束进度展示，保证后续输出从新行开始而不是接在进度百分比之后
-	progress.Done()
+	result, err := u.transfer(info, dir)
 	if err != nil {
 		return "", err
 	}
@@ -82,17 +77,17 @@ func (u *Updater) fetch(info *UpdateInfo, dir string) (string, error) {
 
 // transfer 按配置选择下载路径
 // 未配置代理时不存在换源选项，直连就是唯一路径，失败即失败
-func (u *Updater) transfer(info *UpdateInfo, dir string, progress Progress) (transferResult, error) {
+func (u *Updater) transfer(info *UpdateInfo, dir string) (transferResult, error) {
 	if u.cfg.ProxyPrefix == "" {
-		return u.download(context.Background(), info.DownloadURL, dir, directDownloadClient, progress)
+		return u.download(context.Background(), info.DownloadURL, dir, directDownloadClient)
 	}
-	return u.downloadWithProxyFallback(info.DownloadURL, dir, progress)
+	return u.downloadWithProxyFallback(info.DownloadURL, dir)
 }
 
 // downloadWithProxyFallback 先直连下载，慢于阈值或直接失败时询问用户是否改用代理
 // 无论超时还是报错都交由用户裁决，绝不静默换源：
 // 自动回退会让用户失去对"二进制究竟来自哪个镜像"的判断，而下载结果随后会被直接执行
-func (u *Updater) downloadWithProxyFallback(url, dir string, progress Progress) (transferResult, error) {
+func (u *Updater) downloadWithProxyFallback(url, dir string) (transferResult, error) {
 	u.cfg.Reporter.Info("下载模式：直连（%s 内未完成将询问是否切换代理）", u.cfg.SlowThreshold)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -102,7 +97,7 @@ func (u *Updater) downloadWithProxyFallback(url, dir string, progress Progress) 
 	results := make(chan transferOutcome, 1)
 
 	go func() {
-		result, err := u.download(ctx, url, dir, directDownloadClient, progress)
+		result, err := u.download(ctx, url, dir, directDownloadClient)
 		results <- transferOutcome{result: result, err: err}
 	}()
 
@@ -111,7 +106,7 @@ func (u *Updater) downloadWithProxyFallback(url, dir string, progress Progress) 
 		if outcome.err == nil {
 			return outcome.result, nil
 		}
-		return u.switchToProxy(url, dir, outcome.err, progress)
+		return u.switchToProxy(url, dir, outcome.err)
 
 	case <-time.After(u.cfg.SlowThreshold):
 		confirmed, confirmErr := u.cfg.Reporter.Confirm("直连下载缓慢，是否切换到代理下载？")
@@ -135,14 +130,14 @@ func (u *Updater) downloadWithProxyFallback(url, dir string, progress Progress) 
 		u.cfg.Reporter.Info("已切换到代理下载")
 		cancel()
 		<-results
-		return u.download(context.Background(), u.cfg.ProxyPrefix+url, dir, proxyDownloadClient, progress)
+		return u.download(context.Background(), u.cfg.ProxyPrefix+url, dir, proxyDownloadClient)
 	}
 }
 
 // switchToProxy 在直连失败后询问用户是否改用代理
 // 用户拒绝或询问失败时返回直连的原始错误而非询问错误：
 // 用户真正需要知道的是下载为什么失败，而不是弹窗本身出了什么问题
-func (u *Updater) switchToProxy(url, dir string, directErr error, progress Progress) (transferResult, error) {
+func (u *Updater) switchToProxy(url, dir string, directErr error) (transferResult, error) {
 	confirmed, confirmErr := u.cfg.Reporter.Confirm("直连下载失败，是否切换到代理下载？")
 	if confirmErr != nil {
 		// 必须说明询问失败的原因：否则用户只会看到一条网络错误，
@@ -155,14 +150,20 @@ func (u *Updater) switchToProxy(url, dir string, directErr error, progress Progr
 	}
 
 	u.cfg.Reporter.Info("已切换到代理下载")
-	return u.download(context.Background(), u.cfg.ProxyPrefix+url, dir, proxyDownloadClient, progress)
+	return u.download(context.Background(), u.cfg.ProxyPrefix+url, dir, proxyDownloadClient)
 }
 
 // download 执行一次完整下载，成功时返回暂存文件路径与本次传输的规模耗时
 // 汇总信息刻意不在这里输出：它必须等进度展示结束之后才能打印，详见 fetch
 // 任何失败路径都会删除暂存文件，保证不会在安装目录里留下半截内容；
 // 下载地址来自 Release 接口响应或宿主配置的代理前缀，属于既定信任边界，不在此做额外目标校验
-func (u *Updater) download(ctx context.Context, url, dir string, client *http.Client, progress Progress) (transferResult, error) {
+func (u *Updater) download(ctx context.Context, url, dir string, client *http.Client) (transferResult, error) {
+	// 进度展示的生命周期与单次传输严格绑定：从直连切换到代理属于两次独立传输，
+	// 各自重新计量才能算出正确的速率与剩余时间，
+	// 否则会把两段传输的字节数与跨越两段的总耗时混在一起，得出毫无意义的数字
+	progress := u.cfg.Reporter.Progress("下载进度")
+	defer progress.Done()
+
 	u.cfg.Reporter.Info("开始下载: %s", url)
 	started := time.Now()
 

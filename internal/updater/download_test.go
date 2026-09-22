@@ -96,11 +96,11 @@ func assertNoStagedFiles(t *testing.T, dir string) {
 // TestDownloadWritesExecutableStagedFile 验证下载会写出内容完整且可执行的暂存文件
 func TestDownloadWritesExecutableStagedFile(t *testing.T) {
 	server := contentServer(t, "new-binary-content")
-	updater := newInstallUpdater(t, newRecordingReporter(), testUpdaterOptions{})
-	progress := &recordingProgress{}
+	reporter := newRecordingReporter()
+	updater := newInstallUpdater(t, reporter, testUpdaterOptions{})
 
 	dir := t.TempDir()
-	result, err := updater.download(context.Background(), server.URL, dir, directDownloadClient, progress)
+	result, err := updater.download(context.Background(), server.URL, dir, directDownloadClient)
 	if err != nil {
 		t.Fatalf("下载失败: %v", err)
 	}
@@ -127,12 +127,41 @@ func TestDownloadWritesExecutableStagedFile(t *testing.T) {
 		t.Fatalf("暂存文件权限 = %v，期望 0755", info.Mode().Perm())
 	}
 
+	// 进度展示的生命周期与单次传输绑定，因此 download 自身应当开启并结束它
+	progress := reporter.firstProgress()
+	if progress == nil {
+		t.Fatal("下载应开启进度展示")
+	}
 	if progress.updates.Load() == 0 {
 		t.Fatal("下载过程中应汇报过进度")
 	}
-	// Done 由 fetch 层负责调用，download 自身不结束进度展示
-	if progress.done.Load() {
-		t.Fatal("download 不应自行结束进度展示")
+	if !progress.done.Load() {
+		t.Fatal("单次传输结束后应关闭进度展示")
+	}
+}
+
+// TestFetchPrintsSummaryAfterProgressEnds 验证汇总信息在进度展示结束之后才输出
+// 两者顺序颠倒会让汇总文字接在进度百分比所在行的末尾，与进度条挤在同一行
+func TestFetchPrintsSummaryAfterProgressEnds(t *testing.T) {
+	server := contentServer(t, "new-binary-content")
+	reporter := newRecordingReporter()
+	updater := newInstallUpdater(t, reporter, testUpdaterOptions{})
+
+	dir := t.TempDir()
+	if _, err := updater.fetch(&UpdateInfo{DownloadURL: server.URL}, dir); err != nil {
+		t.Fatalf("下载失败: %v", err)
+	}
+
+	progressEnd := reporter.indexOfEvent("progress-end")
+	summary := reporter.indexOfEvent("下载完成")
+	if progressEnd < 0 {
+		t.Fatal("传输结束后应关闭进度展示")
+	}
+	if summary < 0 {
+		t.Fatal("下载成功后应输出汇总信息")
+	}
+	if progressEnd > summary {
+		t.Fatalf("汇总信息必须晚于进度结束，实际事件序列: %v", reporter.recordedEvents())
 	}
 }
 
@@ -142,7 +171,7 @@ func TestDownloadRemovesStagedFileOnFailure(t *testing.T) {
 	updater := newInstallUpdater(t, newRecordingReporter(), testUpdaterOptions{})
 
 	dir := t.TempDir()
-	if _, err := updater.download(context.Background(), server.URL, dir, directDownloadClient, &recordingProgress{}); err == nil {
+	if _, err := updater.download(context.Background(), server.URL, dir, directDownloadClient); err == nil {
 		t.Fatal("接口返回 404 时应返回错误")
 	}
 	assertNoStagedFiles(t, dir)
@@ -160,7 +189,7 @@ func TestDownloadRejectsTruncatedBody(t *testing.T) {
 	updater := newInstallUpdater(t, newRecordingReporter(), testUpdaterOptions{})
 	dir := t.TempDir()
 
-	if _, err := updater.download(context.Background(), server.URL, dir, directDownloadClient, &recordingProgress{}); err == nil {
+	if _, err := updater.download(context.Background(), server.URL, dir, directDownloadClient); err == nil {
 		t.Fatal("响应体不完整时应返回错误")
 	}
 	assertNoStagedFiles(t, dir)
