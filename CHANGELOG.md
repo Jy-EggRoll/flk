@@ -1,5 +1,12 @@
 # flk 更新日志
 
+## 未发布
+
+- ✨ feat: 完成国际化（i18n），CLI 与 WebUI 均支持中英文切换，默认英文
+  - 语言优先级：`--lang/-l` > 环境变量 `FLK_LANG` > 设置文件 `~/.config/flk/flk-config.json` 的 `language` 字段 > 默认 `en`
+  - 翻译缺失时自动回退英文原文，不会出现空白或乱码
+- 🔨 chore: 引入文案提取/校验工具链（`task l10n:check` / `task l10n:export`），并把 `l10n:check` 纳入 `verify` 门禁
+
 ## 0.1.3
 
 - ✨ feat: 智能复制功能，当 --real 不存在但 --fake 存在时，询问用户是否将 --fake 复制到 --real 的位置再创建链接，或当 --prim 不存在而 --seco 存在时，自动将 --seco 复制到 --prim 再创建链接，避免了用户需要手动复制文件的麻烦
