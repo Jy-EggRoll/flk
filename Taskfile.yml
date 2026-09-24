@@ -9,6 +9,9 @@ vars:
   TYPE:
     sh: printf '%s' "${TYPE:-release}"
   LDFLAGS: '-s -w -X github.com/jy-eggroll/flk/cmd.Version={{.VERSION}} -X github.com/jy-eggroll/flk/cmd.BuildTime={{.BUILDTIME}}'
+  # l10n 工具的三个位置参数：消息函数所在包、扫描目录、语言文件目录
+  # 与 internal/locales/locales.go 里的语言列表是一对，改动时要一起看
+  L10N_ARGS: '--pkg github.com/jy-eggroll/flk/pkg/l10n --src cmd,internal --dir internal/locales'
 
 tasks:
   default:
@@ -48,6 +51,21 @@ tasks:
     cmds:
       - gofmt -w $(git ls-files --cached --others --exclude-standard '*.go')
 
+  # l10n:check 是语言文件的只读门禁：校验默认语言文件与源码一致、语言文件均已按字典序
+  # 排列且能被 go-i18n 正常解析、译文没有失效条目。语言由英文源串充当 id，详见
+  # pkg/l10n 的包注释
+  l10n:check:
+    desc: 校验语言文件（与源码一致、已排序、可被 go-i18n 解析）
+    cmds:
+      - go run ./pkg/l10n/cmd/l10n check {{.L10N_ARGS}}
+
+  # l10n:export 是 l10n:check 的修复动作：重新生成默认语言文件、重排译文文件，并打印
+  # 待翻译清单与尚未迁移的存量中文文案（迁移进度指标）
+  l10n:export:
+    desc: 重新生成语言文件（覆盖 en.json、重排译文、打印待翻译与待迁移清单）
+    cmds:
+      - go run ./pkg/l10n/cmd/l10n export {{.L10N_ARGS}}
+
   vet:
     desc: Run go vet
     cmds:
@@ -71,6 +89,7 @@ tasks:
       - task: mod-tidy:check
       - task: fmt:check
       - task: vet
+      - task: l10n:check
       - task: test
       - task: test:race
 
