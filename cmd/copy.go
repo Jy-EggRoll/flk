@@ -12,6 +12,7 @@ import (
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/safeop"
+	"github.com/jy-eggroll/flk/pkg/l10n"
 	"github.com/spf13/cobra"
 )
 
@@ -23,8 +24,8 @@ var (
 var copyCmd = &cobra.Command{
 	Use:     "copy",
 	Aliases: []string{"cp"},
-	Short:   "复制文件 (不支持符号链接/硬链接时的回退方案)",
-	Long:    "复制文件 (不支持符号链接/硬链接时的回退方案)",
+	Short:   l10n.T("Copy a file (fallback when symlinks/hardlinks are unsupported)", nil),
+	Long:    l10n.T("Copy a file (fallback when symlinks/hardlinks are unsupported)", nil),
 	RunE:    Copy,
 }
 
@@ -33,11 +34,11 @@ func init() {
 	// copy 会持久化记录，并保证 JSON 模式的 stdout 只有一个最终 CreateResult
 	MarkNeedsStore(copyCmd)
 	MarkSupportsJSON(copyCmd)
-	copyCmd.Flags().StringVar(&copySrc, "src", "", "源文件路径")
-	copyCmd.Flags().StringVar(&copyDst, "dst", "", "目标文件路径")
-	copyCmd.Flags().BoolVar(&createSmart, "smart", false, "智能模式：当 dst 存在时，自动将 dst 备份到 src 再复制")
-	copyCmd.Flags().BoolVar(&createForce, "force", false, "强制覆盖已存在的文件或文件夹")
-	copyCmd.Flags().StringVarP(&createDevice, "device", "d", "all", "设备名称，用于后续设备过滤")
+	copyCmd.Flags().StringVar(&copySrc, "src", "", l10n.T("Source file path", nil))
+	copyCmd.Flags().StringVar(&copyDst, "dst", "", l10n.T("Destination file path", nil))
+	copyCmd.Flags().BoolVar(&createSmart, "smart", false, l10n.T("Smart mode: when dst exists, back it up to src before copying", nil))
+	copyCmd.Flags().BoolVar(&createForce, "force", false, l10n.T("Force overwrite an existing file or directory", nil))
+	copyCmd.Flags().StringVarP(&createDevice, "device", "d", "all", l10n.T("Device name used for later device filtering", nil))
 	copyCmd.MarkFlagRequired("src")
 	copyCmd.MarkFlagRequired("dst")
 }
@@ -46,7 +47,7 @@ func init() {
 // 无论走常规复制还是智能备份，最终都会执行同一套绝对路径检查、store 保存和唯一结果渲染
 func Copy(cmd *cobra.Command, args []string) error {
 	format := output.OutputFormat(outputFormat)
-	const resultType = "复制"
+	const resultType = "copy"
 
 	failure := func(message string, cause error) error {
 		if cause == nil {
@@ -56,30 +57,30 @@ func Copy(cmd *cobra.Command, args []string) error {
 	}
 
 	if strings.Contains(createDevice, ",") || strings.Contains(createDevice, " ") {
-		const message = "设备名称不能包含逗号或空格"
+		message := l10n.T("Device name must not contain commas or spaces", nil)
 		return failure(message, errors.New(message))
 	}
 
-	logger.Info("开始复制文件", "src", copySrc, "dst", copyDst, "device", createDevice, "force", createForce)
+	logger.Info(l10n.T("Copying file", nil), "src", copySrc, "dst", copyDst, "device", createDevice, "force", createForce)
 
 	normalizedSrc, err := pathutil.NormalizePath(copySrc)
 	if err != nil {
-		message := "源文件路径标准化失败: " + err.Error()
-		return failure(message, fmt.Errorf("源文件路径标准化失败: %w", err))
+		message := l10n.T("Failed to normalize the source file path: {{.Err}}", map[string]any{"Err": err.Error()})
+		return failure(message, fmt.Errorf("%s: %w", l10n.T("Failed to normalize the source file path", nil), err))
 	}
 
 	normalizedDst, err := pathutil.NormalizePath(copyDst)
 	if err != nil {
-		message := "目标文件路径标准化失败: " + err.Error()
-		return failure(message, fmt.Errorf("目标文件路径标准化失败: %w", err))
+		message := l10n.T("Failed to normalize the destination file path: {{.Err}}", map[string]any{"Err": err.Error()})
+		return failure(message, fmt.Errorf("%s: %w", l10n.T("Failed to normalize the destination file path", nil), err))
 	}
-	logger.Debug("路径标准化完成", "normalizedSrc", normalizedSrc, "normalizedDst", normalizedDst)
+	logger.Debug(l10n.T("Path normalization complete", nil), "normalizedSrc", normalizedSrc, "normalizedDst", normalizedDst)
 
 	srcInfo, _ := os.Stat(normalizedSrc)
 	dstInfo, _ := os.Stat(normalizedDst)
 	if srcInfo == nil && dstInfo != nil && dstInfo.IsDir() {
 		// copy 只支持普通文件；该分支保留原有决策，不尝试把目标目录反向备份为源目录
-		const message = "源文件不存在，目标路径是目录，不支持复制"
+		message := l10n.T("The source file does not exist and the destination is a directory; copying is not supported", nil)
 		return failure(message, errors.New(message))
 	}
 
@@ -116,7 +117,7 @@ func Copy(cmd *cobra.Command, args []string) error {
 	// 复制或智能备份已经产生文件系统结果；后续记录失败返回非零并说明不回滚，避免错误地报告整体成功
 	absDstPath, err := pathutil.ToAbsolute(normalizedDst)
 	if err != nil {
-		persistenceErr := createPersistenceError("复制操作", fmt.Errorf("生成目标文件绝对路径失败: %w", err))
+		persistenceErr := createPersistenceError(l10n.T("Copy operation", nil), fmt.Errorf("%s: %w", l10n.T("Failed to produce the absolute destination path", nil), err))
 		return failure(persistenceErr.Error(), persistenceErr)
 	}
 	fields := map[string]string{
@@ -124,9 +125,9 @@ func Copy(cmd *cobra.Command, args []string) error {
 		"dst": absDstPath,
 	}
 	if err := persistCreateRecord(createDevice, "copy", fields); err != nil {
-		persistenceErr := createPersistenceError("复制操作", err)
+		persistenceErr := createPersistenceError(l10n.T("Copy operation", nil), err)
 		return failure(persistenceErr.Error(), persistenceErr)
 	}
 
-	return renderCreateResult(cmd, format, output.CreateResult{Success: true, Type: resultType, Message: "复制成功"}, nil)
+	return renderCreateResult(cmd, format, output.CreateResult{Success: true, Type: resultType, Message: l10n.T("Copied successfully", nil)}, nil)
 }

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/jy-eggroll/flk/pkg/l10n"
 )
 
 // trashRoot 是 FLK 回收站的根目录，遵循 XDG 数据目录规范
@@ -43,7 +45,7 @@ func resolveTrashRoot() string {
 func MoveToTrash(path string) error {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return fmt.Errorf("解析绝对路径失败 %s: %w", path, err)
+		return fmt.Errorf("%s: %w", l10n.T("Failed to resolve the absolute path {{.Path}}", map[string]any{"Path": path}), err)
 	}
 
 	// 构造回收站目标路径：trashRoot/TIMESTAMP/absolute/path
@@ -56,11 +58,11 @@ func MoveToTrash(path string) error {
 	dest := filepath.Join(sessionDir, relPath)
 
 	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
-		return fmt.Errorf("创建回收站目录失败: %w", err)
+		return fmt.Errorf("%s: %w", l10n.T("Failed to create the trash directory", nil), err)
 	}
 
 	if err := os.Rename(absPath, dest); err != nil {
-		return fmt.Errorf("移至回收站失败 %s -> %s: %w", absPath, dest, err)
+		return fmt.Errorf("%s: %w", l10n.T("Failed to move to the trash {{.From}} -> {{.To}}", map[string]any{"From": absPath, "To": dest}), err)
 	}
 
 	return nil

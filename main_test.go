@@ -103,7 +103,7 @@ func TestCLIJSONOutputContract(t *testing.T) {
 			if len(records) != 0 {
 				t.Fatalf("空 store 应返回 []，实际为 %#v", records)
 			}
-			if testCase.wantLog != strings.Contains(result.stderr, "检查完成") {
+			if testCase.wantLog != strings.Contains(result.stderr, "Check complete") {
 				t.Fatalf("stderr 日志状态不符，wantLog=%v，stderr=%q", testCase.wantLog, result.stderr)
 			}
 		})
@@ -158,7 +158,7 @@ func TestCLIStoreInitializationFailure(t *testing.T) {
 	if result.stdout != "" {
 		t.Fatalf("初始化失败前不应输出业务结果，stdout=%q", result.stdout)
 	}
-	if strings.Count(result.stderr, "初始化存储失败") != 1 {
+	if strings.Count(result.stderr, "Failed to initialize the store") != 1 {
 		t.Fatalf("初始化错误应恰好输出一次，stderr=%q", result.stderr)
 	}
 	if strings.Contains(result.stderr, "Usage:") {
@@ -175,9 +175,9 @@ func TestCLIAuxiliaryCommands(t *testing.T) {
 	}{
 		{name: "help", arguments: []string{"--help"}, contains: "Usage:"},
 		{name: "completion", arguments: []string{"completion", "bash"}, contains: "bash completion"},
-		{name: "version flag", arguments: []string{"--version"}, contains: "版本:"},
-		{name: "version command", arguments: []string{"version"}, contains: "构建时间:"},
-		{name: "verbose and version", arguments: []string{"-vv", "--version"}, contains: "平台:"},
+		{name: "version flag", arguments: []string{"--version"}, contains: "Version:"},
+		{name: "version command", arguments: []string{"version"}, contains: "Build time:"},
+		{name: "verbose and version", arguments: []string{"-vv", "--version"}, contains: "Platform:"},
 	}
 
 	for _, testCase := range tests {
@@ -189,7 +189,7 @@ func TestCLIAuxiliaryCommands(t *testing.T) {
 			if !strings.Contains(result.stdout, testCase.contains) {
 				t.Fatalf("stdout 缺少 %q: %q", testCase.contains, result.stdout)
 			}
-			if strings.Contains(result.stdout, "欢迎使用 flk") || strings.Contains(result.stderr, "欢迎使用 flk") {
+			if strings.Contains(result.stdout, "Welcome to flk") || strings.Contains(result.stderr, "Welcome to flk") {
 				t.Fatalf("辅助命令不应输出欢迎语，stdout=%q stderr=%q", result.stdout, result.stderr)
 			}
 		})
@@ -205,7 +205,7 @@ func TestCLIRejectsUnsupportedJSON(t *testing.T) {
 	if result.stdout != "" {
 		t.Fatalf("不支持 JSON 时 stdout 必须为空: %q", result.stdout)
 	}
-	if strings.Count(result.stderr, "不支持 JSON 输出") != 1 {
+	if strings.Count(result.stderr, "does not support JSON output") != 1 {
 		t.Fatalf("错误应恰好输出一次: %q", result.stderr)
 	}
 }

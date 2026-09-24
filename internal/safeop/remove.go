@@ -9,11 +9,12 @@ import (
 	"sort"
 
 	"github.com/jy-eggroll/flk/internal/trash"
+	"github.com/jy-eggroll/flk/pkg/l10n"
 	"github.com/pterm/pterm"
 )
 
 // ErrOperationCancelled 表示用户看过删除计划后主动拒绝执行，调用方可据此区分取消与实际失败
-var ErrOperationCancelled = errors.New("操作已取消")
+var ErrOperationCancelled = errors.New("operation cancelled")
 
 // ConfirmFunc 抽象删除确认动作，便于命令行交互和测试分别提供实现
 type ConfirmFunc func() (bool, error)
@@ -123,7 +124,7 @@ func RemoveWithConfirm(path string, opts RemoveOptions) ([]string, error) {
 // printDeletePlan 把标题和每一条路径写入任意 writer，并在首次写失败时立即返回该错误
 // 标准输出沿用 pterm 的警告和红色样式；缓冲区、文件、管道等非终端 writer 使用无 ANSI 控制符的相同文案
 func printDeletePlan(out io.Writer, paths []string) error {
-	const heading = "以下位置会在执行过程中被移至回收站:"
+	heading := l10n.T("The following locations will be moved to the trash:", nil)
 
 	// 先断言为 *os.File 再比较指针，避免直接比较含不可比较动态类型的 io.Writer 接口而触发 panic，确保任意 writer 都可使用
 	stdout, isStdout := out.(*os.File)
@@ -153,5 +154,5 @@ func printDeletePlan(out io.Writer, paths []string) error {
 
 // defaultConfirm 使用原有的否定默认值和确认文案，避免未显式传入 Confirm 时改变交互安全边界
 func defaultConfirm() (bool, error) {
-	return pterm.DefaultInteractiveConfirm.WithDefaultValue(false).Show("您是否确认")
+	return pterm.DefaultInteractiveConfirm.WithDefaultValue(false).Show(l10n.T("Are you sure?", nil))
 }

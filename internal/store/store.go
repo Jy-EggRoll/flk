@@ -11,6 +11,7 @@ import (
 
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
+	"github.com/jy-eggroll/flk/pkg/l10n"
 )
 
 // Entry 链接记录，底层为键值对映射
@@ -82,7 +83,7 @@ func (m *Manager) AddRecord(device, linkType string, fields map[string]string) {
 		m.Data[platform][device][linkType] = append(currentEntries, processedEntry)
 	}
 
-	logger.Info("结构创建成功")
+	logger.Info(l10n.T("Structure created successfully", nil))
 }
 
 // ToJSON 将当前数据序列化为格式化 JSON 字符串
@@ -92,7 +93,7 @@ func (m *Manager) ToJSON() string {
 	sortRootConfig(m.Data)
 	jsonResult, err := json.MarshalIndent(m.Data, "", "    ")
 	if err != nil {
-		logger.Warn("序列化存储数据失败", "error", err)
+		logger.Warn(l10n.T("Failed to serialize the store data", nil), "error", err)
 		return "{}"
 	}
 	return string(jsonResult)
@@ -190,7 +191,7 @@ func LoadFromFile(filePath string) (*Manager, error) {
 	// 新格式解析失败，尝试旧格式（4 层带 parentPath）并迁移
 	var legacyData map[string]map[string]map[string]map[string][]Entry
 	if err := json.Unmarshal(b, &legacyData); err != nil {
-		return nil, fmt.Errorf("无法解析存储文件: 不支持的格式")
+		return nil, fmt.Errorf("%s", l10n.T("Failed to parse the store file: unsupported format", nil))
 	}
 
 	migratedData := migrateFromLegacy(legacyData)
@@ -199,7 +200,7 @@ func LoadFromFile(filePath string) (*Manager, error) {
 	// 自动写回新格式
 	manager := &Manager{Data: data}
 	if saveErr := manager.Save(filePath); saveErr != nil {
-		logger.Warn("自动迁移存储格式后保存失败", "error", saveErr)
+		logger.Warn(l10n.T("Failed to save after automatically migrating the store format", nil), "error", saveErr)
 	}
 
 	return manager, nil

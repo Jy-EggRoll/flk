@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/jy-eggroll/flk/pkg/l10n"
 	"io"
 	"os"
 	"path/filepath"
@@ -23,7 +24,7 @@ type ExistsButNotDirectoryError struct {
 }
 
 func (e *ExistsButNotDirectoryError) Error() string {
-	return fmt.Sprintf("路径 %s 存在但不是目录，如果使用 --force 将会删除存在的文件，并将其顶替为一个中间目录。", e.Path)
+	return l10n.T("Path {{.Path}} exists but is not a directory; with --force the existing file will be deleted and replaced with an intermediate directory", map[string]any{"Path": e.Path})
 }
 
 func (e *ExistsButNotDirectoryError) Is(target error) bool {
@@ -87,7 +88,7 @@ func ExpandHome(path string) (string, error) {
 
 	// 若以上条件都不满足（如~后接非分隔符的情况，例如 "~foo"），属于非法路径前缀，必须返回明确错误
 	// 之前此处返回 ("", nil)，会静默得到空路径并被后续逻辑当作当前目录使用，属于严重隐患，故改为显式报错
-	return "", fmt.Errorf("非法的 ~ 路径前缀: %s", path)
+	return "", fmt.Errorf("%s", l10n.T("Invalid ~ path prefix: {{.Path}}", map[string]any{"Path": path}))
 }
 
 func NormalizePath(path string) (string, error) { // 定义 NormalizePath 函数，接收字符串类型的路径参数，返回规范化后的路径字符串和错误对象

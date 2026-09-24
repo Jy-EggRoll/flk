@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jy-eggroll/flk/internal/locales"
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/store"
+	"github.com/jy-eggroll/flk/pkg/l10n"
 
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
@@ -40,8 +42,8 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:           "flk",
-	Short:         "flk 是一个跨平台的文件链接管理工具",
-	Long:          "flk 是一个跨平台的文件链接管理工具",
+	Short:         l10n.T("flk is a cross-platform file link manager", nil),
+	Long:          l10n.T("flk is a cross-platform file link manager", nil),
 	SilenceErrors: true,
 	SilenceUsage:  true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -147,13 +149,13 @@ func prepareCommand(command *cobra.Command) error {
 
 	// 保留历史容错语义：非法 output 不终止命令，而是警告后回退 table
 	if outputFormat != "json" && outputFormat != "table" {
-		logger.Warn("未知的输出格式，已回退为 table", "output", outputFormat)
+		logger.Warn(l10n.T("Unknown output format, falling back to table", nil), "output", outputFormat)
 		outputFormat = "table"
 	}
 
 	// JSON 是显式能力而不是所有命令的默认承诺，必须在任何业务副作用及欢迎语之前拒绝未标记命令
 	if outputFormat == "json" && !hasCommandAnnotation(command, AnnotationSupportsJSON) {
-		return fmt.Errorf("命令 %q 不支持 JSON 输出", command.CommandPath())
+		return fmt.Errorf("%s", l10n.T("Command {{.Command}} does not support JSON output", map[string]any{"Command": command.CommandPath()}))
 	}
 
 	pathutil.SetWorkDir(WorkDir)
@@ -161,22 +163,22 @@ func prepareCommand(command *cobra.Command) error {
 	// 只有声明存储依赖的最终业务命令才会读取或创建 store；失败必须阻止业务继续，不能只记日志后带着 nil manager 运行
 	if hasCommandAnnotation(command, AnnotationNeedsStore) {
 		if err := store.InitStore(store.StorePath); err != nil {
-			return fmt.Errorf("初始化存储失败: %w", err)
+			return fmt.Errorf("%s: %w", l10n.T("Failed to initialize the store", nil), err)
 		}
 	}
 
 	// 平台回调不直接输出，确保权限提示服从日志级别并始终写入当前命令的 stderr
 	if windowsAdminChecker != nil {
 		if windowsAdminChecker() {
-			logger.Info("当前以管理员权限运行")
+			logger.Info(l10n.T("Running with administrator privileges", nil))
 		} else {
-			logger.Warn("当前未以管理员权限运行")
+			logger.Warn(l10n.T("Not running with administrator privileges", nil))
 		}
 	}
 
 	// 欢迎语仅属于真实执行的 table 业务叶子命令；help/completion/version、root 与仅展示帮助的父命令均不会触发
 	if outputFormat == "table" && isBusinessLeaf(command) {
-		_, _ = fmt.Fprintln(errWriter, "欢迎使用 flk！")
+		_, _ = fmt.Fprintln(errWriter, l10n.T("Welcome to flk!", nil))
 	}
 	return nil
 }
@@ -199,6 +201,19 @@ func isBusinessLeaf(command *cobra.Command) bool {
 // Execute 是 CLI 的唯一 Cobra 执行边界，返回进程退出码但绝不自行终止进程
 // Cobra 自身错误和未渲染业务错误在此恰好打印一次；结构化输出已经呈现的错误只返回非零码，避免重复污染 stdout/stderr
 func Execute() int {
+	// 语言必须先于命令树的构造与执行确定：
+	//  1. flk 的命令以包级变量在包初始化阶段就构造完毕，其中的 Short/Long 与 flag 说明
+	//     在 l10n.Init 之前就被求值（当时只能拿到英文源串），因此 Init 之后要再走一遍
+	//     localizeTree 把静态文案重译成当前语言
+	//  2. cobra 的 --help 路径不执行 PersistentPreRunE，语言只能自行预扫描命令行确定
+	// 语言文件是 //go:embed 进 locales 包的，加载失败属于构建期错误，必须显式暴露：
+	// 静默降级只会表现为"界面语言不对"，没有任何报错，极难排查
+	if err := l10n.Init(chooseLanguage(), locales.Options()); err != nil {
+		_, _ = fmt.Fprintln(rootCmd.ErrOrStderr(), err)
+		return 1
+	}
+	localizeTree(rootCmd)
+
 	err := rootCmd.Execute()
 	if err == nil {
 		return 0
@@ -220,11 +235,15 @@ func init() {
 		&store.StorePath,
 		"store-path",
 		store.DefaultStorePath,
-		"用于存放 flk-store.json 的路径",
+		l10n.T("Path to the flk-store.json file", nil),
 	)
-	rootCmd.PersistentFlags().StringVar(&outputFormat, "output", "table", "输出格式: json/table")
-	rootCmd.PersistentFlags().StringVarP(&WorkDir, "work-dir", "w", WorkDir, "工作目录，作为存储和路径计算的基准")
-	rootCmd.PersistentFlags().CountVarP(&verboseCount, "verbose", "v", "增加日志详细程度（-v 为 Info，-vv 为 Debug）")
-	rootCmd.Flags().Bool("version", false, "显示版本信息")
+	rootCmd.PersistentFlags().StringVar(&outputFormat, "output", "table", l10n.T("Output format: json/table", nil))
+	rootCmd.PersistentFlags().StringVarP(&WorkDir, "work-dir", "w", WorkDir, l10n.T("Working directory used as the base for storage and path resolution", nil))
+	rootCmd.PersistentFlags().CountVarP(&verboseCount, "verbose", "v", l10n.T("Increase log verbosity (-v for Info, -vv for Debug)", nil))
+	rootCmd.Flags().Bool("version", false, l10n.T("Display version information", nil))
 
+	// --lang 持久化 flag：声明它的唯一目的是让 cobra 认可这个参数，否则命令行里出现
+	// --lang 会被判为 unknown flag。真正生效的取值由 chooseLanguage 预扫描 os.Args 得到
+	// （语言必须早于 cobra 解析才能确定），所以这里刻意不绑定变量，避免两个取值来源打架。
+	rootCmd.PersistentFlags().StringP("lang", "l", "", l10n.T("Output language (e.g. en, zh-CN); defaults to the language setting", nil))
 }

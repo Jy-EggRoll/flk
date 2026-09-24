@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"runtime"
 	"strings"
+
+	"github.com/jy-eggroll/flk/pkg/l10n"
 )
 
 // releasePageSize 是单次拉取的 Release 条数
@@ -55,13 +57,13 @@ type UpdateInfo struct {
 func (u *Updater) Check(current, buildTime string, channel Channel) (*UpdateInfo, error) {
 	currentVersion, comparable := ParseVersion(current)
 	if !comparable {
-		u.cfg.Reporter.Warn("当前版本 %q 不是受支持的版本号（期望 x.y.z 或 x.y.z.dev.n），将跳过版本比较", current)
+		u.cfg.Reporter.Warn("%s", l10n.T("Current version {{.Version}} is not a supported version number (expected x.y.z or x.y.z.dev.n); skipping version comparison", map[string]any{"Version": current}))
 	}
 
 	goos, goarch := runtime.GOOS, runtime.GOARCH
 	assetPrefix, supported := u.cfg.AssetName(goos, goarch)
 	if !supported {
-		return nil, fmt.Errorf("尚未为 %s/%s 提供发布产物", goos, goarch)
+		return nil, fmt.Errorf("%s", l10n.T("No release artifact is available for {{.OS}}/{{.Arch}}", map[string]any{"OS": goos, "Arch": goarch}))
 	}
 
 	releases, err := u.fetchReleases()
@@ -94,7 +96,7 @@ func (u *Updater) fetchReleases() ([]Release, error) {
 
 	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
-		return nil, fmt.Errorf("构造 Release 查询请求失败: %w", err)
+		return nil, fmt.Errorf("%s: %w", l10n.T("Failed to build the Release query request", nil), err)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", u.cfg.UserAgent)
@@ -106,17 +108,17 @@ func (u *Updater) fetchReleases() ([]Release, error) {
 
 	resp, err := u.cfg.HTTPClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("查询 Release 失败: %w", err)
+		return nil, fmt.Errorf("%s: %w", l10n.T("Failed to query the Release", nil), err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("查询 Release 失败，状态码: %d", resp.StatusCode)
+		return nil, fmt.Errorf("%s", l10n.T("Failed to query the Release, status code: {{.Code}}", map[string]any{"Code": resp.StatusCode}))
 	}
 
 	var releases []Release
 	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
-		return nil, fmt.Errorf("解析 Release 响应失败: %w", err)
+		return nil, fmt.Errorf("%s: %w", l10n.T("Failed to parse the Release response", nil), err)
 	}
 	return releases, nil
 }

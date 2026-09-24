@@ -10,12 +10,13 @@ import (
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/safeop"
+	"github.com/jy-eggroll/flk/pkg/l10n"
 )
 
 // 该函数只处理创建逻辑，需要保证传入的路径一定是最正确、最简洁的，函数被调用时，应该优先处理字符串
 func Create(primPath, secoPath string, removeOpts safeop.RemoveOptions) error {
 	if _, err := os.Stat(primPath); err == nil {
-		logger.Debug("primPath 对应的文件存在，允许继续执行", "path", primPath)
+		logger.Debug(l10n.T("The file for primPath exists; proceeding", nil), "path", primPath)
 	} else {
 		// 错误由命令层统一渲染，内部只上抛，避免结构化日志重复报告同一失败
 		return err
@@ -26,20 +27,20 @@ func Create(primPath, secoPath string, removeOpts safeop.RemoveOptions) error {
 		primVol := strings.ToUpper(filepath.VolumeName(primPath))
 		secoVol := strings.ToUpper(filepath.VolumeName(secoPath))
 		if primVol != "" && secoVol != "" && primVol != secoVol {
-			return errors.New("不允许创建跨文件系统的硬链接")
+			return errors.New(l10n.T("Creating a hard link across filesystems is not allowed", nil))
 		}
 	}
 	if _, err := os.Lstat(secoPath); err == nil { // 文件/链接/文件夹存在
-		logger.Debug("secoPath 存在", "path", secoPath)
+		logger.Debug(l10n.T("secoPath exists", nil), "path", secoPath)
 		if _, removeErr := safeop.RemoveWithConfirm(secoPath, removeOpts); removeErr != nil {
 			if errors.Is(removeErr, safeop.ErrOperationCancelled) {
-				logger.Info("用户取消删除 secoPath", "path", secoPath)
+				logger.Info(l10n.T("User cancelled deleting secoPath", nil), "path", secoPath)
 				return removeErr
 			}
 			return removeErr
 		}
 	} else {
-		logger.Debug("secoPath 不存在", "path", secoPath, "error", err)
+		logger.Debug(l10n.T("secoPath does not exist", nil), "path", secoPath, "error", err)
 	}
 
 	if err := pathutil.EnsureDirExists(secoPath); err != nil {
@@ -48,7 +49,7 @@ func Create(primPath, secoPath string, removeOpts safeop.RemoveOptions) error {
 			parentPath := filepath.Dir(secoPath)
 			if _, removeErr := safeop.RemoveWithConfirm(parentPath, safeop.RemoveOptions{Force: removeOpts.Force, Output: removeOpts.Output}); removeErr != nil {
 				if errors.Is(removeErr, safeop.ErrOperationCancelled) {
-					logger.Info("用户取消删除 secoPath 父路径", "path", parentPath)
+					logger.Info(l10n.T("User cancelled deleting the parent path of secoPath", nil), "path", parentPath)
 					return removeErr
 				}
 				return removeErr

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jy-eggroll/flk/internal/updater"
+	"github.com/jy-eggroll/flk/pkg/l10n"
 	"github.com/pterm/pterm"
 	"golang.org/x/term"
 )
@@ -47,7 +48,7 @@ func (r *ptermReporter) Confirm(question string) (bool, error) {
 	// 交互组件在非终端输入下会一直等待按键而永不返回，必须先显式识别并拒绝，
 	// 让升级器走"用户未能确认"的保守分支，而不是把命令永久挂起在等待输入上
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		return false, errors.New("当前环境无法与用户交互（标准输入不是终端），请改用 --force 跳过确认")
+		return false, errors.New(l10n.T("Cannot interact with the user (stdin is not a terminal); use --force to skip the confirmation", nil))
 	}
 
 	r.paused.Store(true)
@@ -123,7 +124,7 @@ func (p *ptermProgress) Update(done, total int64) {
 				line += fmt.Sprintf("  %s/s", updater.FormatSize(int64(speed)))
 				// 不足一秒的剩余时间显示出来只是噪音，反而让人以为卡住了
 				if remaining := time.Duration(float64(total-done) / speed * float64(time.Second)); remaining >= time.Second {
-					line += fmt.Sprintf("  剩余 %s", updater.FormatDuration(remaining))
+					line += "  " + l10n.T("remaining {{.Time}}", map[string]any{"Time": updater.FormatDuration(remaining)})
 				}
 			}
 		}

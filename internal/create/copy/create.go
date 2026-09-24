@@ -9,6 +9,7 @@ import (
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/safeop"
+	"github.com/jy-eggroll/flk/pkg/l10n"
 )
 
 // Create 复制单个普通文件，并把删除计划写入可选的 outputs[0]
@@ -22,35 +23,35 @@ func Create(src, dst string, force, smart bool, outputs ...io.Writer) error {
 	srcInfo, err := os.Stat(src)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return errors.New("源文件不存在: " + src)
+			return errors.New(l10n.T("The source file does not exist: {{.Path}}", map[string]any{"Path": src}))
 		}
 		return err
 	}
 
 	if srcInfo.IsDir() {
-		return errors.New("源文件是目录，不支持复制")
+		return errors.New(l10n.T("The source file is a directory; copying is not supported", nil))
 	}
 
 	dstInfo, err := os.Lstat(dst)
 	dstExists := err == nil
 
 	if !srcInfo.Mode().IsRegular() {
-		return errors.New("源文件不是普通文件")
+		return errors.New(l10n.T("The source file is not a regular file", nil))
 	}
 
 	if !dstExists {
-		logger.Debug("目标文件不存在")
+		logger.Debug(l10n.T("The destination file does not exist", nil))
 	}
 
 	if dstExists && dstInfo.IsDir() {
-		return errors.New("目标路径是目录，不支持覆盖")
+		return errors.New(l10n.T("The destination path is a directory; overwriting is not supported", nil))
 	}
 
 	if dstExists && !smart {
-		logger.Debug("目标文件存在，无 smart 模式，询问是否删除", "path", dst)
+		logger.Debug(l10n.T("The destination file exists and smart mode is off; asking whether to delete", nil), "path", dst)
 		if _, removeErr := safeop.RemoveWithConfirm(dst, safeop.RemoveOptions{Force: force, Output: progressOutput}); removeErr != nil {
 			if errors.Is(removeErr, safeop.ErrOperationCancelled) {
-				logger.Info("用户取消删除目标文件", "path", dst)
+				logger.Info(l10n.T("User cancelled deleting the destination file", nil), "path", dst)
 				return removeErr
 			}
 			return removeErr
@@ -63,7 +64,7 @@ func Create(src, dst string, force, smart bool, outputs ...io.Writer) error {
 			parentPath := filepath.Dir(dst)
 			if _, removeErr := safeop.RemoveWithConfirm(parentPath, safeop.RemoveOptions{Force: force, Output: progressOutput}); removeErr != nil {
 				if errors.Is(removeErr, safeop.ErrOperationCancelled) {
-					logger.Info("用户取消删除目标父路径", "path", parentPath)
+					logger.Info(l10n.T("User cancelled deleting the destination parent path", nil), "path", parentPath)
 					return removeErr
 				}
 				return removeErr
@@ -91,7 +92,7 @@ func Create(src, dst string, force, smart bool, outputs ...io.Writer) error {
 	if _, err := io.Copy(to, from); err != nil {
 		// 主错误继续上抛；清理失败无法替代主错误，因此只记录 warn 供诊断
 		if removeErr := os.Remove(dst); removeErr != nil {
-			logger.Warn("复制失败后清理目标文件失败", "path", dst, "error", removeErr)
+			logger.Warn(l10n.T("Failed to clean up the destination file after the copy failed", nil), "path", dst, "error", removeErr)
 		}
 		return err
 	}
@@ -99,19 +100,19 @@ func Create(src, dst string, force, smart bool, outputs ...io.Writer) error {
 	if err := to.Close(); err != nil {
 		// 关闭失败意味着写入结果不可信，尽力删除半成品；清理失败只记 warn，保留原始关闭错误
 		if removeErr := os.Remove(dst); removeErr != nil {
-			logger.Warn("关闭目标文件失败后清理目标文件失败", "path", dst, "error", removeErr)
+			logger.Warn(l10n.T("Failed to clean up the destination file after closing it failed", nil), "path", dst, "error", removeErr)
 		}
 		return err
 	}
 
 	if err := os.Chmod(dst, srcInfo.Mode().Perm()); err != nil {
-		logger.Warn("设置权限失败", "path", dst, "error", err)
+		logger.Warn(l10n.T("Failed to set permissions", nil), "path", dst, "error", err)
 	}
 
 	if err := os.Chtimes(dst, srcInfo.ModTime(), srcInfo.ModTime()); err != nil {
-		logger.Warn("设置时间戳失败", "path", dst, "error", err)
+		logger.Warn(l10n.T("Failed to set the timestamp", nil), "path", dst, "error", err)
 	}
 
-	logger.Info("复制完成", "src", src, "dst", dst)
+	logger.Info(l10n.T("Copy complete", nil), "src", src, "dst", dst)
 	return nil
 }

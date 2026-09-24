@@ -5,6 +5,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
+
+	"github.com/jy-eggroll/flk/pkg/l10n"
 	"strings"
 )
 
@@ -47,7 +49,7 @@ func LogLevelFromString(level string) (slog.Level, error) {
 	case "error":
 		return slog.LevelError, nil
 	default:
-		return 0, fmt.Errorf("不支持的日志级别 %q，仅支持 debug、info、warn、error", level)
+		return 0, fmt.Errorf("%s", l10n.T("Unsupported log level {{.Level}}; only debug, info, warn, and error are supported", map[string]any{"Level": level}))
 	}
 }
 
@@ -63,7 +65,7 @@ func FromEnv() (*Config, error) {
 
 	level, err := LogLevelFromString(levelText)
 	if err != nil {
-		return nil, fmt.Errorf("解析 %s 失败: %w", logLevelEnv, err)
+		return nil, fmt.Errorf("%s: %w", l10n.T("Failed to parse {{.Var}}", map[string]any{"Var": logLevelEnv}), err)
 	}
 	applyLevel(config, level)
 	return config, nil

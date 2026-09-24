@@ -5,6 +5,8 @@ import (
 	"io"
 	"runtime"
 
+	"github.com/jy-eggroll/flk/pkg/l10n"
+
 	"github.com/spf13/cobra"
 )
 
@@ -17,8 +19,8 @@ var BuildTime = "unknown"
 var versionCmd = &cobra.Command{
 	Use:     "version",
 	Aliases: []string{"ver"},
-	Short:   "显示版本信息",
-	Long:    "显示版本信息",
+	Short:   l10n.T("Display version information", nil),
+	Long:    l10n.T("Display version information", nil),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return renderVersion(cmd.OutOrStdout())
 	},
@@ -31,7 +33,8 @@ func renderVersion(writer io.Writer) error {
 	if runtime.GOOS == "windows" {
 		platform += " (exe)"
 	}
-	_, err := fmt.Fprintf(writer, "版本: %s\n构建时间: %s\n平台: %s\n", Version, BuildTime, platform)
+	text := l10n.T("Version: {{.Version}}\nBuild time: {{.Time}}\nPlatform: {{.Platform}}", map[string]any{"Version": Version, "Time": BuildTime, "Platform": platform})
+	_, err := fmt.Fprintln(writer, text)
 	return err
 }
 

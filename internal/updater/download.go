@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/jy-eggroll/flk/pkg/l10n"
 )
 
 // downloadChunkSize 是单次读取的字节数，32KB 兼顾吞吐与进度刷新频率
@@ -69,8 +71,8 @@ func (u *Updater) fetch(info *UpdateInfo, dir string) (string, error) {
 	if result.elapsed > 0 {
 		speed = float64(result.bytes) / result.elapsed.Seconds()
 	}
-	u.cfg.Reporter.Info("下载完成：%s，耗时 %s，平均速率 %s",
-		FormatSize(result.bytes), FormatDuration(result.elapsed), FormatSpeed(speed))
+	u.cfg.Reporter.Info("%s", l10n.T("Download complete: {{.Size}}, took {{.Time}}, average speed {{.Speed}}",
+		map[string]any{"Size": FormatSize(result.bytes), "Time": FormatDuration(result.elapsed), "Speed": FormatSpeed(speed)}))
 
 	return result.path, nil
 }
@@ -88,7 +90,7 @@ func (u *Updater) transfer(info *UpdateInfo, dir string) (transferResult, error)
 // 无论超时还是报错都交由用户裁决，绝不静默换源：
 // 自动回退会让用户失去对"二进制究竟来自哪个镜像"的判断，而下载结果随后会被直接执行
 func (u *Updater) downloadWithProxyFallback(url, dir string) (transferResult, error) {
-	u.cfg.Reporter.Info("下载模式：直连（%s 内未完成将询问是否切换代理）", u.cfg.SlowThreshold)
+	u.cfg.Reporter.Info("%s", l10n.T("Download mode: direct (will ask whether to switch to the proxy if not finished within {{.Threshold}})", map[string]any{"Threshold": u.cfg.SlowThreshold}))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -109,16 +111,16 @@ func (u *Updater) downloadWithProxyFallback(url, dir string) (transferResult, er
 		return u.switchToProxy(url, dir, outcome.err)
 
 	case <-time.After(u.cfg.SlowThreshold):
-		confirmed, confirmErr := u.cfg.Reporter.Confirm("直连下载缓慢，是否切换到代理下载？")
+		confirmed, confirmErr := u.cfg.Reporter.Confirm(l10n.T("Direct download is slow; switch to the proxy?", nil))
 		if confirmErr != nil {
 			// 询问失败时保持直连，等价于用户选择继续等待；
 			// 但必须说明询问本身失败的原因，否则用户无从理解为什么没有走代理方案
-			u.cfg.Reporter.Info("无法征求是否切换代理的意见（%v），继续使用直连下载", confirmErr)
+			u.cfg.Reporter.Info("%s", l10n.T("Could not ask about switching to the proxy ({{.Err}}); continuing with direct download", map[string]any{"Err": confirmErr.Error()}))
 			confirmed = false
 		}
 		if !confirmed {
 			// 直连仍是首选路径，不能因为一次询问未获同意就丢弃正在进行的下载
-			u.cfg.Reporter.Info("继续等待直连下载完成...")
+			u.cfg.Reporter.Info("%s", l10n.T("Continuing to wait for the direct download to finish...", nil))
 			outcome := <-results
 			if outcome.err == nil {
 				return outcome.result, nil
@@ -127,7 +129,7 @@ func (u *Updater) downloadWithProxyFallback(url, dir string) (transferResult, er
 		}
 
 		// 切换前必须等直连彻底退出：否则两路下载会同时刷新同一个进度，暂存文件也会互相干扰
-		u.cfg.Reporter.Info("已切换到代理下载")
+		u.cfg.Reporter.Info("%s", l10n.T("Switched to proxy download", nil))
 		cancel()
 		<-results
 		return u.download(context.Background(), u.cfg.ProxyPrefix+url, dir, proxyDownloadClient)
@@ -138,18 +140,18 @@ func (u *Updater) downloadWithProxyFallback(url, dir string) (transferResult, er
 // 用户拒绝或询问失败时返回直连的原始错误而非询问错误：
 // 用户真正需要知道的是下载为什么失败，而不是弹窗本身出了什么问题
 func (u *Updater) switchToProxy(url, dir string, directErr error) (transferResult, error) {
-	confirmed, confirmErr := u.cfg.Reporter.Confirm("直连下载失败，是否切换到代理下载？")
+	confirmed, confirmErr := u.cfg.Reporter.Confirm(l10n.T("Direct download failed; switch to the proxy?", nil))
 	if confirmErr != nil {
 		// 必须说明询问失败的原因：否则用户只会看到一条网络错误，
 		// 完全不知道程序本来准备了代理方案，也就失去了自行重试的线索
-		u.cfg.Reporter.Info("无法征求是否切换代理的意见（%v）", confirmErr)
+		u.cfg.Reporter.Info("%s", l10n.T("Could not ask about switching to the proxy ({{.Err}})", map[string]any{"Err": confirmErr.Error()}))
 		return transferResult{}, directErr
 	}
 	if !confirmed {
 		return transferResult{}, directErr
 	}
 
-	u.cfg.Reporter.Info("已切换到代理下载")
+	u.cfg.Reporter.Info("%s", l10n.T("Switched to proxy download", nil))
 	return u.download(context.Background(), u.cfg.ProxyPrefix+url, dir, proxyDownloadClient)
 }
 
@@ -161,33 +163,33 @@ func (u *Updater) download(ctx context.Context, url, dir string, client *http.Cl
 	// 进度展示的生命周期与单次传输严格绑定：从直连切换到代理属于两次独立传输，
 	// 各自重新计量才能算出正确的速率与剩余时间，
 	// 否则会把两段传输的字节数与跨越两段的总耗时混在一起，得出毫无意义的数字
-	progress := u.cfg.Reporter.Progress("下载进度")
+	progress := u.cfg.Reporter.Progress(l10n.T("Download progress", nil))
 	defer progress.Done()
 
-	u.cfg.Reporter.Info("开始下载: %s", url)
+	u.cfg.Reporter.Info("%s", l10n.T("Starting download: {{.URL}}", map[string]any{"URL": url}))
 	started := time.Now()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return transferResult{}, fmt.Errorf("构造下载请求失败: %w", err)
+		return transferResult{}, fmt.Errorf("%s: %w", l10n.T("Failed to build the download request", nil), err)
 	}
 	req.Header.Set("User-Agent", u.cfg.UserAgent)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return transferResult{}, fmt.Errorf("请求下载地址失败: %w", err)
+		return transferResult{}, fmt.Errorf("%s: %w", l10n.T("Failed to request the download URL", nil), err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return transferResult{}, fmt.Errorf("下载失败，状态码: %d", resp.StatusCode)
+		return transferResult{}, fmt.Errorf("%s", l10n.T("Download failed, status code: {{.Code}}", map[string]any{"Code": resp.StatusCode}))
 	}
 
 	// 暂存文件名由 CreateTemp 随机生成而不采用上游返回的资产名：
 	// 资产名来自外部响应，直接当作文件名会把路径穿越风险引入安装目录
 	staged, err := os.CreateTemp(dir, ".upgrade-*")
 	if err != nil {
-		return transferResult{}, fmt.Errorf("在安装目录创建暂存文件失败（可能需要对 %s 的写权限）: %w", dir, err)
+		return transferResult{}, fmt.Errorf("%s: %w", l10n.T("Failed to create a staging file in the install directory (write permission on {{.Dir}} may be required)", map[string]any{"Dir": dir}), err)
 	}
 
 	// 失败清理集中在此处，避免每个返回点都要手写一遍关闭与删除；
@@ -207,14 +209,14 @@ func (u *Updater) download(ctx context.Context, url, dir string, client *http.Cl
 	for {
 		select {
 		case <-ctx.Done():
-			return transferResult{}, fmt.Errorf("下载已取消: %w", ctx.Err())
+			return transferResult{}, fmt.Errorf("%s: %w", l10n.T("Download cancelled", nil), ctx.Err())
 		default:
 		}
 
 		n, readErr := resp.Body.Read(buffer)
 		if n > 0 {
 			if _, writeErr := staged.Write(buffer[:n]); writeErr != nil {
-				return transferResult{}, fmt.Errorf("写入暂存文件失败: %w", writeErr)
+				return transferResult{}, fmt.Errorf("%s: %w", l10n.T("Failed to write the staging file", nil), writeErr)
 			}
 			written += int64(n)
 			progress.Update(written, total)
@@ -223,22 +225,22 @@ func (u *Updater) download(ctx context.Context, url, dir string, client *http.Cl
 			if errors.Is(readErr, io.EOF) {
 				break
 			}
-			return transferResult{}, fmt.Errorf("读取下载数据失败: %w", readErr)
+			return transferResult{}, fmt.Errorf("%s: %w", l10n.T("Failed to read the download data", nil), readErr)
 		}
 	}
 
 	if err := staged.Close(); err != nil {
-		return transferResult{}, fmt.Errorf("关闭暂存文件失败: %w", err)
+		return transferResult{}, fmt.Errorf("%s: %w", l10n.T("Failed to close the staging file", nil), err)
 	}
 
 	// Content-Length 是弱校验：分块传输时它缺失，只能接受已接收的字节；
 	// 一旦存在长度信息而实际字节数不符，必然意味着连接中途断开，此时绝不能把不完整内容当作新版本安装
 	if total > 0 && written != total {
-		return transferResult{}, fmt.Errorf("下载不完整: 已接收 %d 字节，期望 %d 字节", written, total)
+		return transferResult{}, fmt.Errorf("%s", l10n.T("Download incomplete: received {{.Got}} bytes, expected {{.Want}} bytes", map[string]any{"Got": written, "Want": total}))
 	}
 
 	if err := os.Chmod(staged.Name(), 0o755); err != nil {
-		return transferResult{}, fmt.Errorf("设置可执行权限失败: %w", err)
+		return transferResult{}, fmt.Errorf("%s: %w", l10n.T("Failed to set executable permissions", nil), err)
 	}
 
 	succeeded = true

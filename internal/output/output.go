@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jy-eggroll/flk/pkg/l10n"
 	"github.com/pterm/pterm"
 )
 
@@ -111,29 +112,29 @@ func resultMapValues(m map[string]interface{}) []string {
 func PrintCheckResults(writer io.Writer, format OutputFormat, results []CheckResult) error {
 	// 收集本次结果实际出现的错误类型，表格模式仅展示相关图例，避免无关说明占用终端空间
 	errorTypes := map[string]string{
-		"PATH_EXPAND_FAIL":     "路径展开失败",
-		"LINK_MISSING":         "链接文件缺失",
-		"LINK_ACCESS_FAIL":     "链接访问失败",
-		"NOT_SYMLINK":          "不是符号链接",
-		"READLINK_FAIL":        "读取链接失败",
-		"TARGET_MISSING":       "目标文件缺失",
-		"TARGET_ACCESS_FAIL":   "目标访问失败",
-		"EXPECTED_MISSING":     "期望文件缺失",
-		"EXPECTED_ACCESS_FAIL": "期望访问失败",
-		"TARGET_MISMATCH":      "目标不匹配",
-		"PRIM_MISSING":         "主文件缺失",
-		"PRIM_ACCESS_FAIL":     "主文件访问失败",
-		"SECO_MISSING":         "次文件缺失",
-		"SECO_ACCESS_FAIL":     "次文件访问失败",
-		"NOT_SAME_FILE":        "不是同一文件",
-		"SRC_MISSING":          "源文件缺失",
-		"DST_MISSING":          "目标文件缺失",
-		"SRC_ACCESS_FAIL":      "源文件访问失败",
-		"DST_ACCESS_FAIL":      "目标文件访问失败",
-		"BOTH_MISSING":         "两者都缺失",
-		"NOT_REGULAR_FILE":     "不是普通文件",
-		"SIZE_MISMATCH":        "文件大小不一致",
-		"CONTENT_MISMATCH":     "文件内容不一致",
+		"PATH_EXPAND_FAIL":     l10n.T("Path expansion failed", nil),
+		"LINK_MISSING":         l10n.T("Link file missing", nil),
+		"LINK_ACCESS_FAIL":     l10n.T("Link access failed", nil),
+		"NOT_SYMLINK":          l10n.T("Not a symbolic link", nil),
+		"READLINK_FAIL":        l10n.T("Failed to read link", nil),
+		"TARGET_MISSING":       l10n.T("Target file missing", nil),
+		"TARGET_ACCESS_FAIL":   l10n.T("Target access failed", nil),
+		"EXPECTED_MISSING":     l10n.T("Expected file missing", nil),
+		"EXPECTED_ACCESS_FAIL": l10n.T("Expected file access failed", nil),
+		"TARGET_MISMATCH":      l10n.T("Target mismatch", nil),
+		"PRIM_MISSING":         l10n.T("Primary file missing", nil),
+		"PRIM_ACCESS_FAIL":     l10n.T("Primary file access failed", nil),
+		"SECO_MISSING":         l10n.T("Secondary file missing", nil),
+		"SECO_ACCESS_FAIL":     l10n.T("Secondary file access failed", nil),
+		"NOT_SAME_FILE":        l10n.T("Not the same file", nil),
+		"SRC_MISSING":          l10n.T("Source file missing", nil),
+		"DST_MISSING":          l10n.T("Destination file missing", nil),
+		"SRC_ACCESS_FAIL":      l10n.T("Source file access failed", nil),
+		"DST_ACCESS_FAIL":      l10n.T("Destination file access failed", nil),
+		"BOTH_MISSING":         l10n.T("Both files are missing", nil),
+		"NOT_REGULAR_FILE":     l10n.T("Not a regular file", nil),
+		"SIZE_MISMATCH":        l10n.T("File sizes differ", nil),
+		"CONTENT_MISMATCH":     l10n.T("File contents differ", nil),
 	}
 	usedTypes := make(map[string]bool)
 	for _, r := range results {
@@ -188,12 +189,12 @@ func PrintCheckResults(writer io.Writer, format OutputFormat, results []CheckRes
 		}
 		termWidth := pterm.GetTerminalWidth()
 		colWidth := calcColWidth(termWidth)
-		table := pterm.TableData{{"编号", "类型", "设备", "源路径", "链接路径", "有效", "错误类型"}}
+		table := pterm.TableData{{l10n.T("No.", nil), l10n.T("Type", nil), l10n.T("Device", nil), l10n.T("Source", nil), l10n.T("Link", nil), l10n.T("Valid", nil), l10n.T("Error", nil)}}
 		for i, r := range results {
 			num := fmt.Sprintf("%d", i+1)
-			valid := "是"
+			valid := l10n.T("Yes", nil)
 			if !r.Valid {
-				valid = "否"
+				valid = l10n.T("No", nil)
 			}
 			srcPath := truncateString(r.Real, colWidth)
 			if srcPath == "" {
@@ -240,12 +241,12 @@ func PrintCheckResultsFix(writer io.Writer, format OutputFormat, results []Check
 
 	termWidth := pterm.GetTerminalWidth()
 	colWidth := calcColWidth(termWidth)
-	table := pterm.TableData{{"编号", "类型", "设备", "源路径", "链接路径", "有效", "错误类型"}}
+	table := pterm.TableData{{l10n.T("No.", nil), l10n.T("Type", nil), l10n.T("Device", nil), l10n.T("Source", nil), l10n.T("Link", nil), l10n.T("Valid", nil), l10n.T("Error", nil)}}
 	for i, r := range results {
 		num := fmt.Sprintf("%d", i+1)
-		valid := "是"
+		valid := l10n.T("Yes", nil)
 		if !r.Valid {
-			valid = "否"
+			valid = l10n.T("No", nil)
 		}
 		srcPath := truncateString(r.Real, colWidth)
 		if srcPath == "" {

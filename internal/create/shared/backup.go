@@ -8,6 +8,7 @@ import (
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/safeop"
+	"github.com/jy-eggroll/flk/pkg/l10n"
 	"github.com/pterm/pterm"
 )
 
@@ -54,45 +55,36 @@ func HandleTargetBackup(opts BackupOptions) (BackupResult, error) {
 		var promptMsg string
 		if realExists != nil {
 			if !realExists.IsDir() {
-				promptMsg = fmt.Sprintf(
-					"%s 已存在文件，是否将 %s 备份到 %s 并覆盖？\n选择 n 将直接用现有的 %s 创建链接",
-					opts.SourceLabel, opts.TargetLabel, opts.SourceLabel, opts.SourceLabel,
-				)
+				promptMsg = l10n.T("{{.Src}} already exists as a file; back up {{.Tgt}} to {{.Src}} and overwrite?\nChoose n to create the link using the existing {{.Src}}", map[string]any{"Src": opts.SourceLabel, "Tgt": opts.TargetLabel})
 			} else {
-				promptMsg = fmt.Sprintf(
-					"将 %s 中的文件按目录结构备份到 %s 下？\n选择 n 后 %s 将会成为空目录",
-					opts.TargetLabel, opts.SourceLabel, opts.TargetLabel,
-				)
+				promptMsg = l10n.T("Back up the files in {{.Tgt}} into {{.Src}} preserving the directory structure?\nAfter choosing n, {{.Tgt}} will become an empty directory", map[string]any{"Src": opts.SourceLabel, "Tgt": opts.TargetLabel})
 			}
 		} else {
-			promptMsg = fmt.Sprintf(
-				"%s 不存在，是否将 %s 复制到 %s 再创建链接？",
-				opts.SourceLabel, opts.TargetLabel, opts.SourceLabel,
-			)
+			promptMsg = l10n.T("{{.Src}} does not exist; copy {{.Tgt}} to {{.Src}} before creating the link?", map[string]any{"Src": opts.SourceLabel, "Tgt": opts.TargetLabel})
 		}
 
 		confirm, err := pterm.DefaultInteractiveConfirm.WithDefaultValue(true).Show(promptMsg)
 		if err != nil {
-			return result, fmt.Errorf("获取用户输入失败: %w", err)
+			return result, fmt.Errorf("%s: %w", l10n.T("Failed to get user input", nil), err)
 		}
 		shouldBackup = confirm
 	}
 
 	if shouldBackup {
-		logger.Info("执行备份", "from", opts.TargetPath, "to", opts.SourcePath)
+		logger.Info(l10n.T("Performing backup", nil), "from", opts.TargetPath, "to", opts.SourcePath)
 		if err := pathutil.Copy(opts.TargetPath, opts.SourcePath); err != nil {
-			return result, fmt.Errorf("复制失败: %w", err)
+			return result, fmt.Errorf("%s: %w", l10n.T("Copy failed", nil), err)
 		}
 		result.BackedUp = true
-		logger.Info("备份完成", "from", opts.TargetPath, "to", opts.SourcePath)
+		logger.Info(l10n.T("Backup complete", nil), "from", opts.TargetPath, "to", opts.SourcePath)
 
 		// 备份提示属于过程信息，默认写入 stderr；显式检查写错误，避免管道关闭等异常被静默吞掉
 		progressOutput := opts.Output
 		if progressOutput == nil {
 			progressOutput = os.Stderr
 		}
-		if _, err := io.WriteString(progressOutput, pterm.Success.Sprintln("复制成功: "+opts.SourcePath)); err != nil {
-			return result, fmt.Errorf("备份已完成，但输出备份结果失败: %w", err)
+		if _, err := io.WriteString(progressOutput, pterm.Success.Sprintln(l10n.T("Copied successfully: {{.Path}}", map[string]any{"Path": opts.SourcePath}))); err != nil {
+			return result, fmt.Errorf("%s: %w", l10n.T("The backup is complete, but outputting the backup result failed", nil), err)
 		}
 	} else if realExists == nil {
 		// source 不存在且用户拒绝备份 → 无法继续
@@ -102,10 +94,10 @@ func HandleTargetBackup(opts BackupOptions) (BackupResult, error) {
 	// 在基础选项上补充后续删除步骤的确认文案，Output 始终保持为命令层传入的 stderr
 	if !opts.Force {
 		if result.BackedUp {
-			result.RemoveOpts.ConfirmMessage = "已备份，可安全删除"
+			result.RemoveOpts.ConfirmMessage = l10n.T("Backup complete; safe to delete", nil)
 			result.RemoveOpts.ConfirmDefault = true
 		} else {
-			result.RemoveOpts.ConfirmMessage = "删除可能导致数据丢失，是否仍删除？"
+			result.RemoveOpts.ConfirmMessage = l10n.T("Deleting may cause data loss; delete anyway?", nil)
 			result.RemoveOpts.ConfirmDefault = false
 		}
 	}

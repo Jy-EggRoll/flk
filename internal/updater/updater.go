@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+
+	"github.com/jy-eggroll/flk/pkg/l10n"
 	"path/filepath"
 	"strings"
 	"time"
@@ -95,13 +97,13 @@ type Updater struct {
 // 而不是等到用户执行升级、下载到一半才暴露
 func New(cfg Config) (*Updater, error) {
 	if cfg.Owner == "" || cfg.Repo == "" {
-		return nil, errors.New("必须同时配置 Owner 与 Repo")
+		return nil, errors.New(l10n.T("Both Owner and Repo must be configured", nil))
 	}
 	if cfg.AssetName == nil {
-		return nil, errors.New("必须配置 AssetName 以定位当前平台的发布产物")
+		return nil, errors.New(l10n.T("AssetName must be configured to locate the release artifact for the current platform", nil))
 	}
 	if cfg.Reporter == nil {
-		return nil, errors.New("必须配置 Reporter（无人值守场景可使用 DiscardReporter）")
+		return nil, errors.New(l10n.T("A Reporter must be configured (use DiscardReporter for unattended scenarios)", nil))
 	}
 
 	if cfg.APIEndpoint == "" {
@@ -132,12 +134,12 @@ func New(cfg Config) (*Updater, error) {
 // 从而保证下载中断、磁盘写满等失败都不会让用户失去一个可运行的旧版本
 func (u *Updater) Apply(info *UpdateInfo) error {
 	if info == nil {
-		return errors.New("升级目标为空")
+		return errors.New(l10n.T("The upgrade target is empty", nil))
 	}
 
 	execPath, err := u.cfg.ExecutablePath()
 	if err != nil {
-		return fmt.Errorf("定位当前可执行文件失败: %w", err)
+		return fmt.Errorf("%s: %w", l10n.T("Failed to locate the current executable", nil), err)
 	}
 
 	// 暂存文件必须与安装目标同目录：替换的最后一步是原子重命名，

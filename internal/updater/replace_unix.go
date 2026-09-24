@@ -5,6 +5,8 @@ package updater
 import (
 	"fmt"
 	"os"
+
+	"github.com/jy-eggroll/flk/pkg/l10n"
 )
 
 // replaceExecutable 用重命名原子替换目标可执行文件
@@ -17,7 +19,7 @@ import (
 // 一旦进程未按时退出（例如升级由长驻的子命令触发）替换就会静默失败
 func replaceExecutable(staged, execPath string) error {
 	if err := os.Rename(staged, execPath); err != nil {
-		return fmt.Errorf("替换可执行文件失败（可能需要对 %s 的写权限）: %w", execPath, err)
+		return fmt.Errorf("%s: %w", l10n.T("Failed to replace the executable (write permission on {{.Path}} may be required)", map[string]any{"Path": execPath}), err)
 	}
 	return nil
 }

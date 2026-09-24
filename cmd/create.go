@@ -1,6 +1,9 @@
 package cmd
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/jy-eggroll/flk/pkg/l10n"
+	"github.com/spf13/cobra"
+)
 
 var (
 	createForce  bool
@@ -13,8 +16,8 @@ var (
 var createCmd = &cobra.Command{
 	Use:     "create",
 	Aliases: []string{"cr"},
-	Short:   "创建链接",
-	Long:    "创建链接",
+	Short:   l10n.T("Create a link", nil),
+	Long:    l10n.T("Create a link", nil),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},

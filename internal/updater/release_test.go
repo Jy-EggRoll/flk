@@ -257,7 +257,7 @@ func TestCheckToleratesUnparsableCurrentVersion(t *testing.T) {
 	if info.CurrentComparable {
 		t.Fatal("本地版本无法解析时 CurrentComparable 应为 false")
 	}
-	if !reporter.sawWarning("跳过版本比较") {
+	if !reporter.sawWarning("skipping version comparison") {
 		t.Fatal("本地版本无法解析时应发出警告")
 	}
 	if server.requestCount() == 0 {

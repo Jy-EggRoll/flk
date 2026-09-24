@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+
+	"github.com/jy-eggroll/flk/pkg/l10n"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -17,8 +19,8 @@ import (
 var checkCmd = &cobra.Command{
 	Use:     "check",
 	Aliases: []string{"ck"},
-	Short:   "检查全局软硬链接的生效情况",
-	Long:    "检查全局软硬链接的生效情况",
+	Short:   l10n.T("Check the status of all symlinks and hardlinks", nil),
+	Long:    l10n.T("Check the status of all symlinks and hardlinks", nil),
 	RunE:    RunCheck,
 }
 
@@ -26,11 +28,11 @@ func init() {
 	MarkNeedsStore(checkCmd)
 	MarkSupportsJSON(checkCmd)
 	rootCmd.AddCommand(checkCmd)
-	checkCmd.Flags().StringVarP(&checkDevice, "device", "d", "", "设备名称，用于过滤检查，可用逗号分隔多个设备")
-	checkCmd.Flags().BoolVar(&checkSymlink, "symlink", false, "仅检查符号链接")
-	checkCmd.Flags().BoolVar(&checkHardlink, "hardlink", false, "仅检查硬链接")
-	checkCmd.Flags().BoolVar(&checkCopy, "copy", false, "仅检查复制")
-	checkCmd.Flags().StringVar(&checkDir, "dir", "", "仅检查包含该路径的记录")
+	checkCmd.Flags().StringVarP(&checkDevice, "device", "d", "", l10n.T("Device names to filter by, comma-separated", nil))
+	checkCmd.Flags().BoolVar(&checkSymlink, "symlink", false, l10n.T("Check only symbolic links", nil))
+	checkCmd.Flags().BoolVar(&checkHardlink, "hardlink", false, l10n.T("Check only hard links", nil))
+	checkCmd.Flags().BoolVar(&checkCopy, "copy", false, l10n.T("Check only copies", nil))
+	checkCmd.Flags().StringVar(&checkDir, "dir", "", l10n.T("Check only records containing this path", nil))
 }
 
 var (
@@ -56,15 +58,15 @@ func RunCheck(cmd *cobra.Command, args []string) error {
 		CheckDir:      checkDir,
 	})
 	if err != nil {
-		return fmt.Errorf("检查失败: %w", err)
+		return fmt.Errorf("%s: %w", l10n.T("Check failed", nil), err)
 	}
 
 	format := output.OutputFormat(outputFormat)
 	if err := output.PrintCheckResults(cmd.OutOrStdout(), format, results); err != nil {
-		return fmt.Errorf("输出失败: %w", err)
+		return fmt.Errorf("%s: %w", l10n.T("Output failed", nil), err)
 	}
 
-	logger.Info("检查完成")
+	logger.Info(l10n.T("Check complete", nil))
 	return nil
 }
 
@@ -179,12 +181,12 @@ func performCheck(options CheckOptions) ([]output.CheckResult, error) {
 func checkCopyValid(src, dst string) (bool, string, string) {
 	expandedSrc, err := pathutil.NormalizePath(src)
 	if err != nil {
-		return false, fmt.Sprintf("无法展开源路径 %s: %v", src, err), "PATH_EXPAND_FAIL"
+		return false, l10n.T("Failed to expand the source path {{.Path}}: {{.Err}}", map[string]any{"Path": src, "Err": err.Error()}), "PATH_EXPAND_FAIL"
 	}
 
 	expandedDst, err := pathutil.NormalizePath(dst)
 	if err != nil {
-		return false, fmt.Sprintf("无法展开目标路径 %s: %v", dst, err), "PATH_EXPAND_FAIL"
+		return false, l10n.T("Failed to expand the destination path {{.Path}}: {{.Err}}", map[string]any{"Path": dst, "Err": err.Error()}), "PATH_EXPAND_FAIL"
 	}
 
 	srcInfo, srcErr := os.Stat(expandedSrc)
@@ -192,29 +194,29 @@ func checkCopyValid(src, dst string) (bool, string, string) {
 
 	switch {
 	case srcErr != nil && dstErr != nil:
-		return false, "源文件和目标文件都不存在", "BOTH_MISSING"
+		return false, l10n.T("Both the source and destination files are missing", nil), "BOTH_MISSING"
 	case srcErr != nil:
-		return false, fmt.Sprintf("源文件 %s 不存在", src), "SRC_MISSING"
+		return false, l10n.T("The source file {{.Path}} does not exist", map[string]any{"Path": src}), "SRC_MISSING"
 	case dstErr != nil:
-		return false, fmt.Sprintf("目标文件 %s 不存在", dst), "DST_MISSING"
+		return false, l10n.T("The destination file {{.Path}} does not exist", map[string]any{"Path": dst}), "DST_MISSING"
 	}
 
 	// 先比大小：不同必然内容不同，可快速判定，省去哈希整份文件的开销
 	if srcInfo.Size() != dstInfo.Size() {
-		return false, fmt.Sprintf("源文件与目标文件大小不一致 (%d vs %d)", srcInfo.Size(), dstInfo.Size()), "SIZE_MISMATCH"
+		return false, l10n.T("The source and destination sizes differ ({{.Src}} vs {{.Dst}})", map[string]any{"Src": srcInfo.Size(), "Dst": dstInfo.Size()}), "SIZE_MISMATCH"
 	}
 
 	// 大小相同再逐字节比较内容（通过 sha256 哈希）
 	srcHash, err := pathutil.FileHash(expandedSrc)
 	if err != nil {
-		return false, fmt.Sprintf("无法计算源文件 %s 的哈希: %v", src, err), "SRC_ACCESS_FAIL"
+		return false, l10n.T("Failed to hash the source file {{.Path}}: {{.Err}}", map[string]any{"Path": src, "Err": err.Error()}), "SRC_ACCESS_FAIL"
 	}
 	dstHash, err := pathutil.FileHash(expandedDst)
 	if err != nil {
-		return false, fmt.Sprintf("无法计算目标文件 %s 的哈希: %v", dst, err), "DST_ACCESS_FAIL"
+		return false, l10n.T("Failed to hash the destination file {{.Path}}: {{.Err}}", map[string]any{"Path": dst, "Err": err.Error()}), "DST_ACCESS_FAIL"
 	}
 	if srcHash != dstHash {
-		return false, "源文件和目标文件内容不一致，需要同步", "CONTENT_MISMATCH"
+		return false, l10n.T("The source and destination contents differ and need to be synchronized", nil), "CONTENT_MISMATCH"
 	}
 
 	// 内容一致即视为有效，忽略 ModTime 差异
@@ -224,29 +226,29 @@ func checkCopyValid(src, dst string) (bool, string, string) {
 func checkSymlinkValid(real, fake string) (bool, string, string) {
 	expandedReal, err := pathutil.NormalizePath(real)
 	if err != nil {
-		return false, fmt.Sprintf("无法展开源路径 %s: %v", real, err), "PATH_EXPAND_FAIL"
+		return false, l10n.T("Failed to expand the source path {{.Path}}: {{.Err}}", map[string]any{"Path": real, "Err": err.Error()}), "PATH_EXPAND_FAIL"
 	}
 
 	expandedFake, err := pathutil.NormalizePath(fake)
 	if err != nil {
-		return false, fmt.Sprintf("无法展开链接路径 %s: %v", fake, err), "PATH_EXPAND_FAIL"
+		return false, l10n.T("Failed to expand the link path {{.Path}}: {{.Err}}", map[string]any{"Path": fake, "Err": err.Error()}), "PATH_EXPAND_FAIL"
 	}
 
 	fakeInfo, err := os.Lstat(expandedFake)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return false, fmt.Sprintf("符号链接文件 %s 不存在", fake), "LINK_MISSING"
+			return false, l10n.T("The symbolic link file {{.Path}} does not exist", map[string]any{"Path": fake}), "LINK_MISSING"
 		}
-		return false, fmt.Sprintf("无法访问符号链接文件 %s: %v", fake, err), "LINK_ACCESS_FAIL"
+		return false, l10n.T("Failed to access the symbolic link file {{.Path}}: {{.Err}}", map[string]any{"Path": fake, "Err": err.Error()}), "LINK_ACCESS_FAIL"
 	}
 
 	if fakeInfo.Mode()&os.ModeSymlink == 0 {
-		return false, fmt.Sprintf("%s 存在但不是符号链接", fake), "NOT_SYMLINK"
+		return false, l10n.T("{{.Path}} exists but is not a symbolic link", map[string]any{"Path": fake}), "NOT_SYMLINK"
 	}
 
 	target, err := os.Readlink(expandedFake)
 	if err != nil {
-		return false, fmt.Sprintf("无法读取符号链接 %s 的目标: %v", fake, err), "READLINK_FAIL"
+		return false, l10n.T("Failed to read the target of the symbolic link {{.Path}}: {{.Err}}", map[string]any{"Path": fake, "Err": err.Error()}), "READLINK_FAIL"
 	}
 
 	var targetAbs string
@@ -259,21 +261,21 @@ func checkSymlinkValid(real, fake string) (bool, string, string) {
 	targetInfo, err := os.Stat(targetAbs)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return false, fmt.Sprintf("符号链接的目标文件 %s 不存在", targetAbs), "TARGET_MISSING"
+			return false, l10n.T("The symbolic link target {{.Path}} does not exist", map[string]any{"Path": targetAbs}), "TARGET_MISSING"
 		}
-		return false, fmt.Sprintf("无法访问符号链接的目标文件 %s: %v", targetAbs, err), "TARGET_ACCESS_FAIL"
+		return false, l10n.T("Failed to access the symbolic link target {{.Path}}: {{.Err}}", map[string]any{"Path": targetAbs, "Err": err.Error()}), "TARGET_ACCESS_FAIL"
 	}
 
 	expectedInfo, err := os.Stat(expandedReal)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return false, fmt.Sprintf("期望的目标文件 %s 不存在", expandedReal), "EXPECTED_MISSING"
+			return false, l10n.T("The expected target file {{.Path}} does not exist", map[string]any{"Path": expandedReal}), "EXPECTED_MISSING"
 		}
-		return false, fmt.Sprintf("无法访问期望的目标文件 %s: %v", expandedReal, err), "EXPECTED_ACCESS_FAIL"
+		return false, l10n.T("Failed to access the expected target file {{.Path}}: {{.Err}}", map[string]any{"Path": expandedReal, "Err": err.Error()}), "EXPECTED_ACCESS_FAIL"
 	}
 
 	if !os.SameFile(targetInfo, expectedInfo) {
-		return false, fmt.Sprintf("符号链接 %s 指向的文件与期望的文件 %s 不一致", fake, real), "TARGET_MISMATCH"
+		return false, l10n.T("The file pointed to by the symbolic link {{.Link}} does not match the expected file {{.Real}}", map[string]any{"Link": fake, "Real": real}), "TARGET_MISMATCH"
 	}
 
 	return true, "", ""
@@ -282,32 +284,32 @@ func checkSymlinkValid(real, fake string) (bool, string, string) {
 func checkHardlinkValid(prim, seco string) (bool, string, string) {
 	expandedPrim, err := pathutil.NormalizePath(prim)
 	if err != nil {
-		return false, fmt.Sprintf("无法展开主文件路径 %s: %v", prim, err), "PATH_EXPAND_FAIL"
+		return false, l10n.T("Failed to expand the primary file path {{.Path}}: {{.Err}}", map[string]any{"Path": prim, "Err": err.Error()}), "PATH_EXPAND_FAIL"
 	}
 
 	expandedSeco, err := pathutil.NormalizePath(seco)
 	if err != nil {
-		return false, fmt.Sprintf("无法展开硬链接路径 %s: %v", seco, err), "PATH_EXPAND_FAIL"
+		return false, l10n.T("Failed to expand the hard link path {{.Path}}: {{.Err}}", map[string]any{"Path": seco, "Err": err.Error()}), "PATH_EXPAND_FAIL"
 	}
 
 	primInfo, err := os.Stat(expandedPrim)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return false, fmt.Sprintf("主文件 %s 不存在", prim), "PRIM_MISSING"
+			return false, l10n.T("The primary file {{.Path}} does not exist", map[string]any{"Path": prim}), "PRIM_MISSING"
 		}
-		return false, fmt.Sprintf("无法访问主文件 %s: %v", prim, err), "PRIM_ACCESS_FAIL"
+		return false, l10n.T("Failed to access the primary file {{.Path}}: {{.Err}}", map[string]any{"Path": prim, "Err": err.Error()}), "PRIM_ACCESS_FAIL"
 	}
 
 	secoInfo, err := os.Stat(expandedSeco)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return false, fmt.Sprintf("硬链接文件 %s 不存在", seco), "SECO_MISSING"
+			return false, l10n.T("The hard link file {{.Path}} does not exist", map[string]any{"Path": seco}), "SECO_MISSING"
 		}
-		return false, fmt.Sprintf("无法访问硬链接文件 %s: %v", seco, err), "SECO_ACCESS_FAIL"
+		return false, l10n.T("Failed to access the hard link file {{.Path}}: {{.Err}}", map[string]any{"Path": seco, "Err": err.Error()}), "SECO_ACCESS_FAIL"
 	}
 
 	if !os.SameFile(primInfo, secoInfo) {
-		return false, fmt.Sprintf("%s 和 %s 不是同一个文件的硬链接", seco, prim), "NOT_SAME_FILE"
+		return false, l10n.T("{{.Seco}} and {{.Prim}} are not hard links to the same file", map[string]any{"Seco": seco, "Prim": prim}), "NOT_SAME_FILE"
 	}
 
 	return true, "", ""

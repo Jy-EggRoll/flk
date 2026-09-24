@@ -62,7 +62,7 @@ func TestRemoveWithConfirmWritesSortedPlanToBuffer(t *testing.T) {
 	}
 
 	lines := strings.Split(strings.TrimSuffix(buffer.String(), "\n"), "\n")
-	if len(lines) == 0 || lines[0] != "以下位置会在执行过程中被移至回收站:" {
+	if len(lines) == 0 || lines[0] != "The following locations will be moved to the trash:" {
 		t.Fatalf("删除计划标题异常: %q", buffer.String())
 	}
 	if got := lines[1:]; !reflect.DeepEqual(got, expectedPaths) {
@@ -107,7 +107,7 @@ func TestRemoveWithConfirmNilOutputUsesStdout(t *testing.T) {
 	if readErr != nil {
 		t.Fatalf("读取 stdout 输出失败: %v", readErr)
 	}
-	if !strings.Contains(string(captured), "以下位置会在执行过程中被移至回收站:") || !strings.Contains(string(captured), target) {
+	if !strings.Contains(string(captured), "The following locations will be moved to the trash:") || !strings.Contains(string(captured), target) {
 		t.Fatalf("nil Output 未写入 stdout: %q", captured)
 	}
 }

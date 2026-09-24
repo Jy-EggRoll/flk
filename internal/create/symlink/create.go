@@ -8,28 +8,29 @@ import (
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/safeop"
+	"github.com/jy-eggroll/flk/pkg/l10n"
 )
 
 // 该函数只处理创建逻辑，需要保证传入的路径一定是最正确、最简洁的，函数被调用时，应该优先处理字符串
 func Create(realPath, fakePath string, removeOpts safeop.RemoveOptions) error {
 	if _, err := os.Stat(realPath); err == nil {
-		logger.Debug("realPath 对应的文件存在，允许继续执行", "path", realPath)
+		logger.Debug(l10n.T("The file for realPath exists; proceeding", nil), "path", realPath)
 	} else {
 		// 错误由命令层渲染为唯一的 CreateResult，此处直接上抛，避免同一失败同时写入日志和结果流
 		return err
 	}
 
 	if _, err := os.Lstat(fakePath); err == nil { // 文件/链接/文件夹存在
-		logger.Debug("fakePath 存在", "path", fakePath)
+		logger.Debug(l10n.T("fakePath exists", nil), "path", fakePath)
 		if _, removeErr := safeop.RemoveWithConfirm(fakePath, removeOpts); removeErr != nil {
 			if errors.Is(removeErr, safeop.ErrOperationCancelled) {
-				logger.Info("用户取消删除 fakePath", "path", fakePath)
+				logger.Info(l10n.T("User cancelled deleting fakePath", nil), "path", fakePath)
 				return removeErr
 			}
 			return removeErr
 		}
 	} else {
-		logger.Debug("fakePath 不存在", "path", fakePath, "error", err)
+		logger.Debug(l10n.T("fakePath does not exist", nil), "path", fakePath, "error", err)
 	}
 
 	if err := pathutil.EnsureDirExists(fakePath); err != nil {
@@ -38,7 +39,7 @@ func Create(realPath, fakePath string, removeOpts safeop.RemoveOptions) error {
 			parentPath := filepath.Dir(fakePath)
 			if _, removeErr := safeop.RemoveWithConfirm(parentPath, safeop.RemoveOptions{Force: removeOpts.Force, Output: removeOpts.Output}); removeErr != nil {
 				if errors.Is(removeErr, safeop.ErrOperationCancelled) {
-					logger.Info("用户取消删除 fakePath 父路径", "path", parentPath)
+					logger.Info(l10n.T("User cancelled deleting the parent path of fakePath", nil), "path", parentPath)
 					return removeErr
 				}
 				return removeErr

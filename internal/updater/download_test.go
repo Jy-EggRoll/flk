@@ -153,7 +153,7 @@ func TestFetchPrintsSummaryAfterProgressEnds(t *testing.T) {
 	}
 
 	progressEnd := reporter.indexOfEvent("progress-end")
-	summary := reporter.indexOfEvent("下载完成")
+	summary := reporter.indexOfEvent("Download complete")
 	if progressEnd < 0 {
 		t.Fatal("传输结束后应关闭进度展示")
 	}
@@ -305,7 +305,7 @@ func TestApplyFallsBackToProxyAfterDirectFailure(t *testing.T) {
 	}
 
 	questions := reporter.askedQuestions()
-	if len(questions) == 0 || !strings.Contains(questions[0], "直连下载失败") {
+	if len(questions) == 0 || !strings.Contains(questions[0], "Direct download failed") {
 		t.Fatalf("直连失败后应征求用户意见，实际询问 %v", questions)
 	}
 }
@@ -376,7 +376,7 @@ func TestApplySwitchesToProxyWhenDirectIsSlow(t *testing.T) {
 	}
 
 	questions := reporter.askedQuestions()
-	if len(questions) == 0 || !strings.Contains(questions[0], "缓慢") {
+	if len(questions) == 0 || !strings.Contains(questions[0], "Direct download is slow") {
 		t.Fatalf("直连缓慢时应征求用户意见，实际询问 %v", questions)
 	}
 }

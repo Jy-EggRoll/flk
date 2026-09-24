@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/jy-eggroll/flk/pkg/l10n"
 )
 
 // replaceExecutable 通过延迟批处理脚本完成替换
@@ -24,7 +26,7 @@ func replaceExecutable(staged, execPath string) error {
 	if err := os.WriteFile(plan.ScriptPath, []byte(plan.Script), 0o644); err != nil {
 		// 脚本都没能创建，替换注定不会发生，把暂存文件一并清掉避免留下垃圾
 		_ = os.Remove(staged)
-		return fmt.Errorf("写入升级脚本失败（可能需要对 %s 的写权限）: %w", dir, err)
+		return fmt.Errorf("%s: %w", l10n.T("Failed to write the upgrade script (write permission on {{.Dir}} may be required)", map[string]any{"Dir": dir}), err)
 	}
 
 	cmd := exec.Command("cmd", "/c", plan.ScriptPath)
@@ -32,7 +34,7 @@ func replaceExecutable(staged, execPath string) error {
 	if err := cmd.Start(); err != nil {
 		_ = os.Remove(staged)
 		_ = os.Remove(plan.ScriptPath)
-		return fmt.Errorf("启动升级脚本失败: %w", err)
+		return fmt.Errorf("%s: %w", l10n.T("Failed to start the upgrade script", nil), err)
 	}
 
 	// 脚本已成功交付，替换会在当前进程退出后发生；

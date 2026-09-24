@@ -15,6 +15,7 @@ import (
 	"github.com/jy-eggroll/flk/internal/safeop"
 	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/jy-eggroll/flk/internal/trash"
+	"github.com/jy-eggroll/flk/pkg/l10n"
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 )
@@ -43,8 +44,8 @@ import (
 var unlinkCmd = &cobra.Command{
 	Use:     "unlink",
 	Aliases: []string{"ul"},
-	Short:   "解除链接关系，用真实文件替换链接/副本",
-	Long:    "用 real/prim/src 的实际文件替换已创建的符号链接、硬链接、副本，解除对应关系并移除追踪记录（仅处理当前有效的记录）",
+	Short:   l10n.T("Remove link relationships, replacing links/copies with real files", nil),
+	Long:    l10n.T("Replace the created symlinks, hard links, and copies with the real files from real/prim/src, remove the relationships, and drop the tracking records (only valid records are handled)", nil),
 	RunE:    RunUnlink,
 }
 
@@ -52,14 +53,14 @@ func init() {
 	MarkNeedsStore(unlinkCmd)
 	MarkSupportsJSON(unlinkCmd)
 	rootCmd.AddCommand(unlinkCmd)
-	unlinkCmd.Flags().StringVarP(&unlinkDevice, "device", "d", "", "设备名称，用于过滤，可用逗号分隔多个设备")
-	unlinkCmd.Flags().BoolVar(&unlinkSymlink, "symlink", false, "仅处理符号链接")
-	unlinkCmd.Flags().BoolVar(&unlinkHardlink, "hardlink", false, "仅处理硬链接")
-	unlinkCmd.Flags().BoolVar(&unlinkCopy, "copy", false, "仅处理复制")
-	unlinkCmd.Flags().StringVar(&unlinkDir, "dir", "", "仅处理包含该路径的记录")
-	unlinkCmd.Flags().BoolVar(&unlinkForce, "force", false, "解除时跳过删除确认，直接执行")
-	unlinkCmd.Flags().BoolVar(&unlinkAll, "all", false, "自动解除所有有效链接，跳过交互模式")
-	unlinkCmd.Flags().BoolVar(&unlinkKeepRecord, "keep-record", false, "仅解除链接关系，保留配置文件中的追踪记录（解除后记录变为无效，可用 fix 重建链接）")
+	unlinkCmd.Flags().StringVarP(&unlinkDevice, "device", "d", "", l10n.T("Device names to filter by, comma-separated", nil))
+	unlinkCmd.Flags().BoolVar(&unlinkSymlink, "symlink", false, l10n.T("Process only symbolic links", nil))
+	unlinkCmd.Flags().BoolVar(&unlinkHardlink, "hardlink", false, l10n.T("Process only hard links", nil))
+	unlinkCmd.Flags().BoolVar(&unlinkCopy, "copy", false, l10n.T("Process only copies", nil))
+	unlinkCmd.Flags().StringVar(&unlinkDir, "dir", "", l10n.T("Process only records containing this path", nil))
+	unlinkCmd.Flags().BoolVar(&unlinkForce, "force", false, l10n.T("Skip the deletion confirmation and proceed directly", nil))
+	unlinkCmd.Flags().BoolVar(&unlinkAll, "all", false, l10n.T("Automatically remove all valid links, skipping interactive mode", nil))
+	unlinkCmd.Flags().BoolVar(&unlinkKeepRecord, "keep-record", false, l10n.T("Only remove the link relationship and keep the tracking record (the record becomes invalid; use fix to recreate the link)", nil))
 }
 
 var (
@@ -92,7 +93,7 @@ func RunUnlink(cmd *cobra.Command, args []string) error {
 			CheckDir:      unlinkDir,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("检查失败: %w", err)
+			return nil, fmt.Errorf("%s: %w", l10n.T("Check failed", nil), err)
 		}
 
 		validResults := make([]output.CheckResult, 0)
@@ -104,10 +105,10 @@ func RunUnlink(cmd *cobra.Command, args []string) error {
 
 		if format == output.JSON || len(validResults) > 0 {
 			if err := output.PrintCheckResults(out, format, validResults); err != nil {
-				return nil, fmt.Errorf("输出失败: %w", err)
+				return nil, fmt.Errorf("%s: %w", l10n.T("Output failed", nil), err)
 			}
 		} else {
-			pterm.Info.WithWriter(errOut).Println("没有可解除的有效链接")
+			pterm.Info.WithWriter(errOut).Println(l10n.T("There are no valid links to remove", nil))
 		}
 
 		return validResults, nil
@@ -131,23 +132,23 @@ func RunUnlink(cmd *cobra.Command, args []string) error {
 		for _, idx := range indices {
 			result := validResults[idx]
 			if err := unlinkResult(result, errOut); err != nil {
-				pterm.Error.WithWriter(errOut).Printf("解除失败 #%d %v\n", idx+1, err)
-				operationErrors = append(operationErrors, fmt.Errorf("解除 #%d 失败: %w", idx+1, err))
+				pterm.Error.WithWriter(errOut).Println(l10n.T("Removal failed #{{.Index}}: {{.Err}}", map[string]any{"Index": idx + 1, "Err": err.Error()}))
+				operationErrors = append(operationErrors, fmt.Errorf("%s: %w", l10n.T("Removal #{{.Index}} failed", map[string]any{"Index": idx + 1}), err))
 			} else {
-				pterm.Success.WithWriter(errOut).Printf("解除成功 #%d\n", idx+1)
+				pterm.Success.WithWriter(errOut).Println(l10n.T("Removed #{{.Index}}", map[string]any{"Index": idx + 1}))
 			}
 		}
 	}
 	saveStore := func() {
 		if err := saveStoreAfterUnlink(); err != nil {
-			pterm.Error.WithWriter(errOut).Println("保存失败 " + err.Error())
-			operationErrors = append(operationErrors, fmt.Errorf("保存失败: %w", err))
+			pterm.Error.WithWriter(errOut).Println(l10n.T("Save failed: {{.Err}}", map[string]any{"Err": err.Error()}))
+			operationErrors = append(operationErrors, fmt.Errorf("%s: %w", l10n.T("Save failed", nil), err))
 		}
 	}
 
 	// --all：批量解除所有有效链接，单项失败不阻断其余记录，结束后统一决定退出码
 	if unlinkAll {
-		pterm.Info.WithWriter(errOut).Println("自动解除所有有效链接...")
+		pterm.Info.WithWriter(errOut).Println(l10n.T("Automatically removing all valid links...", nil))
 		indices := make([]int, len(validResults))
 		for idx := range validResults {
 			indices[idx] = idx
@@ -159,11 +160,11 @@ func RunUnlink(cmd *cobra.Command, args []string) error {
 
 	// 交互模式：输入编号解除对应项，all/a 全部解除，exit/q 主动退出仍视为成功
 	for {
-		pterm.DefaultBox.WithWriter(errOut).WithTitle("INFO").Println(pterm.Green("输入 all 或 a 解除所有\n输入 exit 或 q 退出程序\n输入数字以解除对应项\n使用空格分隔"))
-		input, err := pterm.DefaultInteractiveTextInput.WithMultiLine(false).Show("请输入")
+		pterm.DefaultBox.WithWriter(errOut).WithTitle("INFO").Println(pterm.Green(l10n.T("Enter all or a to remove everything\nEnter exit or q to quit\nEnter numbers to remove the corresponding items\nSeparate with spaces", nil)))
+		input, err := pterm.DefaultInteractiveTextInput.WithMultiLine(false).Show(l10n.T("Enter input", nil))
 		if err != nil {
 			// EOF 等输入错误必须向上传播；若继续下一轮会反复得到同一错误并形成 CPU 空转
-			operationErrors = append(operationErrors, fmt.Errorf("输入错误: %w", err))
+			operationErrors = append(operationErrors, fmt.Errorf("%s: %w", l10n.T("Input error", nil), err))
 			return errors.Join(operationErrors...)
 		}
 
@@ -182,7 +183,7 @@ func RunUnlink(cmd *cobra.Command, args []string) error {
 			for _, part := range parts {
 				idx, err := strconv.Atoi(part)
 				if err != nil || idx < 1 || idx > len(validResults) {
-					pterm.Warning.WithWriter(errOut).Printf("无效编号 %s\n", part)
+					pterm.Warning.WithWriter(errOut).Println(l10n.T("Invalid number {{.Part}}", map[string]any{"Part": part}))
 					continue
 				}
 				indices = append(indices, idx-1)
@@ -222,11 +223,11 @@ func unlinkResult(result output.CheckResult, errorOutput ...io.Writer) error {
 	case "symlink":
 		expandedReal, err := pathutil.NormalizePath(result.Real)
 		if err != nil {
-			return fmt.Errorf("展开源路径失败: %w", err)
+			return fmt.Errorf("%s: %w", l10n.T("Failed to expand the source path", nil), err)
 		}
 		expandedFake, err := pathutil.NormalizePath(result.Fake)
 		if err != nil {
-			return fmt.Errorf("展开链接路径失败: %w", err)
+			return fmt.Errorf("%s: %w", l10n.T("Failed to expand the link path", nil), err)
 		}
 		if err := replaceWithReal(expandedReal, expandedFake, "real", "fake", errOut); err != nil {
 			return err
@@ -234,11 +235,11 @@ func unlinkResult(result output.CheckResult, errorOutput ...io.Writer) error {
 	case "hardlink":
 		expandedPrim, err := pathutil.NormalizePath(result.Prim)
 		if err != nil {
-			return fmt.Errorf("展开主文件路径失败: %w", err)
+			return fmt.Errorf("%s: %w", l10n.T("Failed to expand the primary file path", nil), err)
 		}
 		expandedSeco, err := pathutil.NormalizePath(result.Seco)
 		if err != nil {
-			return fmt.Errorf("展开次文件路径失败: %w", err)
+			return fmt.Errorf("%s: %w", l10n.T("Failed to expand the secondary file path", nil), err)
 		}
 		if err := replaceWithReal(expandedPrim, expandedSeco, "prim", "seco", errOut); err != nil {
 			return err
@@ -248,11 +249,11 @@ func unlinkResult(result output.CheckResult, errorOutput ...io.Writer) error {
 		// --keep-record 模式下连记录也保留，对 copy 而言没有任何可执行的动作，
 		// 明确提示后按成功返回，避免用户误以为「解除成功」是做了什么实际变更
 		if unlinkKeepRecord {
-			pterm.Warning.WithWriter(errOut).Println("copy 记录无文件系统层面的链接可解除，--keep-record 模式下跳过: " + result.Dst)
+			pterm.Warning.WithWriter(errOut).Println(l10n.T("The copy record has no filesystem-level link to remove; skipped in --keep-record mode: {{.Dst}}", map[string]any{"Dst": result.Dst}))
 			return nil
 		}
 	default:
-		return fmt.Errorf("未知类型 %s", result.Type)
+		return fmt.Errorf("%s", l10n.T("Unknown type {{.Type}}", map[string]any{"Type": result.Type}))
 	}
 
 	// 物理替换完成后移除追踪记录（记录中的路径为折叠形式，result 字段直接来自存储，故可原样匹配）
@@ -280,14 +281,14 @@ func replaceWithReal(source, derived, sourceLabel, derivedLabel string, errorOut
 
 	actualSource, err := filepath.EvalSymlinks(source)
 	if err != nil {
-		return fmt.Errorf("%s 不可用（%v），已跳过以避免数据丢失", sourceLabel, err)
+		return fmt.Errorf("%s", l10n.T("{{.Source}} is unavailable ({{.Err}}); skipped to avoid data loss", map[string]any{"Source": sourceLabel, "Err": err.Error()}))
 	}
 
 	if !unlinkForce {
-		pterm.Warning.WithWriter(errOut).Println("即将解除链接并替换为真实文件: " + derived)
-		confirm, cerr := pterm.DefaultInteractiveConfirm.WithDefaultValue(false).Show("确认解除该链接关系？")
+		pterm.Warning.WithWriter(errOut).Println(l10n.T("About to remove the link and replace it with a real file: {{.Path}}", map[string]any{"Path": derived}))
+		confirm, cerr := pterm.DefaultInteractiveConfirm.WithDefaultValue(false).Show(l10n.T("Confirm removing this link relationship?", nil))
 		if cerr != nil {
-			return fmt.Errorf("获取确认输入失败: %w", cerr)
+			return fmt.Errorf("%s: %w", l10n.T("Failed to get the confirmation input", nil), cerr)
 		}
 		if !confirm {
 			return safeop.ErrOperationCancelled
@@ -296,12 +297,12 @@ func replaceWithReal(source, derived, sourceLabel, derivedLabel string, errorOut
 
 	// 将派生位置的旧链接移入回收站；不存在则视为已就绪
 	if err := trash.MoveToTrash(derived); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("移动 %s 至回收站失败: %w", derivedLabel, err)
+		return fmt.Errorf("%s: %w", l10n.T("Failed to move {{.Derived}} to the trash", map[string]any{"Derived": derivedLabel}), err)
 	}
 
 	// 用权威源的真实内容在派生位置生成一份独立副本，至此二者不再共享链接关系
 	if err := pathutil.Copy(actualSource, derived); err != nil {
-		return fmt.Errorf("复制真实文件到 %s 失败: %w", derivedLabel, err)
+		return fmt.Errorf("%s: %w", l10n.T("Failed to copy the real file to {{.Derived}}", map[string]any{"Derived": derivedLabel}), err)
 	}
 	return nil
 }

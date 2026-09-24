@@ -17,6 +17,7 @@ import (
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/safeop"
 	"github.com/jy-eggroll/flk/internal/store"
+	"github.com/jy-eggroll/flk/pkg/l10n"
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 )
@@ -24,8 +25,8 @@ import (
 var fixCmd = &cobra.Command{
 	Use:     "fix",
 	Aliases: []string{"fx"},
-	Short:   "交互式修复无效链接",
-	Long:    "检查链接状态并进入交互模式，允许用户选择编号修复无效链接",
+	Short:   l10n.T("Interactively repair invalid links", nil),
+	Long:    l10n.T("Check link status and enter interactive mode to repair invalid links by number", nil),
 	RunE:    RunFix,
 }
 
@@ -33,13 +34,13 @@ func init() {
 	MarkNeedsStore(fixCmd)
 	MarkSupportsJSON(fixCmd)
 	rootCmd.AddCommand(fixCmd)
-	fixCmd.Flags().StringVarP(&fixDevice, "device", "d", "", "设备名称，用于过滤检查，可用逗号分隔多个设备")
-	fixCmd.Flags().BoolVar(&fixSymlink, "symlink", false, "仅检查符号链接")
-	fixCmd.Flags().BoolVar(&fixHardlink, "hardlink", false, "仅检查硬链接")
-	fixCmd.Flags().BoolVar(&fixCopy, "copy", false, "仅检查复制")
-	fixCmd.Flags().StringVar(&fixDir, "dir", "", "仅检查包含该路径的记录")
-	fixCmd.Flags().BoolVar(&fixForce, "force", false, "修复时跳过删除确认，直接执行")
-	fixCmd.Flags().BoolVar(&fixAll, "all", false, "自动修复所有无效链接，跳过交互模式")
+	fixCmd.Flags().StringVarP(&fixDevice, "device", "d", "", l10n.T("Device names to filter by, comma-separated", nil))
+	fixCmd.Flags().BoolVar(&fixSymlink, "symlink", false, l10n.T("Check only symbolic links", nil))
+	fixCmd.Flags().BoolVar(&fixHardlink, "hardlink", false, l10n.T("Check only hard links", nil))
+	fixCmd.Flags().BoolVar(&fixCopy, "copy", false, l10n.T("Check only copies", nil))
+	fixCmd.Flags().StringVar(&fixDir, "dir", "", l10n.T("Check only records containing this path", nil))
+	fixCmd.Flags().BoolVar(&fixForce, "force", false, l10n.T("Skip the deletion confirmation and repair directly", nil))
+	fixCmd.Flags().BoolVar(&fixAll, "all", false, l10n.T("Automatically repair all invalid links, skipping interactive mode", nil))
 }
 
 var (
@@ -71,7 +72,7 @@ func RunFix(cmd *cobra.Command, args []string) error {
 			CheckDir:      fixDir,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("检查失败: %w", err)
+			return nil, fmt.Errorf("%s: %w", l10n.T("Check failed", nil), err)
 		}
 
 		invalidResults := make([]output.CheckResult, 0)
@@ -83,10 +84,10 @@ func RunFix(cmd *cobra.Command, args []string) error {
 
 		if format == output.JSON || len(invalidResults) > 0 {
 			if err := output.PrintCheckResultsFix(out, format, invalidResults); err != nil {
-				return nil, fmt.Errorf("输出失败: %w", err)
+				return nil, fmt.Errorf("%s: %w", l10n.T("Output failed", nil), err)
 			}
 		} else {
-			pterm.Info.WithWriter(errOut).Println("所有链接都有效，无需修复")
+			pterm.Info.WithWriter(errOut).Println(l10n.T("All links are valid; nothing to repair", nil))
 		}
 
 		return invalidResults, nil
@@ -111,10 +112,10 @@ func RunFix(cmd *cobra.Command, args []string) error {
 		for _, idx := range indices {
 			result := invalidResults[idx]
 			if err := repairResult(result, idx, errOut); err != nil {
-				pterm.Error.WithWriter(errOut).Printf("修复失败 #%d %v\n", idx+1, err)
-				operationErrors = append(operationErrors, fmt.Errorf("修复 #%d 失败: %w", idx+1, err))
+				pterm.Error.WithWriter(errOut).Println(l10n.T("Repair failed #{{.Index}}: {{.Err}}", map[string]any{"Index": idx + 1, "Err": err.Error()}))
+				operationErrors = append(operationErrors, fmt.Errorf("%s: %w", l10n.T("Repair #{{.Index}} failed", map[string]any{"Index": idx + 1}), err))
 			} else {
-				pterm.Success.WithWriter(errOut).Printf("修复成功 #%d\n", idx+1)
+				pterm.Success.WithWriter(errOut).Println(l10n.T("Repaired #{{.Index}}", map[string]any{"Index": idx + 1}))
 			}
 		}
 	}
@@ -129,11 +130,11 @@ func RunFix(cmd *cobra.Command, args []string) error {
 	}
 
 	for {
-		pterm.DefaultBox.WithWriter(errOut).WithTitle("INFO").Println(pterm.Green("输入 all 或 a 修复所有\n输入 d<编号> 删除条目，如 d7，单次只能删除一个\n输入 exit 或 q 退出程序\n输入数字以修复对应项\n使用空格分隔"))
-		input, err := pterm.DefaultInteractiveTextInput.WithMultiLine(false).Show("请输入")
+		pterm.DefaultBox.WithWriter(errOut).WithTitle("INFO").Println(pterm.Green(l10n.T("Enter all or a to repair everything\nEnter d<number> to delete an entry, e.g. d7, only one at a time\nEnter exit or q to quit\nEnter numbers to repair the corresponding items\nSeparate with spaces", nil)))
+		input, err := pterm.DefaultInteractiveTextInput.WithMultiLine(false).Show(l10n.T("Enter input", nil))
 		if err != nil {
 			// EOF 等输入错误必须向上传播；若继续下一轮会反复得到同一错误并形成 CPU 空转
-			operationErrors = append(operationErrors, fmt.Errorf("输入错误: %w", err))
+			operationErrors = append(operationErrors, fmt.Errorf("%s: %w", l10n.T("Input error", nil), err))
 			return errors.Join(operationErrors...)
 		}
 
@@ -149,7 +150,7 @@ func RunFix(cmd *cobra.Command, args []string) error {
 			for _, part := range parts {
 				idx, err := strconv.Atoi(part)
 				if err != nil || idx < 1 || idx > len(invalidResults) {
-					pterm.Warning.WithWriter(errOut).Printf("无效编号 %s\n", part)
+					pterm.Warning.WithWriter(errOut).Println(l10n.T("Invalid number {{.Part}}", map[string]any{"Part": part}))
 					continue
 				}
 				indices = append(indices, idx-1)
@@ -175,10 +176,10 @@ func RunFix(cmd *cobra.Command, args []string) error {
 				mgr.RemoveMatchingEntry(platform, result.Device, result.Type, entry)
 			}
 			if err := mgr.Save(store.StorePath); err != nil {
-				pterm.Error.WithWriter(errOut).Println("保存失败 " + err.Error())
-				operationErrors = append(operationErrors, fmt.Errorf("保存失败: %w", err))
+				pterm.Error.WithWriter(errOut).Println(l10n.T("Save failed: {{.Err}}", map[string]any{"Err": err.Error()}))
+				operationErrors = append(operationErrors, fmt.Errorf("%s: %w", l10n.T("Save failed", nil), err))
 			} else {
-				pterm.Success.WithWriter(errOut).Println("删除完成")
+				pterm.Success.WithWriter(errOut).Println(l10n.T("Deletion complete", nil))
 			}
 
 			invalidResults, err = checkAndDisplay()
@@ -202,7 +203,7 @@ func RunFix(cmd *cobra.Command, args []string) error {
 			for _, part := range parts {
 				idx, err := strconv.Atoi(part)
 				if err != nil || idx < 1 || idx > len(invalidResults) {
-					pterm.Warning.WithWriter(errOut).Printf("无效编号 %s\n", part)
+					pterm.Warning.WithWriter(errOut).Println(l10n.T("Invalid number {{.Part}}", map[string]any{"Part": part}))
 					continue
 				}
 				indices = append(indices, idx-1)
@@ -252,11 +253,11 @@ func repairResult(result output.CheckResult, idx int, errorOutput ...io.Writer) 
 	case "symlink":
 		expandedReal, err := pathutil.NormalizePath(result.Real)
 		if err != nil {
-			return fmt.Errorf("展开源路径失败: %w", err)
+			return fmt.Errorf("%s: %w", l10n.T("Failed to expand the source path", nil), err)
 		}
 		expandedFake, err := pathutil.NormalizePath(result.Fake)
 		if err != nil {
-			return fmt.Errorf("展开链接路径失败: %w", err)
+			return fmt.Errorf("%s: %w", l10n.T("Failed to expand the link path", nil), err)
 		}
 
 		// 源（real）缺失时，若链接位置（fake）恰好是一份真实文件/目录（而非悬空/正确的符号链接），
@@ -269,11 +270,11 @@ func repairResult(result output.CheckResult, idx int, errorOutput ...io.Writer) 
 	case "hardlink":
 		expandedPrim, err := pathutil.NormalizePath(result.Prim)
 		if err != nil {
-			return fmt.Errorf("展开主文件路径失败: %w", err)
+			return fmt.Errorf("%s: %w", l10n.T("Failed to expand the primary file path", nil), err)
 		}
 		expandedSeco, err := pathutil.NormalizePath(result.Seco)
 		if err != nil {
-			return fmt.Errorf("展开次文件路径失败: %w", err)
+			return fmt.Errorf("%s: %w", l10n.T("Failed to expand the secondary file path", nil), err)
 		}
 
 		// 主文件（prim）缺失时，尝试用次文件（seco）回填后再重建硬链接
@@ -285,18 +286,18 @@ func repairResult(result output.CheckResult, idx int, errorOutput ...io.Writer) 
 	case "copy":
 		expandedSrc, err := pathutil.NormalizePath(result.Src)
 		if err != nil {
-			return fmt.Errorf("展开源路径失败: %w", err)
+			return fmt.Errorf("%s: %w", l10n.T("Failed to expand the source path", nil), err)
 		}
 		expandedDst, err := pathutil.NormalizePath(result.Dst)
 		if err != nil {
-			return fmt.Errorf("展开目标路径失败: %w", err)
+			return fmt.Errorf("%s: %w", l10n.T("Failed to expand the destination path", nil), err)
 		}
 
 		srcInfo, srcErr := os.Stat(expandedSrc)
 		dstInfo, dstErr := os.Stat(expandedDst)
 
 		if srcErr != nil && dstErr != nil {
-			return fmt.Errorf("源文件和目标文件都不存在")
+			return fmt.Errorf("%s", l10n.T("Both the source and destination files are missing", nil))
 		}
 
 		var from, to string
@@ -316,7 +317,7 @@ func repairResult(result output.CheckResult, idx int, errorOutput ...io.Writer) 
 
 		return copy.Create(from, to, fixForce, false, removeOutput)
 	}
-	return fmt.Errorf("未知类型 %s", result.Type)
+	return fmt.Errorf("%s", l10n.T("Unknown type {{.Type}}", map[string]any{"Type": result.Type}))
 }
 
 // backfillSourceIfMissing 在权威副本（source，即 real/prim）缺失、而派生位置（derived，即 fake/seco）
@@ -338,16 +339,16 @@ func backfillSourceIfMissing(source, derived, sourceLabel, derivedLabel string) 
 	// source 缺失，检查 derived 是否是可用于回填的真实数据
 	derivedInfo, err := os.Lstat(derived)
 	if err != nil {
-		return fmt.Errorf("%s 与 %s 均不可用，无法修复", sourceLabel, derivedLabel)
+		return fmt.Errorf("%s", l10n.T("Neither {{.Source}} nor {{.Derived}} is usable; cannot repair", map[string]any{"Source": sourceLabel, "Derived": derivedLabel}))
 	}
 	if derivedInfo.Mode()&os.ModeSymlink != 0 {
 		// derived 本身是符号链接，复制它得到的仍是链接，无法作为权威真实数据
-		return fmt.Errorf("%s 缺失且 %s 是符号链接，无法回填 %s", sourceLabel, derivedLabel, sourceLabel)
+		return fmt.Errorf("%s", l10n.T("{{.Source}} is missing and {{.Derived}} is a symbolic link; cannot back-fill {{.Source}}", map[string]any{"Source": sourceLabel, "Derived": derivedLabel}))
 	}
 
-	logger.Info("源缺失，尝试用派生位置回填", "from", derived, "to", source)
+	logger.Info(l10n.T("Source missing; attempting to back-fill from the derived location", nil), "from", derived, "to", source)
 	if err := pathutil.Copy(derived, source); err != nil {
-		return fmt.Errorf("回填 %s 失败: %w", sourceLabel, err)
+		return fmt.Errorf("%s: %w", l10n.T("Failed to back-fill {{.Source}}", map[string]any{"Source": sourceLabel}), err)
 	}
 	return nil
 }
