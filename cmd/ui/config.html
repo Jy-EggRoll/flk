@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>flk 配置</title>
+<title>flk config</title>
 <style>
 *,*::before,*::after { margin: 0; padding: 0; box-sizing: border-box; }
 html,body { height: 100%; }
@@ -120,22 +120,23 @@ tr.drag-over { border-top: 2px solid #d97706; }
 .modal-box .radio-group input[type="radio"] { accent-color: #d97706; width: 16px; height: 16px; }
 .modal-box .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
 </style>
+  <script>window.__FLK_LANG__ = "__FLK_LANG_VALUE__";</script>
 </head>
 <body>
 <header class="header">
-  <h1>flk 配置</h1>
+  <h1 data-i18n="flk config">flk config</h1>
   <div class="header-right">
     <div id="viewActions">
-      <button id="recheckBtn" class="btn btn-edit" title="重新检测当前平台所有条目的链接可用性">重新检测</button>
-      <button id="editBtn" class="btn btn-edit">编辑</button>
+      <button id="recheckBtn" class="btn btn-edit" data-i18n-title="Re-check the availability of all entries on the current platform" data-i18n="Re-check">Re-check</button>
+      <button id="editBtn" class="btn btn-edit" data-i18n="Edit">Edit</button>
     </div>
     <div id="editActions" class="hidden">
-      <button id="saveBtn" class="btn btn-save">保存</button>
-      <button id="cancelBtn" class="btn btn-cancel">取消</button>
+      <button id="saveBtn" class="btn btn-save" data-i18n="Save">Save</button>
+      <button id="cancelBtn" class="btn btn-cancel" data-i18n="Cancel">Cancel</button>
     </div>
     <div class="status">
       <span class="dot offline" id="statusDot"></span>
-      <span id="statusText">连接中…</span>
+      <span id="statusText" data-i18n="Connecting…">Connecting…</span>
     </div>
   </div>
 </header>
@@ -146,23 +147,23 @@ tr.drag-over { border-top: 2px solid #d97706; }
 </div>
 
 <div class="main" id="main">
-  <div id="loading" style="text-align:center;padding:60px 0;color:#a8a29e;">加载中…</div>
+  <div id="loading" style="text-align:center;padding:60px 0;color:#a8a29e;" data-i18n="Loading…">Loading…</div>
   <div id="panel" class="hidden">
     <!-- Platform -->
-    <div class="section-label">平台</div>
+    <div class="section-label" data-i18n="Platform">Platform</div>
     <div class="tab-bar" id="platformTabs"></div>
     <!-- Device -->
-    <div class="section-label">设备</div>
+    <div class="section-label" data-i18n="Device">Device</div>
     <div class="tab-bar" id="deviceTabs"></div>
     <div id="addDeviceArea" class="hidden" style="margin-bottom:16px;">
       <div class="add-device-form">
-        <input id="newDeviceInput" placeholder="新建设备名称" maxlength="50">
-        <button class="btn btn-sm btn-add" id="addDeviceBtn">添加</button>
-        <button class="btn btn-sm btn-ghost" id="cancelAddDeviceBtn">取消</button>
+        <input id="newDeviceInput" placeholder="New device name" data-i18n-placeholder="New device name" maxlength="50">
+        <button class="btn btn-sm btn-add" id="addDeviceBtn" data-i18n="Add">Add</button>
+        <button class="btn btn-sm btn-ghost" id="cancelAddDeviceBtn" data-i18n="Cancel">Cancel</button>
       </div>
     </div>
     <!-- Link Type -->
-    <div class="section-label">链接类型</div>
+    <div class="section-label" data-i18n="Link type">Link type</div>
     <div class="tab-bar" id="typeTabs"></div>
     <!-- Entries Table -->
     <div id="entriesArea">
@@ -172,15 +173,15 @@ tr.drag-over { border-top: 2px solid #d97706; }
           <tbody id="tableBody"></tbody>
         </table>
         <div id="actionBar" class="action-bar hidden">
-          <span id="selCount" class="sel-count">已选 0 条</span>
-          <button id="migrateBtn" class="btn btn-sm btn-add hidden">迁移</button>
+          <span id="selCount" class="sel-count"></span>
+          <button id="migrateBtn" class="btn btn-sm btn-add hidden" data-i18n="Migrate">Migrate</button>
           <span style="flex:1"></span>
-          <button id="addEntryBtn" class="btn btn-sm btn-add">+ 新增条目</button>
+          <button id="addEntryBtn" class="btn btn-sm btn-add" data-i18n="+ Add entry">+ Add entry</button>
         </div>
       </div>
       <div id="emptyState" class="empty-state hidden">
-        <p>暂无条目</p>
-        <button id="addEntryBtnEmpty" class="btn btn-sm btn-add hidden">+ 新增条目</button>
+        <p data-i18n="No entries">No entries</p>
+        <button id="addEntryBtnEmpty" class="btn btn-sm btn-add hidden" data-i18n="+ Add entry">+ Add entry</button>
       </div>
     </div>
   </div>
@@ -197,30 +198,30 @@ tr.drag-over { border-top: 2px solid #d97706; }
 
 <div id="migrateModal" class="modal-overlay hidden">
   <div class="modal-box">
-    <h2>跨设备迁移</h2>
+    <h2 data-i18n="Cross-device migration">Cross-device migration</h2>
     <div class="field"><span id="migrateCount" style="font-size:13px;color:#a8a29e;"></span></div>
     <div class="field">
-      <label>目标平台</label>
+      <label data-i18n="Target platform">Target platform</label>
       <select id="migrateTargetPlat"></select>
     </div>
     <div class="field">
-      <label>目标设备</label>
+      <label data-i18n="Target device">Target device</label>
       <select id="migrateTargetDev"></select>
     </div>
     <div class="field">
-      <label>目标链接类型</label>
+      <label data-i18n="Target link type">Target link type</label>
       <select id="migrateTargetType"></select>
     </div>
     <div class="field">
-      <label>操作方式</label>
+      <label data-i18n="Mode">Mode</label>
       <div class="radio-group">
-        <label><input type="radio" name="migrateAction" value="copy" checked> 复制（保留源条目）</label>
-        <label><input type="radio" name="migrateAction" value="move"> 移动（删除源条目）</label>
+        <label><input type="radio" name="migrateAction" value="copy" checked> <span data-i18n="Copy (keep source entries)">Copy (keep source entries)</span></label>
+        <label><input type="radio" name="migrateAction" value="move"> <span data-i18n="Move (delete source entries)">Move (delete source entries)</span></label>
       </div>
     </div>
     <div class="modal-actions">
-      <button id="migrateCancelBtn" class="btn btn-ghost">取消</button>
-      <button id="migrateConfirmBtn" class="btn btn-save">确认迁移</button>
+      <button id="migrateCancelBtn" class="btn btn-ghost" data-i18n="Cancel">Cancel</button>
+      <button id="migrateConfirmBtn" class="btn btn-save" data-i18n="Confirm migration">Confirm migration</button>
     </div>
   </div>
 </div>
@@ -228,6 +229,84 @@ tr.drag-over { border-top: 2px solid #d97706; }
 <script>
 ;(function () {
 'use strict';
+
+/* ---------- i18n ----------
+   WebUI 文案不走 Go 源码提取管线（该管线只扫描 .go），因此把英文源串作为 key，
+   翻译表内嵌在本页；Go 端仅把当前语言注入 window.__FLK_LANG__。
+   tr() 取译文（无译文时回退英文源串），trf() 再替换 {name} 占位符，
+   applyI18N() 负责把 data-i18n / placeholder / title 三类静态文案一次翻译完。 */
+var LANG = (window.__FLK_LANG__ || 'en');
+var MSG = {
+  'zh-CN': {
+    'flk config': 'flk 配置',
+    'Re-check the availability of all entries on the current platform': '重新检测当前平台所有条目的链接可用性',
+    'Re-check': '重新检测',
+    'Edit': '编辑',
+    'Save': '保存',
+    'Cancel': '取消',
+    'Connecting…': '连接中…',
+    'Loading…': '加载中…',
+    'Platform': '平台',
+    'Device': '设备',
+    'New device name': '新建设备名称',
+    'Add': '添加',
+    'Link type': '链接类型',
+    'Migrate': '迁移',
+    '+ Add entry': '+ 新增条目',
+    'No entries': '暂无条目',
+    'Cross-device migration': '跨设备迁移',
+    'Target platform': '目标平台',
+    'Target device': '目标设备',
+    'Target link type': '目标链接类型',
+    'Mode': '操作方式',
+    'Copy (keep source entries)': '复制（保留源条目）',
+    'Move (delete source entries)': '移动（删除源条目）',
+    'Confirm migration': '确认迁移',
+    'Connected': '已连接',
+    'Disconnected': '已断开',
+    'Delete device {dev}': '删除设备 {dev}',
+    '+ New device': '+ 新建设备',
+    'Delete device "{dev}" and all its entries?': '确定要删除设备 "{dev}" 及其所有配置条目吗？',
+    'Status': '状态',
+    'Actions': '操作',
+    'Delete': '删除',
+    'Selected {n} items': '已选 {n} 条',
+    'Valid': '有效',
+    'Invalid': '无效',
+    'Checking…': '检测中…',
+    'Checked at: {time}': '检测时间: {time}',
+    'Availability check failed: {msg}': '可用性检测失败: {msg}',
+    'Device name must not be empty': '设备名不能为空',
+    'Device name must not contain commas or spaces': '设备名不能包含逗号或空格',
+    'Select the entries to migrate first': '请先勾选要迁移的条目',
+    'Selected {n} entries': '已选 {n} 条条目',
+    '-- Create a device first --': '-- 请先建建设备 --',
+    'Please select a target device': '请选择目标设备',
+    'No entries selected': '没有选中任何条目',
+    'Migration complete: {n} entries': '迁移成功，共 {n} 条',
+    'Path: {path}': '路径: {path}',
+    'Modified: {time}': '修改时间: {time}',
+    ' | Size: {size}': ' | 大小: {size}',
+    'Failed to load the config: {msg}': '加载配置失败: {msg}',
+    'Saving…': '保存中…',
+    'Saved successfully': '保存成功',
+    'Save failed: {msg}': '保存失败: {msg}',
+    'Last updated: {time}': '最后更新: {time}',
+    'Connecting to the server…': '连接服务端…'
+  }
+};
+function tr(s) { var d = MSG[LANG]; return (d && d[s]) || s; }
+function trf(s, vars) {
+  return tr(s).replace(/\{(\w+)\}/g, function (_, k) {
+    return (vars && vars[k] != null) ? vars[k] : '{' + k + '}';
+  });
+}
+function applyI18N() {
+  document.title = tr('flk config');
+  document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = tr(el.getAttribute('data-i18n')); });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(function (el) { el.setAttribute('placeholder', tr(el.getAttribute('data-i18n-placeholder'))); });
+  document.querySelectorAll('[data-i18n-title]').forEach(function (el) { el.setAttribute('title', tr(el.getAttribute('data-i18n-title'))); });
+}
 
 /* ---------- Constants ---------- */
 var STORE_API = '/api/config';
@@ -237,16 +316,16 @@ var CHECK_API = '/api/check';
 /* 每种链接类型的字段定义 */
 var TYPE_FIELDS = {
   symlink: [
-    { key: 'real', label: '真实路径' },
-    { key: 'fake', label: '链接路径' }
+    { key: 'real', label: 'Real path' },
+    { key: 'fake', label: 'Link path' }
   ],
   hardlink: [
-    { key: 'prim', label: '主文件' },
-    { key: 'seco', label: '次文件' }
+    { key: 'prim', label: 'Primary file' },
+    { key: 'seco', label: 'Secondary file' }
   ],
   copy: [
-    { key: 'src', label: '源文件' },
-    { key: 'dst', label: '目标文件' }
+    { key: 'src', label: 'Source file' },
+    { key: 'dst', label: 'Destination file' }
   ]
 };
 
@@ -310,7 +389,7 @@ var checkLoaded   = false;/* 是否已成功完成过一次检测（区分「未
 /* ---------- UI Helpers ---------- */
 function setOnline(online) {
   statusDot.className = 'dot ' + (online ? 'online' : 'offline');
-  statusText.textContent = online ? '已连接' : '已断开';
+  statusText.textContent = online ? tr('Connected') : tr('Disconnected');
 }
 
 function showError(msg) {
@@ -388,13 +467,13 @@ function renderDeviceTabs() {
     if (isEditing) {
       return '<span class="tab' + active + '" data-dev="' + d + '" style="display:inline-flex;align-items:center;gap:4px;">' +
         d +
-        '<button class="btn-dev-del" data-dev="' + d + '" title="删除设备 ' + d + '">&times;</button>' +
+        '<button class="btn-dev-del" data-dev="' + d + '" title="' + attrEsc(trf('Delete device {dev}', {dev: d})) + '">&times;</button>' +
         '</span>';
     }
     return '<button class="tab' + active + '" data-dev="' + d + '">' + d + '</button>';
   }).join('');
   if (isEditing) {
-    html += '<button class="tab btn-ghost" id="showAddDeviceBtn" style="color:#d97706;">+ 新建设备</button>';
+    html += '<button class="tab btn-ghost" id="showAddDeviceBtn" style="color:#d97706;">' + tr('+ New device') + '</button>';
   }
   deviceTabs.innerHTML = html;
   if (devs.indexOf(currentDev) < 0 && devs.length > 0) {
@@ -411,7 +490,7 @@ function renderDeviceTabs() {
     btn.addEventListener('click', function (e) {
       e.stopPropagation();
       var dev = btn.dataset.dev;
-      if (!confirm('确定要删除设备 "' + dev + '" 及其所有配置条目吗？')) return;
+      if (!confirm(trf('Delete device "{dev}" and all its entries?', {dev: dev}))) return;
       delete data[currentPlat][dev];
       if (currentDev === dev) {
         var devs = getDevices(currentPlat);
@@ -453,10 +532,10 @@ function renderTable() {
   if (isEditing) headHtml += '<th class="cb-col"><input type="checkbox" class="cb-all"' + (allSelected ? ' checked' : '') + ' id="cbAll"></th>';
   if (isEditing) headHtml += '<th class="drag-handle"></th>';
   headHtml += '<th class="num-col">#</th>';
-  fields.forEach(function (f) { headHtml += '<th>' + f.label + '</th>'; });
+  fields.forEach(function (f) { headHtml += '<th>' + tr(f.label) + '</th>'; });
   /* 可用性状态列仅查看模式展示：编辑模式下条目值可能被改动，旧状态会误导 */
-  if (!isEditing) headHtml += '<th class="health-col">状态</th>';
-  if (isEditing) headHtml += '<th class="action-col">操作</th>';
+  if (!isEditing) headHtml += '<th class="health-col">' + tr('Status') + '</th>';
+  if (isEditing) headHtml += '<th class="action-col">' + tr('Actions') + '</th>';
   tableHead.innerHTML = headHtml;
 
   /* Body */
@@ -493,7 +572,7 @@ function renderTable() {
       rowsHtml += '<td class="health-col">' + healthBadge(entry) + '</td>';
     }
     if (isEditing) {
-      rowsHtml += '<td class="action-col"><button class="btn btn-sm btn-dell" data-idx="' + idx + '">删除</button></td>';
+      rowsHtml += '<td class="action-col"><button class="btn btn-sm btn-dell" data-idx="' + idx + '">' + tr('Delete') + '</button></td>';
     }
     rowsHtml += '</tr>';
   });
@@ -560,7 +639,7 @@ function updateMigrateBtn() {
     migrateBtn.classList.toggle('hidden', count === 0);
   }
   var selLabel = document.getElementById('selCount');
-  if (selLabel) { selLabel.textContent = '已选 ' + count + ' 条'; }
+  if (selLabel) { selLabel.textContent = trf('Selected {n} items', {n: count}); }
 }
 
 function attrEsc(s) { return String(s).replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -583,14 +662,14 @@ function healthBadge(entry) {
   }
   var st = checkMap[buildCheckKey(currentDev, currentType, entry)];
   if (!st) return '<span class="health-badge health-none">—</span>';
-  if (st.valid) return '<span class="health-badge health-ok">有效</span>';
-  return '<span class="health-badge health-bad" title="' + attrEsc(st.error) + '">无效</span>';
+  if (st.valid) return '<span class="health-badge health-ok">' + tr('Valid') + '</span>';
+  return '<span class="health-badge health-bad" title="' + attrEsc(st.error) + '">' + tr('Invalid') + '</span>';
 }
 
 /* 调用 /api/check 全量检测当前平台，完成后非编辑态下刷新状态列
    检测涉及文件系统操作可能较慢，异步执行不阻塞主渲染 */
 async function loadCheckStatus() {
-  checkInfoEl.textContent = '检测中…';
+  checkInfoEl.textContent = tr('Checking…');
   try {
     var resp = await fetch(CHECK_API);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -601,10 +680,10 @@ async function loadCheckStatus() {
       checkMap[buildCheckKey(r.device, r.type, r)] = { valid: r.valid, error: r.error || '' };
     });
     checkLoaded = true;
-    checkInfoEl.textContent = '检测时间: ' + new Date().toLocaleTimeString();
+    checkInfoEl.textContent = trf('Checked at: {time}', {time: new Date().toLocaleTimeString()});
   } catch (err) {
     checkLoaded = false;
-    checkInfoEl.textContent = '可用性检测失败: ' + err.message;
+    checkInfoEl.textContent = trf('Availability check failed: {msg}', {msg: err.message});
   }
   /* 编辑模式下不重绘表格，避免打断用户输入；状态会在退出编辑后自然更新 */
   if (!isEditing) renderTable();
@@ -682,9 +761,9 @@ function addEntry() {
 /* ---------- Add device ---------- */
 function addDevice() {
   var name = newDeviceInput.value.trim();
-  if (!name) { showError('设备名不能为空'); return; }
+  if (!name) { showError(tr('Device name must not be empty')); return; }
   if (name.indexOf(',') >= 0 || name.indexOf(' ') >= 0) {
-    showError('设备名不能包含逗号或空格'); return;
+    showError(tr('Device name must not contain commas or spaces')); return;
   }
   ensurePath(currentPlat, name);
   currentDev = name;
@@ -699,8 +778,8 @@ function addDevice() {
 function openMigrateModal() {
   collectInputs();
   var count = Object.keys(selectedIndices).filter(function (k) { return selectedIndices[k]; }).length;
-  if (count === 0) { showError('请先勾选要迁移的条目'); return; }
-  migrateCount.textContent = '已选 ' + count + ' 条条目';
+  if (count === 0) { showError(tr('Select the entries to migrate first')); return; }
+  migrateCount.textContent = trf('Selected {n} entries', {n: count});
 
   /* 填充目标平台列表 */
   var plats = getPlatforms();
@@ -729,7 +808,7 @@ function fillTargetDevs() {
   }).join('');
   if (devs.length === 0) {
     /* 目标平台没有设备，自动添加一个 */
-    migrateTargetDev.innerHTML = '<option value="">-- 请先建建设备 --</option>';
+    migrateTargetDev.innerHTML = '<option value="">' + tr('-- Create a device first --') + '</option>';
   }
 }
 
@@ -741,7 +820,7 @@ function doMigrate() {
   var isMove = false;
   migrateActionRadios.forEach(function (r) { if (r.checked && r.value === 'move') isMove = true; });
 
-  if (!targetDev) { showError('请选择目标设备'); return; }
+  if (!targetDev) { showError(tr('Please select a target device')); return; }
 
   /* 确保目标路径存在 */
   ensurePath(targetPlat, targetDev);
@@ -755,7 +834,7 @@ function doMigrate() {
     }
   });
 
-  if (toMigrate.length === 0) { showError('没有选中任何条目'); return; }
+  if (toMigrate.length === 0) { showError(tr('No entries selected')); return; }
 
   /* 追加到目标 */
   var targetArr = data[targetPlat][targetDev][targetType] || [];
@@ -775,7 +854,7 @@ function doMigrate() {
   migrateModal.classList.add('hidden');
   updateMigrateBtn();
   renderTable();
-  showSuccess('迁移成功，共 ' + toMigrate.length + ' 条');
+  showSuccess(trf('Migration complete: {n} entries', {n: toMigrate.length}));
 }
 
 /* ---------- Navigation ---------- */
@@ -795,10 +874,10 @@ async function loadConfig() {
 
     try {
       var meta = await fetch('/api/meta').then(function (r) { return r.json(); });
-      if (meta.storePath) storePathEl.textContent = '路径: ' + meta.storePath;
+      if (meta.storePath) storePathEl.textContent = trf('Path: {path}', {path: meta.storePath});
       var info = '';
-      if (meta.modTime) info += '修改时间: ' + meta.modTime;
-      if (meta.fileSize) info += ' | 大小: ' + meta.fileSize;
+      if (meta.modTime) info += trf('Modified: {time}', {time: meta.modTime});
+      if (meta.fileSize) info += trf(' | Size: {size}', {size: meta.fileSize});
       fileInfo.textContent = info;
     } catch (_) {}
 
@@ -818,14 +897,14 @@ async function loadConfig() {
        这也使 SSE updated 触发的 loadConfig 自动带动状态刷新，形成自动刷新闭环 */
     loadCheckStatus();
   } catch (err) {
-    showError('加载配置失败: ' + err.message);
+    showError(trf('Failed to load the config: {msg}', {msg: err.message}));
     setOnline(false);
   }
 }
 
 async function saveConfig() {
   saveBtn.disabled = true;
-  saveBtn.textContent = '保存中…';
+  saveBtn.textContent = tr('Saving…');
   hideError();
 
   /* 收集所有 input 最新值 */
@@ -838,15 +917,15 @@ async function saveConfig() {
       body: JSON.stringify(data)
     });
     if (!resp.ok) { var txt = await resp.text(); throw new Error(txt || 'HTTP ' + resp.status); }
-    showSuccess('保存成功');
+    showSuccess(tr('Saved successfully'));
     origin = JSON.parse(JSON.stringify(data));
     setModeUI(false);
     renderAll();
   } catch (err) {
-    showError('保存失败: ' + err.message);
+    showError(trf('Save failed: {msg}', {msg: err.message}));
   } finally {
     saveBtn.disabled = false;
-    saveBtn.textContent = '保存';
+    saveBtn.textContent = tr('Save');
   }
 }
 
@@ -882,7 +961,7 @@ function connectSSE() {
   es.onopen  = function () { setOnline(true); };
   es.onerror = function () { setOnline(false); };
   es.addEventListener('updated', function () {
-    updateInfo.textContent = '最后更新: ' + new Date().toLocaleTimeString();
+    updateInfo.textContent = trf('Last updated: {time}', {time: new Date().toLocaleTimeString()});
     if (isEditing) return;
     loadConfig();
   });
@@ -890,7 +969,8 @@ function connectSSE() {
 
 /* ---------- Init ---------- */
 function init() {
-  storePathEl.textContent = '连接服务端…';
+  storePathEl.textContent = tr('Connecting to the server…');
+  applyI18N();
 
   editBtn.addEventListener('click', enterEditMode);
   recheckBtn.addEventListener('click', loadCheckStatus);
