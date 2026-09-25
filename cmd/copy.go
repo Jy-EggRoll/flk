@@ -92,6 +92,7 @@ func Copy(cmd *cobra.Command, args []string) error {
 			TargetPath:  normalizedDst,
 			Smart:       createSmart,
 			Force:       createForce,
+			NoTrash:     noTrash,
 			SourceLabel: "src",
 			TargetLabel: "dst",
 			Output:      cmd.ErrOrStderr(),
@@ -106,7 +107,7 @@ func Copy(cmd *cobra.Command, args []string) error {
 	}
 
 	if !operationCompleted {
-		if err := createcopy.Create(normalizedSrc, normalizedDst, createForce, createSmart, cmd.ErrOrStderr()); err != nil {
+		if err := createcopy.Create(normalizedSrc, normalizedDst, createForce, createSmart, noTrash, cmd.ErrOrStderr()); err != nil {
 			if errors.Is(err, safeop.ErrOperationCancelled) {
 				return renderCreateCancellation(cmd, format, resultType)
 			}

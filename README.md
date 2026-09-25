@@ -138,6 +138,25 @@ flk fix --yes
 flk unlink -y
 ```
 
+### 真实删除（--no-trash）
+
+flk 覆盖或解除链接时，默认只做“假删除”：把旧文件移入自己的回收站（`~/.local/share/flk/trash`，按时间戳与原路径结构存放），因此所有数据都能找回。
+
+想让删除一步到位、不占用回收站空间时，使用全局 `--no-trash`：
+
+```sh
+# 覆盖 fake 时直接真实删除旧文件，不进入回收站
+flk create symlink -r ~/.config/myapp/config.json -f "/path/to/config.json" --no-trash
+
+# 解除链接时直接真实删除旧的符号链接
+flk unlink --no-trash
+```
+
+- 它是全局开关，对 `create`（symlink / hardlink / copy）、`fix`、`unlink` 一次生效
+- 删除计划文案会相应变化：默认显示“will be moved to the trash”，启用后显示“will be permanently deleted”
+- **真实删除不可恢复**，且删除符号链接时只删除链接本身，不会牵动它指向的真实数据
+- 默认行为（不传该开关）保持原样，仍然进回收站
+
 ### 链接创建与管理
 
 - 语义化的链接创建，舍弃了传统的“源”“目标”链接这样的表述方式，使用“主要”“次要”这样的语义化参数来指定文件，创建文件链接时更直观。

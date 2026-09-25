@@ -79,6 +79,7 @@ func Hardlink(cmd *cobra.Command, args []string) error {
 		TargetPath:  normalizedSeco,
 		Smart:       createSmart,
 		Force:       createForce,
+		NoTrash:     noTrash,
 		SourceLabel: "prim",
 		TargetLabel: "seco",
 		Output:      cmd.ErrOrStderr(),

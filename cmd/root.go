@@ -40,6 +40,10 @@ var (
 	// 它是 flk 的非交互总开关，供脚本、CI 及其它无人值守场景使用
 	assumeYes bool
 
+	// noTrash 对应全局 --no-trash：为真时所有删除都真实执行而不移入 FLK 回收站
+	// 它是 flk 唯一会永久销毁数据的开关，默认 false 保持「删除即进回收站」的历史行为
+	noTrash bool
+
 	// windowsAdminChecker 由 main 注入，非 Windows 构建保持 nil
 	// 回调只负责返回权限状态，所有展示均留在根生命周期内，确保使用统一 logger 和 stderr writer
 	windowsAdminChecker func() bool
@@ -254,6 +258,10 @@ func init() {
 	// --yes 是全局非交互总开关：为真时所有确认自动同意，且不读取终端
 	// 它必须持久化到所有叶子命令，才能让 create/fix/unlink/upgrade 等统一免交互
 	rootCmd.PersistentFlags().BoolVarP(&assumeYes, "yes", "y", false, l10n.T("Assume yes to all confirmations and never prompt (non-interactive mode)", nil))
+
+	// --no-trash 与 --yes 同为全局持久化 flag：删除行为贯穿 create/fix/unlink 三条链路，
+	// 且都要经由 safeop 统一决策，因此必须在根层声明一次，避免各叶子命令各自定义导致语义漂移
+	rootCmd.PersistentFlags().BoolVar(&noTrash, "no-trash", false, l10n.T("Delete files permanently instead of moving them to the trash (data cannot be recovered)", nil))
 	rootCmd.Flags().Bool("version", false, l10n.T("Display version information", nil))
 
 	// --lang 持久化 flag：声明它的唯一目的是让 cobra 认可这个参数，否则命令行里出现

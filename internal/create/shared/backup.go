@@ -19,6 +19,7 @@ type BackupOptions struct {
 	TargetPath  string    // 副路径 (fake/seco/dst) — 备份来源
 	Smart       bool      // --smart: 自动备份，不询问
 	Force       bool      // --force: 跳过删除确认
+	NoTrash     bool      // --no-trash: 覆盖目标时真实删除而不移入回收站
 	SourceLabel string    // "real"/"prim"/"src" — 提示用
 	TargetLabel string    // "fake"/"seco"/"dst" — 提示用
 	Output      io.Writer // 接收备份进度和删除计划，命令层应传入 stderr，避免污染结构化 stdout
@@ -33,11 +34,12 @@ type BackupResult struct {
 // HandleTargetBackup 检查 target 路径是否存在，如果存在则询问用户是否备份到 source
 // target 存在说明有重要数据需要保护，source 是数据的最终归宿
 func HandleTargetBackup(opts BackupOptions) (BackupResult, error) {
-	// 即使 target 当前不存在，后续创建阶段仍可能需要删除阻塞父目录，因此必须在任何提前返回前传递 Force 和 Output
+	// 即使 target 当前不存在，后续创建阶段仍可能需要删除阻塞父目录，因此必须在任何提前返回前传递 Force、NoTrash 和 Output
 	result := BackupResult{
 		RemoveOpts: safeop.RemoveOptions{
-			Force:  opts.Force,
-			Output: opts.Output,
+			Force:   opts.Force,
+			NoTrash: opts.NoTrash,
+			Output:  opts.Output,
 		},
 	}
 

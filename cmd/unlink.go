@@ -15,7 +15,6 @@ import (
 	"github.com/jy-eggroll/flk/internal/prompt"
 	"github.com/jy-eggroll/flk/internal/safeop"
 	"github.com/jy-eggroll/flk/internal/store"
-	"github.com/jy-eggroll/flk/internal/trash"
 	"github.com/jy-eggroll/flk/pkg/l10n"
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
@@ -285,7 +284,8 @@ func unlinkResult(result output.CheckResult, skipConfirm bool, errorOutput ...io
 //   - 先用 filepath.EvalSymlinks 解析 source 的真实路径：若 source 自身是符号链接，会跟随到其最终
 //     指向的真实文件/目录，满足需求「如果是符号链接，则是实际目录」，确保复制出的是真实数据而非又一个链接
 //   - source 不可用（缺失/无法解析）时立即报错并跳过，绝不删除派生位置，避免破坏数据（源缺失不破坏）
-//   - 将派生位置的旧链接移入回收站（而非真实删除），所有数据都可恢复
+//   - 将派生位置的旧链接删除（默认移入回收站而非真实删除，所有数据都可恢复；
+//     全局 --no-trash 生效时改为真实删除）
 //   - 移动后用 pathutil.Copy 把真实数据复制到派生位置；Copy 会正确处理文件与目录（目录递归复制）
 //
 // skipConfirm 为真时跳过交互确认（来自 --all/--yes/--force）；为假且环境不可交互时，
@@ -302,9 +302,11 @@ func replaceWithReal(source, derived, sourceLabel, derivedLabel string, skipConf
 	}
 
 	if !skipConfirm {
+		// 文案不能写死「删除链接」：--no-trash 时该链接是被永久删除的，
+		// 而默认模式下它只是被移入回收站，用中性表述才能同时覆盖两种策略
 		pterm.Warning.WithWriter(errOut).Println(l10n.T("About to remove the link and replace it with a real file: {{.Path}}", map[string]any{"Path": derived}))
 		// 统一经 prompt.Confirm：--yes 直接同意，非终端且未 --yes 时返回错误而非阻塞
-		confirm, cerr := prompt.Confirm(l10n.T("Confirm removing this link relationship?", nil), false)
+		confirm, cerr := prompt.Confirm(l10n.T("Confirm replacing this link with a real file?", nil), false)
 		if cerr != nil {
 			return fmt.Errorf("%s: %w", l10n.T("Failed to get the confirmation input", nil), cerr)
 		}
@@ -313,9 +315,11 @@ func replaceWithReal(source, derived, sourceLabel, derivedLabel string, skipConf
 		}
 	}
 
-	// 将派生位置的旧链接移入回收站；不存在则视为已就绪
-	if err := trash.MoveToTrash(derived); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("%s: %w", l10n.T("Failed to move {{.Derived}} to the trash", map[string]any{"Derived": derivedLabel}), err)
+	// 派生位置不存在时视为已就绪（safeop.Delete 对不存在的路径直接返回 nil）
+	// 删除策略统一交给 safeop：默认移入回收站，--no-trash 时为真实删除；
+	// 因此错误文案保持中性（只说删除），不写死「移至回收站」以免与真实删除模式矛盾
+	if err := safeop.Delete(derived, noTrash); err != nil {
+		return fmt.Errorf("%s: %w", l10n.T("Failed to delete {{.Derived}}", map[string]any{"Derived": derivedLabel}), err)
 	}
 
 	// 用权威源的真实内容在派生位置生成一份独立副本，至此二者不再共享链接关系

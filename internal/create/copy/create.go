@@ -14,7 +14,8 @@ import (
 
 // Create 复制单个普通文件，并把删除计划写入可选的 outputs[0]
 // 可选 writer 让 create 命令把交互过程定向到 stderr，同时保留 fix 等非命令调用方的既有调用形式
-func Create(src, dst string, force, smart bool, outputs ...io.Writer) error {
+// noTrash 决定覆盖目标时的删除策略：为真则真实删除，为假（默认）则移入回收站
+func Create(src, dst string, force, smart, noTrash bool, outputs ...io.Writer) error {
 	var progressOutput io.Writer
 	if len(outputs) > 0 {
 		progressOutput = outputs[0]
@@ -49,7 +50,7 @@ func Create(src, dst string, force, smart bool, outputs ...io.Writer) error {
 
 	if dstExists && !smart {
 		logger.Debug(l10n.T("The destination file exists and smart mode is off; asking whether to delete", nil), "path", dst)
-		if _, removeErr := safeop.RemoveWithConfirm(dst, safeop.RemoveOptions{Force: force, Output: progressOutput}); removeErr != nil {
+		if _, removeErr := safeop.RemoveWithConfirm(dst, safeop.RemoveOptions{Force: force, NoTrash: noTrash, Output: progressOutput}); removeErr != nil {
 			if errors.Is(removeErr, safeop.ErrOperationCancelled) {
 				logger.Info(l10n.T("User cancelled deleting the destination file", nil), "path", dst)
 				return removeErr
@@ -62,7 +63,7 @@ func Create(src, dst string, force, smart bool, outputs ...io.Writer) error {
 		if errors.Is(err, &pathutil.ExistsButNotDirectoryError{}) {
 			// 父路径删除计划属于交互过程，必须使用调用方注入的进度流，不能混入最终结果 stdout
 			parentPath := filepath.Dir(dst)
-			if _, removeErr := safeop.RemoveWithConfirm(parentPath, safeop.RemoveOptions{Force: force, Output: progressOutput}); removeErr != nil {
+			if _, removeErr := safeop.RemoveWithConfirm(parentPath, safeop.RemoveOptions{Force: force, NoTrash: noTrash, Output: progressOutput}); removeErr != nil {
 				if errors.Is(removeErr, safeop.ErrOperationCancelled) {
 					logger.Info(l10n.T("User cancelled deleting the destination parent path", nil), "path", parentPath)
 					return removeErr

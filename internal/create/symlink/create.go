@@ -36,8 +36,9 @@ func Create(realPath, fakePath string, removeOpts safeop.RemoveOptions) error {
 	if err := pathutil.EnsureDirExists(fakePath); err != nil {
 		if errors.Is(err, &pathutil.ExistsButNotDirectoryError{}) {
 			// fakePath 的父路径存在但不是目录（是文件或符号链接），删除计划必须沿用命令层注入的 stderr
+			// NoTrash 一并透传，保证父路径删除与目标删除采用同一删除策略
 			parentPath := filepath.Dir(fakePath)
-			if _, removeErr := safeop.RemoveWithConfirm(parentPath, safeop.RemoveOptions{Force: removeOpts.Force, Output: removeOpts.Output}); removeErr != nil {
+			if _, removeErr := safeop.RemoveWithConfirm(parentPath, safeop.RemoveOptions{Force: removeOpts.Force, NoTrash: removeOpts.NoTrash, Output: removeOpts.Output}); removeErr != nil {
 				if errors.Is(removeErr, safeop.ErrOperationCancelled) {
 					logger.Info(l10n.T("User cancelled deleting the parent path of fakePath", nil), "path", parentPath)
 					return removeErr

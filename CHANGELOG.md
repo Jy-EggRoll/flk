@@ -2,6 +2,9 @@
 
 ## 未发布
 
+- ✨ feat: 新增全局 `--no-trash` 开关：默认行为不变（删除即移入 FLK 回收站，可恢复），启用后覆盖或解除链接时真实删除旧文件
+  - 对 `create`（symlink / hardlink / copy）、`fix`、`unlink` 全部生效，删除计划文案同步切换为“will be permanently deleted”
+  - 删除实现（回收站 / 真实删除）统一收口到 `safeop.Delete`，`unlink` 不再自行调用回收站，两条删除路径只有一个所有者
 - ✨ feat: 新增全局非交互开关 `--yes/-y`：所有需要确认的命令都会自动同意且不再读取终端；未启用时若标准输入不是终端则立即报错而非挂起，修复此前直接读取 `/dev/tty` 导致脚本/CI“卡死”且无法用管道喂答案的问题
   - `fix`、`unlink` 的 `--yes` 等价于 `--all`，可完全无人值守执行
 - ✨ feat: 完成国际化（i18n），CLI 与 WebUI 均支持中英文切换，默认英文

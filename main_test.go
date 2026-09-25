@@ -50,12 +50,22 @@ type cliResult struct {
 func runCLI(t *testing.T, arguments ...string) cliResult {
 	t.Helper()
 
+	return runCLIWithEnv(t, t.TempDir(), arguments...)
+}
+
+// runCLIWithEnv 与 runCLI 一致，但由调用方指定子进程的 HOME。
+//
+// 需要它的场景：回收站等副作用按 HOME 解析，而回收站用 os.Rename 移动文件，
+// 因此「待移动的文件」与「回收站」必须落在同一个 HOME 下；调用方需要自行控制该目录
+func runCLIWithEnv(t *testing.T, childHome string, arguments ...string) cliResult {
+	t.Helper()
+
 	helperArguments := append([]string{"-test.run=^TestCLIHelperProcess$", "--"}, arguments...)
 	command := exec.Command(os.Args[0], helperArguments...)
 	command.Env = append(os.Environ(),
 		cliHelperEnv+"=1",
 		"FLK_LOG_LEVEL=",
-		"HOME="+t.TempDir(),
+		"HOME="+childHome,
 	)
 
 	var stdout bytes.Buffer
@@ -320,5 +330,213 @@ func TestCLIBatchCommandsAreNonInteractive(t *testing.T) {
 	}
 	if info, err := os.Lstat(fakePath); err != nil || info.Mode()&os.ModeSymlink != 0 {
 		t.Fatalf("unlink --all 后 fake 应为真实文件: info=%v err=%v", info, err)
+	}
+}
+
+// isCrossDeviceError 判断错误是否为「跨文件系统 rename 不支持」
+// 用于识别 overlayfs 等环境下 os.Rename 返回的 EXDEV
+func isCrossDeviceError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "cross-device link")
+}
+
+// unsupportedTrashRenameEnvironment 探测当前环境能否把文件 os.Rename 进临时目录下的回收站。
+//
+// 为什么需要探测：回收站固定位于 $HOME/.local/share/flk/trash，而 t.TempDir() 在
+// overlayfs 等环境里会与新建的子目录处于不同的文件系统，导致 MoveToTrash 必然返回
+// 「invalid cross-device link」。这是环境限制（回收站实现刻意不做跨设备回退），
+// 不是 --no-trash 开关的行为差异，因此用例应在断言「是否进了回收站」之前先跳过。
+//
+// 返回 true 表示环境不支持，应当跳过回收站断言
+func unsupportedTrashRenameEnvironment(t *testing.T) bool {
+	t.Helper()
+
+	base := t.TempDir()
+	trashDir := filepath.Join(base, ".local", "share", "flk", "trash", "probe")
+	if err := os.MkdirAll(trashDir, 0o755); err != nil {
+		return true
+	}
+
+	probe := filepath.Join(base, "probe.txt")
+	if err := os.WriteFile(probe, []byte("probe"), 0o644); err != nil {
+		return true
+	}
+	return isCrossDeviceError(os.Rename(probe, filepath.Join(trashDir, "probe.txt")))
+}
+
+// trashContainsFile 在给定回收站根目录下递归查找指定文件名
+// 回收站按「时间戳/原绝对路径」存放，目录层级不确定，因此只能递归搜索
+func trashContainsFile(t *testing.T, trashRoot, name string) bool {
+	t.Helper()
+
+	found := false
+	walkErr := filepath.WalkDir(trashRoot, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			// 回收站可能尚未创建，视为未找到而不是用例失败
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if !entry.IsDir() && entry.Name() == name {
+			found = true
+		}
+		return nil
+	})
+	if walkErr != nil {
+		t.Fatalf("遍历回收站失败: %v", walkErr)
+	}
+	return found
+}
+
+// TestCLICreateNoTrashSwitch 验证全局 --no-trash 开关的两种可观察结果：
+//   - 默认（不传开关）：覆盖 fake 时仍沿用历史行为，旧文件被移入回收站，可恢复
+//   - 传 --no-trash：旧文件被真实删除，回收站内不再留有副本
+//
+// 两条分支都必须保持 fake 最终是指向 real 的符号链接，即开关只改变「旧数据去哪」，
+// 不改变建链结果本身
+func TestCLICreateNoTrashSwitch(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 创建符号链接需要额外权限，跳过端到端建链断言")
+	}
+
+	// 每个子用例都使用独立的临时 HOME，回收站随之落在各自 HOME 下，互不干扰
+	for _, testCase := range []struct {
+		name         string
+		extraArgs    []string
+		wantInTrash  bool
+		fileName     string
+		trashDirName string
+	}{
+		{
+			name:         "默认移入回收站",
+			extraArgs:    nil,
+			wantInTrash:  true,
+			fileName:     "default-fake.txt",
+			trashDirName: "default-fake.txt",
+		},
+		{
+			name:         "no-trash 真实删除",
+			extraArgs:    []string{"--no-trash"},
+			wantInTrash:  false,
+			fileName:     "notrash-fake.txt",
+			trashDirName: "notrash-fake.txt",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			// store 放在独立临时目录即可；但被移动的文件必须与子进程 HOME 同处一个文件系统，
+			// 因为回收站位于 HOME 下，而回收站用 os.Rename 移动文件，跨文件系统会直接失败
+			storeDir := t.TempDir()
+			storePath := filepath.Join(storeDir, "store.json")
+
+			// childHome 既是子进程的 HOME（回收站落在这里），也是测试文件的所在目录，
+			// 从而保证「待移动文件」与「回收站」处于同一文件系统
+			childHome := t.TempDir()
+			realPath := filepath.Join(childHome, "real.txt")
+			fakePath := filepath.Join(childHome, testCase.fileName)
+			if err := os.WriteFile(realPath, []byte("REAL"), 0o644); err != nil {
+				t.Fatalf("写入 real 文件失败: %v", err)
+			}
+			if err := os.WriteFile(fakePath, []byte("FAKE"), 0o644); err != nil {
+				t.Fatalf("写入 fake 文件失败: %v", err)
+			}
+
+			arguments := append([]string{"create", "symlink",
+				"--real", realPath,
+				"--fake", fakePath,
+				"--store-path", storePath,
+				"--yes",
+			}, testCase.extraArgs...)
+			result := runCLIWithEnv(t, childHome, arguments...)
+
+			// 回收站断言依赖「能把文件 rename 进 HOME 下的回收站」这一环境能力。
+			// overlayfs 等环境会直接返回 EXDEV，此时默认策略必然失败，属于环境限制；
+			// 真实删除分支不依赖该能力，必须照常通过，因此只跳过默认策略的用例
+			if testCase.wantInTrash && unsupportedTrashRenameEnvironment(t) {
+				t.Skip("当前环境无法把文件 rename 进临时回收站（overlayfs EXDEV），跳过回收站断言")
+			}
+
+			if result.exitCode != 0 {
+				t.Fatalf("退出码 = %d，stdout=%q stderr=%q", result.exitCode, result.stdout, result.stderr)
+			}
+
+			// 无论哪种删除策略，建链结果都必须一致
+			target, err := os.Readlink(fakePath)
+			if err != nil {
+				t.Fatalf("fake 应为符号链接: %v", err)
+			}
+			if target != realPath {
+				t.Fatalf("符号链接目标 = %q，期望 %q", target, realPath)
+			}
+
+			// 真实删除后回收站根目录可能根本不存在，trashContainsFile 会把它当作未找到
+			trashRoot := filepath.Join(childHome, ".local", "share", "flk", "trash")
+			if got := trashContainsFile(t, trashRoot, testCase.trashDirName); got != testCase.wantInTrash {
+				t.Fatalf("回收站中存在 %q = %v，期望 %v", testCase.trashDirName, got, testCase.wantInTrash)
+			}
+
+			// 删除计划文案必须与所选策略一致，避免用户被误导
+			combined := result.stdout + result.stderr
+			if testCase.wantInTrash && !strings.Contains(combined, "will be moved to the trash") {
+				t.Fatalf("默认策略应展示回收站文案，stdout=%q stderr=%q", result.stdout, result.stderr)
+			}
+			if !testCase.wantInTrash && !strings.Contains(combined, "will be permanently deleted") {
+				t.Fatalf("--no-trash 应展示真实删除文案，stdout=%q stderr=%q", result.stdout, result.stderr)
+			}
+		})
+	}
+}
+
+// TestCLIUnlinkNoTrashRemovesLinkPermanently 验证 --no-trash 同样作用于 unlink：
+// 解除链接时旧的符号链接被真实删除，回收站内不再留有副本，而派生位置被替换为真实文件
+//
+// unlink 此前绕过 safeop 直接调用回收站，本用例守住「删除策略已收口到 safeop」这一约定
+func TestCLIUnlinkNoTrashRemovesLinkPermanently(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 创建符号链接需要额外权限，跳过端到端建链断言")
+	}
+
+	storeDir := t.TempDir()
+	storePath := filepath.Join(storeDir, "store.json")
+	childHome := t.TempDir()
+	realPath := filepath.Join(childHome, "real.txt")
+	fakePath := filepath.Join(childHome, "unlink-fake.txt")
+
+	if err := os.WriteFile(realPath, []byte("REAL-CONTENT"), 0o644); err != nil {
+		t.Fatalf("写入 real 文件失败: %v", err)
+	}
+	// fake 不存在时 create 只会建立符号链接并登记记录，不触发备份分支
+	if created := runCLIWithEnv(t, childHome, "create", "symlink",
+		"--real", realPath, "--fake", fakePath, "--store-path", storePath, "--yes"); created.exitCode != 0 {
+		t.Fatalf("登记链接失败: exit=%d stdout=%q stderr=%q", created.exitCode, created.stdout, created.stderr)
+	}
+	if target, err := os.Readlink(fakePath); err != nil || target != realPath {
+		t.Fatalf("前置条件失败，fake 应为指向 real 的符号链接: target=%q err=%v", target, err)
+	}
+
+	result := runCLIWithEnv(t, childHome, "unlink", "--all", "--no-trash", "--store-path", storePath)
+	if result.exitCode != 0 {
+		t.Fatalf("unlink --no-trash 应成功: exit=%d stdout=%q stderr=%q", result.exitCode, result.stdout, result.stderr)
+	}
+
+	// 派生位置必须变成独立真实文件，且不再是指向 real 的符号链接
+	info, err := os.Lstat(fakePath)
+	if err != nil {
+		t.Fatalf("unlink 后 fake 应存在: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("unlink 后 fake 不应再是符号链接")
+	}
+	content, err := os.ReadFile(fakePath)
+	if err != nil {
+		t.Fatalf("读取 unlink 后的 fake 失败: %v", err)
+	}
+	if string(content) != "REAL-CONTENT" {
+		t.Fatalf("unlink 后 fake 内容 = %q，期望 %q", content, "REAL-CONTENT")
+	}
+
+	// 真实删除策略下，被移除的旧链接不应出现在回收站
+	trashRoot := filepath.Join(childHome, ".local", "share", "flk", "trash")
+	if trashContainsFile(t, trashRoot, filepath.Base(fakePath)) {
+		t.Fatalf("--no-trash 下旧链接不应进入回收站: %s", trashRoot)
 	}
 }

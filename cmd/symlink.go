@@ -131,6 +131,7 @@ func Symlink(cmd *cobra.Command, args []string) error {
 		TargetPath:  normalizedFake,
 		Smart:       createSmart,
 		Force:       createForce,
+		NoTrash:     noTrash,
 		SourceLabel: "real",
 		TargetLabel: "fake",
 		Output:      cmd.ErrOrStderr(),

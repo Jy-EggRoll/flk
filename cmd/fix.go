@@ -282,7 +282,7 @@ func repairResult(result output.CheckResult, idx int, skipConfirm bool, errorOut
 			return err
 		}
 
-		return symlink.Create(expandedReal, expandedFake, safeop.RemoveOptions{Force: skipConfirm, Output: removeOutput})
+		return symlink.Create(expandedReal, expandedFake, safeop.RemoveOptions{Force: skipConfirm, NoTrash: noTrash, Output: removeOutput})
 	case "hardlink":
 		expandedPrim, err := pathutil.NormalizePath(result.Prim)
 		if err != nil {
@@ -298,7 +298,7 @@ func repairResult(result output.CheckResult, idx int, skipConfirm bool, errorOut
 			return err
 		}
 
-		return hardlink.Create(expandedPrim, expandedSeco, safeop.RemoveOptions{Force: skipConfirm, Output: removeOutput})
+		return hardlink.Create(expandedPrim, expandedSeco, safeop.RemoveOptions{Force: skipConfirm, NoTrash: noTrash, Output: removeOutput})
 	case "copy":
 		expandedSrc, err := pathutil.NormalizePath(result.Src)
 		if err != nil {
@@ -331,7 +331,7 @@ func repairResult(result output.CheckResult, idx int, skipConfirm bool, errorOut
 			from, to = expandedDst, expandedSrc
 		}
 
-		return copy.Create(from, to, skipConfirm, false, removeOutput)
+		return copy.Create(from, to, skipConfirm, false, noTrash, removeOutput)
 	}
 	return fmt.Errorf("%s", l10n.T("Unknown type {{.Type}}", map[string]any{"Type": result.Type}))
 }
