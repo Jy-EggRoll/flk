@@ -276,3 +276,49 @@ func TestCLICreateNonInteractiveConfirmation(t *testing.T) {
 		t.Fatalf("备份后 real 内容 = %q，期望 %q", backedUp, "fake-content")
 	}
 }
+
+// TestCLIBatchCommandsAreNonInteractive 验证 fix/unlink 的批量模式（--all）在无终端环境下
+// 不再逐项弹确认，可完整跑完；这是 --yes 之外对“非交互能力”的重要补齐
+func TestCLIBatchCommandsAreNonInteractive(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 创建符号链接需要额外权限，跳过端到端断言")
+	}
+
+	dir := t.TempDir()
+	realPath := filepath.Join(dir, "real.txt")
+	fakePath := filepath.Join(dir, "fake.txt")
+	storePath := filepath.Join(dir, "store.json")
+
+	if err := os.WriteFile(realPath, []byte("REAL"), 0o644); err != nil {
+		t.Fatalf("写入 real 文件失败: %v", err)
+	}
+	if err := os.WriteFile(fakePath, []byte("FAKE"), 0o644); err != nil {
+		t.Fatalf("写入 fake 文件失败: %v", err)
+	}
+
+	// 先用 --yes 建立一条有效记录
+	if created := runCLI(t, "create", "symlink", "--real", realPath, "--fake", fakePath, "--store-path", storePath, "--yes"); created.exitCode != 0 {
+		t.Fatalf("创建记录失败: exit=%d stdout=%q stderr=%q", created.exitCode, created.stdout, created.stderr)
+	}
+
+	// fix --all：破坏链接后批量修复，不允许进入交互
+	if err := os.Remove(fakePath); err != nil {
+		t.Fatalf("删除 fake 以制造无效记录失败: %v", err)
+	}
+	fixed := runCLI(t, "fix", "--all", "--store-path", storePath)
+	if fixed.exitCode != 0 {
+		t.Fatalf("fix --all 应成功: exit=%d stdout=%q stderr=%q", fixed.exitCode, fixed.stdout, fixed.stderr)
+	}
+	if target, err := os.Readlink(fakePath); err != nil || target != realPath {
+		t.Fatalf("fix --all 未恢复符号链接: target=%q err=%v", target, err)
+	}
+
+	// unlink --all：仅批量、不带 --force/--yes，也应在无终端下完成还原
+	unlinked := runCLI(t, "unlink", "--all", "--store-path", storePath)
+	if unlinked.exitCode != 0 {
+		t.Fatalf("unlink --all 应成功: exit=%d stdout=%q stderr=%q", unlinked.exitCode, unlinked.stdout, unlinked.stderr)
+	}
+	if info, err := os.Lstat(fakePath); err != nil || info.Mode()&os.ModeSymlink != 0 {
+		t.Fatalf("unlink --all 后 fake 应为真实文件: info=%v err=%v", info, err)
+	}
+}

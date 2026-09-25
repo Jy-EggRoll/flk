@@ -224,8 +224,9 @@ func RunUnlink(cmd *cobra.Command, args []string) error {
 // unlinkResult 解除单条记录的链接关系
 // 成功完成物理替换后，默认从全局存储中移除该记录；--keep-record 模式下保留记录，
 // 仅解除文件系统层面的链接关系（记录随后会被 check 判为无效，可用 fix 按原记录重建链接）
+// skipConfirm 为真时（来自 --all/--yes/--force）不再逐项确认，直接执行物理替换
 // 注意：本函数只更新内存中的 store，落盘由调用方在一批操作后统一执行 saveStoreAfterUnlink，减少重复写盘
-func unlinkResult(result output.CheckResult, errorOutput ...io.Writer) error {
+func unlinkResult(result output.CheckResult, skipConfirm bool, errorOutput ...io.Writer) error {
 	// 解除过程中的确认、警告和状态都属于交互诊断信息，默认写 stderr，并允许命令注入 Cobra 的错误输出 writer
 	errOut := io.Writer(os.Stderr)
 	if len(errorOutput) > 0 && errorOutput[0] != nil {
@@ -242,7 +243,7 @@ func unlinkResult(result output.CheckResult, errorOutput ...io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("%s: %w", l10n.T("Failed to expand the link path", nil), err)
 		}
-		if err := replaceWithReal(expandedReal, expandedFake, "real", "fake", errOut); err != nil {
+		if err := replaceWithReal(expandedReal, expandedFake, "real", "fake", skipConfirm, errOut); err != nil {
 			return err
 		}
 	case "hardlink":
@@ -254,7 +255,7 @@ func unlinkResult(result output.CheckResult, errorOutput ...io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("%s: %w", l10n.T("Failed to expand the secondary file path", nil), err)
 		}
-		if err := replaceWithReal(expandedPrim, expandedSeco, "prim", "seco", errOut); err != nil {
+		if err := replaceWithReal(expandedPrim, expandedSeco, "prim", "seco", skipConfirm, errOut); err != nil {
 			return err
 		}
 	case "copy":
@@ -286,7 +287,10 @@ func unlinkResult(result output.CheckResult, errorOutput ...io.Writer) error {
 //   - source 不可用（缺失/无法解析）时立即报错并跳过，绝不删除派生位置，避免破坏数据（源缺失不破坏）
 //   - 将派生位置的旧链接移入回收站（而非真实删除），所有数据都可恢复
 //   - 移动后用 pathutil.Copy 把真实数据复制到派生位置；Copy 会正确处理文件与目录（目录递归复制）
-func replaceWithReal(source, derived, sourceLabel, derivedLabel string, errorOutput ...io.Writer) error {
+//
+// skipConfirm 为真时跳过交互确认（来自 --all/--yes/--force）；为假且环境不可交互时，
+// prompt.Confirm 会返回错误而不是无限等待，保证不会在无人值守场景挂起
+func replaceWithReal(source, derived, sourceLabel, derivedLabel string, skipConfirm bool, errorOutput ...io.Writer) error {
 	errOut := io.Writer(os.Stderr)
 	if len(errorOutput) > 0 && errorOutput[0] != nil {
 		errOut = errorOutput[0]
@@ -297,7 +301,7 @@ func replaceWithReal(source, derived, sourceLabel, derivedLabel string, errorOut
 		return fmt.Errorf("%s", l10n.T("{{.Source}} is unavailable ({{.Err}}); skipped to avoid data loss", map[string]any{"Source": sourceLabel, "Err": err.Error()}))
 	}
 
-	if !unlinkForce {
+	if !skipConfirm {
 		pterm.Warning.WithWriter(errOut).Println(l10n.T("About to remove the link and replace it with a real file: {{.Path}}", map[string]any{"Path": derived}))
 		// 统一经 prompt.Confirm：--yes 直接同意，非终端且未 --yes 时返回错误而非阻塞
 		confirm, cerr := prompt.Confirm(l10n.T("Confirm removing this link relationship?", nil), false)

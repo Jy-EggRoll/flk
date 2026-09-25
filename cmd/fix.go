@@ -61,6 +61,11 @@ func RunFix(cmd *cobra.Command, args []string) error {
 	errOut := cmd.ErrOrStderr()
 	format := output.OutputFormat(outputFormat)
 
+	// 批量（--all/--yes）或显式 --force 都表示“不再逐项确认”
+	// 这样 --all 才名副其实：不仅跳过选择循环，也不会在逐项修复时再次弹确认，
+	// 从而在非终端环境下也能完整跑完，而不是卡在逐项确认上
+	skipConfirm := fixForce || fixAll || prompt.AssumeYes()
+
 	// checkAndDisplay 复用 check 的检查逻辑并只保留无效记录
 	// JSON 即使没有记录也必须输出 []，便于脚本稳定解析；表格模式继续保留原有的人类可读提示
 	checkAndDisplay := func() ([]output.CheckResult, error) {
@@ -112,7 +117,7 @@ func RunFix(cmd *cobra.Command, args []string) error {
 	repairSelected := func(indices []int) {
 		for _, idx := range indices {
 			result := invalidResults[idx]
-			if err := repairResult(result, idx, errOut); err != nil {
+			if err := repairResult(result, idx, skipConfirm, errOut); err != nil {
 				pterm.Error.WithWriter(errOut).Println(l10n.T("Repair failed #{{.Index}}: {{.Err}}", map[string]any{"Index": idx + 1, "Err": err.Error()}))
 				operationErrors = append(operationErrors, fmt.Errorf("%s: %w", l10n.T("Repair #{{.Index}} failed", map[string]any{"Index": idx + 1}), err))
 			} else {
@@ -236,7 +241,9 @@ func RunFix(cmd *cobra.Command, args []string) error {
 	}
 }
 
-func repairResult(result output.CheckResult, idx int, errorOutput ...io.Writer) error {
+// repairResult 按记录类型重建链接，skipConfirm 为真时（来自 --all/--yes/--force）
+// 不再逐项确认，直接把 force 语义透传给底层 Create，避免在批量/非交互场景再次弹确认
+func repairResult(result output.CheckResult, idx int, skipConfirm bool, errorOutput ...io.Writer) error {
 	// 删除计划属于交互诊断信息，必须与业务结果分流到 stderr；可选参数保留内部直接调用时的兼容性
 	removeOutput := io.Writer(os.Stderr)
 	if len(errorOutput) > 0 && errorOutput[0] != nil {
@@ -275,7 +282,7 @@ func repairResult(result output.CheckResult, idx int, errorOutput ...io.Writer) 
 			return err
 		}
 
-		return symlink.Create(expandedReal, expandedFake, safeop.RemoveOptions{Force: fixForce, Output: removeOutput})
+		return symlink.Create(expandedReal, expandedFake, safeop.RemoveOptions{Force: skipConfirm, Output: removeOutput})
 	case "hardlink":
 		expandedPrim, err := pathutil.NormalizePath(result.Prim)
 		if err != nil {
@@ -291,7 +298,7 @@ func repairResult(result output.CheckResult, idx int, errorOutput ...io.Writer) 
 			return err
 		}
 
-		return hardlink.Create(expandedPrim, expandedSeco, safeop.RemoveOptions{Force: fixForce, Output: removeOutput})
+		return hardlink.Create(expandedPrim, expandedSeco, safeop.RemoveOptions{Force: skipConfirm, Output: removeOutput})
 	case "copy":
 		expandedSrc, err := pathutil.NormalizePath(result.Src)
 		if err != nil {
@@ -324,7 +331,7 @@ func repairResult(result output.CheckResult, idx int, errorOutput ...io.Writer) 
 			from, to = expandedDst, expandedSrc
 		}
 
-		return copy.Create(from, to, fixForce, false, removeOutput)
+		return copy.Create(from, to, skipConfirm, false, removeOutput)
 	}
 	return fmt.Errorf("%s", l10n.T("Unknown type {{.Type}}", map[string]any{"Type": result.Type}))
 }
