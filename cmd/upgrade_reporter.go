@@ -1,18 +1,16 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"io"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/jy-eggroll/flk/internal/prompt"
 	"github.com/jy-eggroll/flk/internal/updater"
 	"github.com/jy-eggroll/flk/pkg/l10n"
 	"github.com/pterm/pterm"
-	"golang.org/x/term"
 )
 
 // ptermReporter 是升级器与终端之间的唯一适配层，用 pterm 实现全部用户可见输出与交互
@@ -45,18 +43,20 @@ func (r *ptermReporter) Success(format string, args ...any) {
 // Confirm 在弹出确认前后暂停进度绘制
 // 暂停在弹出前完成、恢复在返回后执行，保证问题文本不会被进度条的 \r 覆盖
 func (r *ptermReporter) Confirm(question string) (bool, error) {
-	// 交互组件在非终端输入下会一直等待按键而永不返回，必须先显式识别并拒绝，
-	// 让升级器走"用户未能确认"的保守分支，而不是把命令永久挂起在等待输入上
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		return false, errors.New(l10n.T("Cannot interact with the user (stdin is not a terminal); use --force to skip the confirmation", nil))
+	// --yes 模式下直接同意，无需暂停进度也无需触碰终端
+	if prompt.AssumeYes() {
+		return true, nil
 	}
 
+	// 交互组件在非终端输入下会一直等待按键而永不返回；prompt.Confirm 已统一处理该情况：
+	// 返回包装了 ErrNonInteractive 的错误，让升级器走“用户未能确认”的保守分支，
+	// 而不是把命令永久挂起在等待输入上
 	r.paused.Store(true)
 	defer r.paused.Store(false)
 
 	// 交互组件沿用根生命周期通过 pterm.SetDefaultOutput 设置的 stderr，
 	// 与 reporter 自身的 writer 指向同一处，因此无需再次指定输出目标
-	return pterm.DefaultInteractiveConfirm.WithDefaultValue(true).Show(question)
+	return prompt.Confirm(question, true)
 }
 
 // Progress 开启一次下载进度展示

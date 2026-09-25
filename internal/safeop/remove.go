@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/jy-eggroll/flk/internal/prompt"
 	"github.com/jy-eggroll/flk/internal/trash"
 	"github.com/jy-eggroll/flk/pkg/l10n"
 	"github.com/pterm/pterm"
@@ -99,7 +100,8 @@ func RemoveWithConfirm(path string, opts RemoveOptions) ([]string, error) {
 				msg := opts.ConfirmMessage
 				def := opts.ConfirmDefault
 				confirm = func() (bool, error) {
-					return pterm.DefaultInteractiveConfirm.WithDefaultValue(def).Show(msg)
+					// 统一经 prompt.Confirm 处理 --yes 与非终端：前者直接同意，后者报错而非挂起
+					return prompt.Confirm(msg, def)
 				}
 			} else {
 				confirm = defaultConfirm
@@ -153,6 +155,7 @@ func printDeletePlan(out io.Writer, paths []string) error {
 }
 
 // defaultConfirm 使用原有的否定默认值和确认文案，避免未显式传入 Confirm 时改变交互安全边界
+// 与自定义文案分支一样经 prompt.Confirm，从而同样受 --yes 与非终端检测约束
 func defaultConfirm() (bool, error) {
-	return pterm.DefaultInteractiveConfirm.WithDefaultValue(false).Show(l10n.T("Are you sure?", nil))
+	return prompt.Confirm(l10n.T("Are you sure?", nil), false)
 }

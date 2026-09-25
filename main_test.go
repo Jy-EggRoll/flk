@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -207,5 +208,71 @@ func TestCLIRejectsUnsupportedJSON(t *testing.T) {
 	}
 	if strings.Count(result.stderr, "does not support JSON output") != 1 {
 		t.Fatalf("错误应恰好输出一次: %q", result.stderr)
+	}
+}
+
+// TestCLICreateNonInteractiveConfirmation 验证 create 在非终端下的两种契约：
+//   - 未加 --yes：备份确认无法进行时必须快速失败并给出提示，而不是挂起等待 /dev/tty
+//   - 加了 --yes：自动同意备份并完成建链，整个过程无需任何输入
+//
+// runCLI 的子进程没有控制终端（stdin 被重定向），正好复现脚本/CI 环境；
+// 若实现回退到直接调用 pterm 交互，该用例会永久阻塞并最终超时失败，从而守住回归
+func TestCLICreateNonInteractiveConfirmation(t *testing.T) {
+	// Windows 创建符号链接默认需要管理员权限或开发者模式，跳过以保持用例稳定；
+	// 非交互确认逻辑本身已由本用例的失败分支与 prompt 包单测覆盖
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 创建符号链接需要额外权限，跳过端到端建链断言")
+	}
+
+	dir := t.TempDir()
+	realPath := filepath.Join(dir, "real.txt")
+	fakePath := filepath.Join(dir, "fake.txt")
+	storePath := filepath.Join(dir, "store.json")
+
+	if err := os.WriteFile(realPath, []byte("real-content"), 0o644); err != nil {
+		t.Fatalf("写入 real 文件失败: %v", err)
+	}
+	if err := os.WriteFile(fakePath, []byte("fake-content"), 0o644); err != nil {
+		t.Fatalf("写入 fake 文件失败: %v", err)
+	}
+
+	// 非交互且未 --yes：real 与 fake 同时存在会触发备份确认，应当明确失败
+	failure := runCLI(t, "create", "symlink",
+		"--real", realPath, "--fake", fakePath, "--store-path", storePath)
+	if failure.exitCode != 1 {
+		t.Fatalf("未启用 --yes 时应失败，退出码 = %d，stdout=%q stderr=%q", failure.exitCode, failure.stdout, failure.stderr)
+	}
+	// create 的失败结果由命令层渲染到 stdout（标记为已渲染后根层不再重复），
+	// 因此断言合并两个流，只关心提示语确实出现且命令快速失败
+	combined := failure.stdout + failure.stderr
+	if !strings.Contains(combined, "Cannot interact with the user") {
+		t.Fatalf("应提示无法交互，stdout=%q stderr=%q", failure.stdout, failure.stderr)
+	}
+	if _, err := os.Lstat(fakePath); err != nil {
+		t.Fatalf("失败路径不应改动 fake 文件: %v", err)
+	}
+	if info, err := os.Lstat(fakePath); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("失败路径不应把 fake 变成符号链接")
+	}
+
+	// 启用 --yes：自动备份并建链，fake 最终应是指向 real 的符号链接
+	success := runCLI(t, "create", "symlink",
+		"--real", realPath, "--fake", fakePath, "--store-path", storePath, "--yes")
+	if success.exitCode != 0 {
+		t.Fatalf("--yes 应成功，退出码 = %d，stdout=%q stderr=%q", success.exitCode, success.stdout, success.stderr)
+	}
+	target, err := os.Readlink(fakePath)
+	if err != nil {
+		t.Fatalf("fake 应为符号链接: %v", err)
+	}
+	if target != realPath {
+		t.Fatalf("符号链接目标 = %q，期望 %q", target, realPath)
+	}
+	backedUp, err := os.ReadFile(realPath)
+	if err != nil {
+		t.Fatalf("读取 real 文件失败: %v", err)
+	}
+	if string(backedUp) != "fake-content" {
+		t.Fatalf("备份后 real 内容 = %q，期望 %q", backedUp, "fake-content")
 	}
 }

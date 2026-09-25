@@ -12,6 +12,7 @@ import (
 
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
+	"github.com/jy-eggroll/flk/internal/prompt"
 	"github.com/jy-eggroll/flk/internal/safeop"
 	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/jy-eggroll/flk/internal/trash"
@@ -81,6 +82,11 @@ func RunUnlink(cmd *cobra.Command, args []string) error {
 	errOut := cmd.ErrOrStderr()
 	format := output.OutputFormat(outputFormat)
 
+	// 批量（--all/--yes）或显式 --force 都表示“不再逐项确认”
+	// 这样 --all 才名副其实：不仅跳过选择循环，也不在逐项删除时再次弹确认，
+	// 从而在非终端环境下也能完整跑完，而不是卡在逐项确认上
+	skipConfirm := unlinkForce || unlinkAll || prompt.AssumeYes()
+
 	// checkAndDisplay 复用 check 的检查逻辑并仅保留有效记录
 	// JSON 空集必须输出 [] 供脚本稳定解析；表格模式继续显示原有的“没有可解除”提示
 	checkAndDisplay := func() ([]output.CheckResult, error) {
@@ -122,8 +128,8 @@ func RunUnlink(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// JSON 非 --all 模式只列出待解除项；--all 也只保留首次 JSON，后续状态进入 stderr
-	if format == output.JSON && !unlinkAll {
+	// JSON 非批量模式只列出待解除项；--all 或 --yes 也只保留首次 JSON，后续状态进入 stderr
+	if format == output.JSON && !unlinkAll && !prompt.AssumeYes() {
 		return nil
 	}
 
@@ -131,7 +137,7 @@ func RunUnlink(cmd *cobra.Command, args []string) error {
 	unlinkSelected := func(indices []int) {
 		for _, idx := range indices {
 			result := validResults[idx]
-			if err := unlinkResult(result, errOut); err != nil {
+			if err := unlinkResult(result, skipConfirm, errOut); err != nil {
 				pterm.Error.WithWriter(errOut).Println(l10n.T("Removal failed #{{.Index}}: {{.Err}}", map[string]any{"Index": idx + 1, "Err": err.Error()}))
 				operationErrors = append(operationErrors, fmt.Errorf("%s: %w", l10n.T("Removal #{{.Index}} failed", map[string]any{"Index": idx + 1}), err))
 			} else {
@@ -146,8 +152,9 @@ func RunUnlink(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// --all：批量解除所有有效链接，单项失败不阻断其余记录，结束后统一决定退出码
-	if unlinkAll {
+	// --all 或 --yes：批量解除所有有效链接，单项失败不阻断其余记录，结束后统一决定退出码
+	// --yes 把“同意一切确认”自然延伸为“全部处理”，使其成为真正的非交互总开关
+	if unlinkAll || prompt.AssumeYes() {
 		pterm.Info.WithWriter(errOut).Println(l10n.T("Automatically removing all valid links...", nil))
 		indices := make([]int, len(validResults))
 		for idx := range validResults {
@@ -156,6 +163,12 @@ func RunUnlink(cmd *cobra.Command, args []string) error {
 		unlinkSelected(indices)
 		saveStore()
 		return errors.Join(operationErrors...)
+	}
+
+	// 既非批量也未启用 --yes 时，只有真正可交互才能进入输入循环；
+	// 否则明确失败并给出补救参数，避免在无终端环境下永久阻塞
+	if !prompt.Interactive() {
+		return fmt.Errorf("%s", l10n.T("Cannot interact with the user (stdin is not a terminal); rerun with --all or --yes", nil))
 	}
 
 	// 交互模式：输入编号解除对应项，all/a 全部解除，exit/q 主动退出仍视为成功
@@ -286,7 +299,8 @@ func replaceWithReal(source, derived, sourceLabel, derivedLabel string, errorOut
 
 	if !unlinkForce {
 		pterm.Warning.WithWriter(errOut).Println(l10n.T("About to remove the link and replace it with a real file: {{.Path}}", map[string]any{"Path": derived}))
-		confirm, cerr := pterm.DefaultInteractiveConfirm.WithDefaultValue(false).Show(l10n.T("Confirm removing this link relationship?", nil))
+		// 统一经 prompt.Confirm：--yes 直接同意，非终端且未 --yes 时返回错误而非阻塞
+		confirm, cerr := prompt.Confirm(l10n.T("Confirm removing this link relationship?", nil), false)
 		if cerr != nil {
 			return fmt.Errorf("%s: %w", l10n.T("Failed to get the confirmation input", nil), cerr)
 		}

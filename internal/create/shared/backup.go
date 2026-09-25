@@ -7,6 +7,7 @@ import (
 
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
+	"github.com/jy-eggroll/flk/internal/prompt"
 	"github.com/jy-eggroll/flk/internal/safeop"
 	"github.com/jy-eggroll/flk/pkg/l10n"
 	"github.com/pterm/pterm"
@@ -63,7 +64,8 @@ func HandleTargetBackup(opts BackupOptions) (BackupResult, error) {
 			promptMsg = l10n.T("{{.Src}} does not exist; copy {{.Tgt}} to {{.Src}} before creating the link?", map[string]any{"Src": opts.SourceLabel, "Tgt": opts.TargetLabel})
 		}
 
-		confirm, err := pterm.DefaultInteractiveConfirm.WithDefaultValue(true).Show(promptMsg)
+		// 统一走 prompt.Confirm：--yes 时直接同意备份；非交互且未 --yes 时立即报错而不是挂起
+		confirm, err := prompt.Confirm(promptMsg, true)
 		if err != nil {
 			return result, fmt.Errorf("%s: %w", l10n.T("Failed to get user input", nil), err)
 		}

@@ -8,6 +8,7 @@ import (
 	"github.com/jy-eggroll/flk/internal/locales"
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
+	"github.com/jy-eggroll/flk/internal/prompt"
 	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/jy-eggroll/flk/pkg/l10n"
 
@@ -34,6 +35,10 @@ var (
 	// verboseCount 由 CountVarP 累加：-v 开启 Info，-vv 进一步开启 Debug
 	// 业务命令始终按需记录日志，最终是否输出完全由 logger.Config 的级别过滤决定
 	verboseCount int
+
+	// assumeYes 对应全局 --yes/-y：为真时所有确认自动同意且不再读取终端
+	// 它是 flk 的非交互总开关，供脚本、CI 及其它无人值守场景使用
+	assumeYes bool
 
 	// windowsAdminChecker 由 main 注入，非 Windows 构建保持 nil
 	// 回调只负责返回权限状态，所有展示均留在根生命周期内，确保使用统一 logger 和 stderr writer
@@ -147,6 +152,11 @@ func prepareCommand(command *cobra.Command) error {
 	// pterm 的交互确认、文本输入和选择器通过包级默认 writer 绘制；统一切到 stderr，避免提示符污染 stdout 业务数据
 	pterm.SetDefaultOutput(errWriter)
 
+	// 非交互模式必须在任何业务命令执行前落位：
+	//   - 各命令内部的确认会读取该全局状态，晚设置会漏掉最早的一次确认
+	//   - 与 pterm 输出 writer 一样属于进程级配置，集中在本生命周期初始化
+	prompt.Configure(assumeYes)
+
 	// 保留历史容错语义：非法 output 不终止命令，而是警告后回退 table
 	if outputFormat != "json" && outputFormat != "table" {
 		logger.Warn(l10n.T("Unknown output format, falling back to table", nil), "output", outputFormat)
@@ -240,6 +250,10 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&outputFormat, "output", "table", l10n.T("Output format: json/table", nil))
 	rootCmd.PersistentFlags().StringVarP(&WorkDir, "work-dir", "w", WorkDir, l10n.T("Working directory used as the base for storage and path resolution", nil))
 	rootCmd.PersistentFlags().CountVarP(&verboseCount, "verbose", "v", l10n.T("Increase log verbosity (-v for Info, -vv for Debug)", nil))
+
+	// --yes 是全局非交互总开关：为真时所有确认自动同意，且不读取终端
+	// 它必须持久化到所有叶子命令，才能让 create/fix/unlink/upgrade 等统一免交互
+	rootCmd.PersistentFlags().BoolVarP(&assumeYes, "yes", "y", false, l10n.T("Assume yes to all confirmations and never prompt (non-interactive mode)", nil))
 	rootCmd.Flags().Bool("version", false, l10n.T("Display version information", nil))
 
 	// --lang 持久化 flag：声明它的唯一目的是让 cobra 认可这个参数，否则命令行里出现

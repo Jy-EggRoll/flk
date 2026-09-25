@@ -15,6 +15,7 @@ import (
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
+	"github.com/jy-eggroll/flk/internal/prompt"
 	"github.com/jy-eggroll/flk/internal/safeop"
 	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/jy-eggroll/flk/pkg/l10n"
@@ -101,9 +102,9 @@ func RunFix(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// JSON 非 --all 模式只负责列出无效项，不进入会污染机器输出或等待 stdin 的交互流程
-	// JSON --all 也只在上面的首次检查输出一个文档，后续逐项状态全部进入 stderr
-	if format == output.JSON && !fixAll {
+	// JSON 非批量模式只负责列出无效项，不进入会污染机器输出或等待 stdin 的交互流程
+	// JSON 批量（--all 或 --yes）也只在上面的首次检查输出一个文档，后续逐项状态全部进入 stderr
+	if format == output.JSON && !fixAll && !prompt.AssumeYes() {
 		return nil
 	}
 
@@ -120,13 +121,21 @@ func RunFix(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if fixAll {
+	// --all 或 --yes：批量修复全部无效记录，无需人工逐项选择
+	// --yes 把“同意一切确认”延伸为“全部修复”，使 fix 也能在无人值守下完成
+	if fixAll || prompt.AssumeYes() {
 		indices := make([]int, len(invalidResults))
 		for idx := range invalidResults {
 			indices[idx] = idx
 		}
 		repairSelected(indices)
 		return errors.Join(operationErrors...)
+	}
+
+	// 既非批量也未启用 --yes 时，只有真正可交互才能进入输入循环；
+	// 否则明确失败并给出补救参数，避免在无终端环境下永久阻塞
+	if !prompt.Interactive() {
+		return fmt.Errorf("%s", l10n.T("Cannot interact with the user (stdin is not a terminal); rerun with --all or --yes", nil))
 	}
 
 	for {
