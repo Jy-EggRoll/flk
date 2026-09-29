@@ -6,15 +6,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
-	"strconv"
 	"strings"
 
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/prompt"
 	"github.com/jy-eggroll/flk/internal/safeop"
-	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/jy-eggroll/flk/pkg/l10n"
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
@@ -101,12 +98,9 @@ func RunUnlink(cmd *cobra.Command, args []string) error {
 			return nil, fmt.Errorf("%s: %w", l10n.T("Check failed", nil), err)
 		}
 
-		validResults := make([]output.CheckResult, 0)
-		for _, result := range results {
-			if result.Valid {
-				validResults = append(validResults, result)
-			}
-		}
+		// 结果过滤统一走 filterCheckResults：unlink 只保留有效记录（待解除项），
+		// 过滤方向由 keepValid=true 表达；fix 的对应闭包复用同一份实现、只是方向相反
+		validResults := filterCheckResults(results, true)
 
 		if format == output.JSON || len(validResults) > 0 {
 			if err := output.PrintCheckResults(out, format, validResults); err != nil {
@@ -145,7 +139,10 @@ func RunUnlink(cmd *cobra.Command, args []string) error {
 		}
 	}
 	saveStore := func() {
-		if err := saveStoreAfterUnlink(); err != nil {
+		// 落盘统一走共享的 saveTrackedStore（含 GlobalManager 判空），
+		// 「Save failed」文案与 operationErrors 的收集仍留在本命令内，保持既有输出与退出码语义
+		// --keep-record 模式下内存 store 未发生变化，此时落盘只是重写一份内容等价（仅排序）的文件，无害
+		if err := saveTrackedStore(); err != nil {
 			pterm.Error.WithWriter(errOut).Println(l10n.T("Save failed: {{.Err}}", map[string]any{"Err": err.Error()}))
 			operationErrors = append(operationErrors, fmt.Errorf("%s: %w", l10n.T("Save failed", nil), err))
 		}
@@ -191,15 +188,9 @@ func RunUnlink(cmd *cobra.Command, args []string) error {
 				indices = append(indices, idx)
 			}
 		} else {
-			parts := strings.Fields(input)
-			for _, part := range parts {
-				idx, err := strconv.Atoi(part)
-				if err != nil || idx < 1 || idx > len(validResults) {
-					pterm.Warning.WithWriter(errOut).Println(l10n.T("Invalid number {{.Part}}", map[string]any{"Part": part}))
-					continue
-				}
-				indices = append(indices, idx-1)
-			}
+			// 编号解析统一走 parseSelectionIndices：与 fix 的普通修复分支共用同一份实现，
+			// 非法项由共享函数打印警告、跳过，合法项按输入顺序转成 0 基索引
+			indices = parseSelectionIndices(input, len(validResults), errOut)
 		}
 
 		if len(indices) == 0 {
@@ -224,7 +215,8 @@ func RunUnlink(cmd *cobra.Command, args []string) error {
 // 成功完成物理替换后，默认从全局存储中移除该记录；--keep-record 模式下保留记录，
 // 仅解除文件系统层面的链接关系（记录随后会被 check 判为无效，可用 fix 按原记录重建链接）
 // skipConfirm 为真时（来自 --all/--yes/--force）不再逐项确认，直接执行物理替换
-// 注意：本函数只更新内存中的 store，落盘由调用方在一批操作后统一执行 saveStoreAfterUnlink，减少重复写盘
+// 注意：本函数只更新内存中的 store（走共享的 removeTrackedRecord），
+// 落盘由调用方在一批操作后统一执行 saveTrackedStore，减少重复写盘
 func unlinkResult(result output.CheckResult, skipConfirm bool, errorOutput ...io.Writer) error {
 	// 解除过程中的确认、警告和状态都属于交互诊断信息，默认写 stderr，并允许命令注入 Cobra 的错误输出 writer
 	errOut := io.Writer(os.Stderr)
@@ -272,7 +264,7 @@ func unlinkResult(result output.CheckResult, skipConfirm bool, errorOutput ...io
 	// 物理替换完成后移除追踪记录（记录中的路径为折叠形式，result 字段直接来自存储，故可原样匹配）
 	// --keep-record 模式下跳过移除，让记录留在配置文件中供后续 fix 重建
 	if !unlinkKeepRecord {
-		removeUnlinkRecord(result)
+		removeTrackedRecord(result)
 	}
 	return nil
 }
@@ -354,32 +346,6 @@ func replaceWithReal(source, derived, sourceLabel, derivedLabel string, skipConf
 	return nil
 }
 
-// removeUnlinkRecord 从全局存储中移除一条链接记录（按类型选择匹配字段，与 fix 的删除逻辑保持一致）
-func removeUnlinkRecord(result output.CheckResult) {
-	mgr := store.GlobalManager
-	if mgr == nil {
-		return
-	}
-	platform := runtime.GOOS
-	var entry map[string]string
-	switch result.Type {
-	case "symlink":
-		entry = map[string]string{"real": result.Real, "fake": result.Fake}
-	case "hardlink":
-		entry = map[string]string{"prim": result.Prim, "seco": result.Seco}
-	case "copy":
-		entry = map[string]string{"src": result.Src, "dst": result.Dst}
-	}
-	mgr.RemoveMatchingEntry(platform, result.Device, result.Type, entry)
-}
-
-// saveStoreAfterUnlink 将内存中的存储改动落盘，供一批解除操作完成后统一调用
-// --keep-record 模式下内存 store 未发生变化，此时落盘只是重写一份内容等价（仅排序）的文件，无害
-// 保存错误必须返回给 RunUnlink，与单项解除错误一起决定最终退出码，不能只记录日志后伪装成功
-func saveStoreAfterUnlink() error {
-	mgr := store.GlobalManager
-	if mgr == nil {
-		return nil
-	}
-	return mgr.Save(store.StorePath)
-}
+// 本文件原先自带的「移除记录」与「落盘」两个封装已合并到共享实现：
+// 记录移除见 cmd/check.go 的 removeTrackedRecord，落盘见同文件的 saveTrackedStore
+// 合并原因是 fix 的删除分支维护着同一份逻辑，放在一起才能保证字段映射与判空保护只有一处

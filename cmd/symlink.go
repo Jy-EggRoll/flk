@@ -3,8 +3,6 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"io"
-	"strings"
 
 	"github.com/jy-eggroll/flk/internal/create/shared"
 	"github.com/jy-eggroll/flk/internal/create/symlink"
@@ -12,9 +10,7 @@ import (
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/safeop"
-	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/jy-eggroll/flk/pkg/l10n"
-	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 )
 
@@ -45,68 +41,15 @@ func init() {
 	symlinkCmd.MarkFlagRequired("fake")
 }
 
-// renderCreateResult 把唯一的最终创建结果写入 Cobra stdout，并在业务失败已经成功渲染后附加根层可识别的标记
-// 该 helper 放在允许修改的 create 叶子文件中供三个同包命令复用；输出本身失败时不能标记为已渲染，否则根层会吞掉唯一可见错误
-func renderCreateResult(cmd *cobra.Command, format output.OutputFormat, result output.CreateResult, operationErr error) error {
-	if err := output.PrintCreateResult(cmd.OutOrStdout(), format, result); err != nil {
-		return fmt.Errorf("%s: %w", l10n.T("Failed to output the creation result", nil), err)
-	}
-	if operationErr != nil {
-		return MarkErrorRendered(operationErr)
-	}
-	return nil
-}
-
-// renderCreateCancellation 保留 table 模式原有的人类提示并以零退出，同时让 JSON 模式仍输出且只输出一个 CreateResult
-// 取消不是执行失败，因此无论采用哪种格式，只要提示写入成功就返回 nil
-func renderCreateCancellation(cmd *cobra.Command, format output.OutputFormat, resultType string) error {
-	if format == output.JSON {
-		return renderCreateResult(cmd, format, output.CreateResult{
-			Success: false,
-			Type:    resultType,
-			Error:   l10n.T("Operation cancelled", nil),
-		}, nil)
-	}
-	// 取消提示属于交互状态而非业务结果，写入 stderr 后仍保持零退出
-	if _, err := io.WriteString(cmd.ErrOrStderr(), pterm.Info.Sprintln(l10n.T("Operation cancelled", nil))); err != nil {
-		return fmt.Errorf("%s: %w", l10n.T("Failed to output the cancellation result", nil), err)
-	}
-	return nil
-}
-
-// persistCreateRecord 只负责把已经完成的文件操作登记到根生命周期初始化好的全局 store
-// Manager.AddRecord 当前是纯内存操作且无 error 返回；nil manager/data 是其唯一可预先识别的失败，Save 错误则原样上抛
-func persistCreateRecord(device, linkType string, fields map[string]string) error {
-	manager := store.GlobalManager
-	if manager == nil || manager.Data == nil {
-		return errors.New(l10n.T("Failed to add the record: the store is not initialized", nil))
-	}
-	manager.AddRecord(device, linkType, fields)
-	if err := manager.Save(store.StorePath); err != nil {
-		return fmt.Errorf("%s: %w", l10n.T("Failed to save the record", nil), err)
-	}
-	return nil
-}
-
-// createPersistenceError 说明文件系统操作已经生效但记录阶段失败，明确告知调用者不会自动回滚
-func createPersistenceError(action string, err error) error {
-	return fmt.Errorf("%s", l10n.T("{{.Action}} completed, but {{.Err}}; the completed file operation was not rolled back", map[string]any{"Action": action, "Err": err.Error()}))
-}
-
 // Symlink 创建符号链接，并保证每条成功、失败或取消路径只产生一个最终 stdout 结果
 func Symlink(cmd *cobra.Command, args []string) error {
 	format := output.OutputFormat(outputFormat)
 	const resultType = "symlink"
 
-	failure := func(message string, cause error) error {
-		if cause == nil {
-			cause = errors.New(message)
-		}
-		return renderCreateResult(cmd, format, output.CreateResult{Success: false, Type: resultType, Error: message}, cause)
-	}
+	// 失败渲染与设备名校验统一走 cmd/create.go 的 create 系列共享实现，避免三个叶子命令各写一份
+	failure := newCreateFailure(cmd, format, resultType)
 
-	if strings.Contains(createDevice, ",") || strings.Contains(createDevice, " ") {
-		message := l10n.T("Device name must not contain commas or spaces", nil)
+	if message := validateCreateDevice(createDevice); message != "" {
 		return failure(message, errors.New(message))
 	}
 

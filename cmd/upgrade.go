@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"runtime"
 
 	"github.com/jy-eggroll/flk/internal/updater"
 	"github.com/jy-eggroll/flk/pkg/l10n"
@@ -70,10 +69,8 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("%s: %w", l10n.T("Failed to initialize the upgrader", nil), err)
 	}
 
-	platform := fmt.Sprintf("%s-%s", runtime.GOOS, runtime.GOARCH)
-	if runtime.GOOS == "windows" {
-		platform += " (exe)"
-	}
+	// 平台标签与 flk version 共用同一实现，保证两处展示的名字永远一致
+	platform := platformLabel()
 
 	reporter.Info("%s", l10n.T("Checking for updates ({{.Channel}})...", map[string]any{"Channel": channelLabel}))
 	reporter.Info("%s", l10n.T("Current platform: {{.Platform}}", map[string]any{"Platform": platform}))

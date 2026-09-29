@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"runtime"
-	"strconv"
 	"strings"
 
 	"github.com/jy-eggroll/flk/internal/create/copy"
@@ -17,7 +15,6 @@ import (
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/prompt"
 	"github.com/jy-eggroll/flk/internal/safeop"
-	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/jy-eggroll/flk/pkg/l10n"
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
@@ -81,12 +78,9 @@ func RunFix(cmd *cobra.Command, args []string) error {
 			return nil, fmt.Errorf("%s: %w", l10n.T("Check failed", nil), err)
 		}
 
-		invalidResults := make([]output.CheckResult, 0)
-		for _, result := range results {
-			if !result.Valid {
-				invalidResults = append(invalidResults, result)
-			}
-		}
+		// 结果过滤统一走 filterCheckResults：fix 只保留无效记录（待修复项），
+		// 过滤方向由 keepValid=false 表达；unlink 的对应闭包复用同一份实现、只是方向相反
+		invalidResults := filterCheckResults(results, false)
 
 		if format == output.JSON || len(invalidResults) > 0 {
 			if err := output.PrintCheckResultsFix(out, format, invalidResults); err != nil {
@@ -159,37 +153,22 @@ func RunFix(cmd *cobra.Command, args []string) error {
 		}
 
 		if strings.HasPrefix(input, "d") {
-			parts := strings.Fields(input[1:])
-			var indices []int
-			for _, part := range parts {
-				idx, err := strconv.Atoi(part)
-				if err != nil || idx < 1 || idx > len(invalidResults) {
-					pterm.Warning.WithWriter(errOut).Println(l10n.T("Invalid number {{.Part}}", map[string]any{"Part": part}))
-					continue
-				}
-				indices = append(indices, idx-1)
-			}
+			// 编号解析统一走 parseSelectionIndices：input[1:] 已剥离 `d` 前缀，
+			// 「d 表示删除动作」这层前缀语义留在调用方，共享函数只认识空格分隔的数字串；
+			// 上限传入当前待修复集合的长度，越界项由共享函数打印警告并跳过
+			indices := parseSelectionIndices(input[1:], len(invalidResults), errOut)
 
 			if len(indices) == 0 {
 				continue
 			}
 
-			platform := runtime.GOOS
-			mgr := store.GlobalManager
+			// 移除所选记录：匹配键构造、store 判空与「空匹配键不得误删」的保护全部收口在 removeTrackedRecord
+			// 落盘仍保持重构前「一批一次」的粒度（saveTrackedStore），因此写盘次数与成功/失败文案都不变
+			// 注意：重构前此处直接使用 mgr，缺少 nil 判断；改走共享函数后，极端的 nil store 场景由 panic 变为安全跳过
 			for _, idx := range indices {
-				result := invalidResults[idx]
-				var entry map[string]string
-				switch result.Type {
-				case "symlink":
-					entry = map[string]string{"real": result.Real, "fake": result.Fake}
-				case "hardlink":
-					entry = map[string]string{"prim": result.Prim, "seco": result.Seco}
-				case "copy":
-					entry = map[string]string{"src": result.Src, "dst": result.Dst}
-				}
-				mgr.RemoveMatchingEntry(platform, result.Device, result.Type, entry)
+				removeTrackedRecord(invalidResults[idx])
 			}
-			if err := mgr.Save(store.StorePath); err != nil {
+			if err := saveTrackedStore(); err != nil {
 				pterm.Error.WithWriter(errOut).Println(l10n.T("Save failed: {{.Err}}", map[string]any{"Err": err.Error()}))
 				operationErrors = append(operationErrors, fmt.Errorf("%s: %w", l10n.T("Save failed", nil), err))
 			} else {
@@ -213,15 +192,9 @@ func RunFix(cmd *cobra.Command, args []string) error {
 				indices = append(indices, idx)
 			}
 		} else {
-			parts := strings.Fields(input)
-			for _, part := range parts {
-				idx, err := strconv.Atoi(part)
-				if err != nil || idx < 1 || idx > len(invalidResults) {
-					pterm.Warning.WithWriter(errOut).Println(l10n.T("Invalid number {{.Part}}", map[string]any{"Part": part}))
-					continue
-				}
-				indices = append(indices, idx-1)
-			}
+			// 普通修复分支与上面的删除分支共用同一份编号解析实现，
+			// 两者只是「传入哪一段字符串、上限取哪个集合长度」不同
+			indices = parseSelectionIndices(input, len(invalidResults), errOut)
 		}
 
 		if len(indices) == 0 {

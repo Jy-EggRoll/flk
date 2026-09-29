@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	createcopy "github.com/jy-eggroll/flk/internal/create/copy"
 	"github.com/jy-eggroll/flk/internal/create/shared"
@@ -49,15 +48,10 @@ func Copy(cmd *cobra.Command, args []string) error {
 	format := output.OutputFormat(outputFormat)
 	const resultType = "copy"
 
-	failure := func(message string, cause error) error {
-		if cause == nil {
-			cause = errors.New(message)
-		}
-		return renderCreateResult(cmd, format, output.CreateResult{Success: false, Type: resultType, Error: message}, cause)
-	}
+	// 失败渲染与设备名校验统一走 cmd/create.go 的 create 系列共享实现，避免三个叶子命令各写一份
+	failure := newCreateFailure(cmd, format, resultType)
 
-	if strings.Contains(createDevice, ",") || strings.Contains(createDevice, " ") {
-		message := l10n.T("Device name must not contain commas or spaces", nil)
+	if message := validateCreateDevice(createDevice); message != "" {
 		return failure(message, errors.New(message))
 	}
 

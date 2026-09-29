@@ -2,17 +2,20 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/jy-eggroll/flk/pkg/l10n"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/store"
+	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 )
 
@@ -336,4 +339,143 @@ func contains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+// buildRecordEntry 依据检查结果构造在 store 中定位同一条记录的匹配键
+//
+// 字段映射必须与 performCheck 从存储里读取字段的方式严格对应：symlink→real/fake、hardlink→prim/seco、copy→src/dst
+// 未知类型返回 nil，调用方（removeTrackedRecord）必须把空匹配键视为「不匹配任何记录」并跳过，
+// 原因见 removeTrackedRecord 的说明，此处不重复
+//
+// 抽取理由：fix 与 unlink 原先各自维护一份内容相同的 switch，字段约定一旦调整极容易只改一处、漏改另一处，
+// 导致两类命令对「同一条记录」的定位方式悄悄分叉，出现「一个命令删得掉、另一个删不掉」的诡异现象
+// 潜在影响点：本函数是纯映射，不读全局状态、不落盘；result 必须来自 performCheck（字段是存储中的原值），
+// 否则折叠路径形式不一致会导致 RemoveMatchingEntry 匹配失败而静默无操作
+func buildRecordEntry(result output.CheckResult) store.Entry {
+	switch result.Type {
+	case "symlink":
+		return store.Entry{"real": result.Real, "fake": result.Fake}
+	case "hardlink":
+		return store.Entry{"prim": result.Prim, "seco": result.Seco}
+	case "copy":
+		return store.Entry{"src": result.Src, "dst": result.Dst}
+	}
+	return nil
+}
+
+// removeTrackedRecord 从全局存储中移除一条追踪记录，返回值表示「是否真的执行了一次移除」
+//
+// 收口的三件事：
+//  1. 构造匹配键：统一走 buildRecordEntry，fix 与 unlink 不再各写一份 switch
+//  2. store 判空：GlobalManager 为 nil（InitStore 失败等极端场景）时安全跳过而不解引用 panic，
+//     原先 fix 的删除分支直接使用 mgr 缺少这层保护，与 unlink 的处理不一致，此处顺手补齐
+//  3. 空匹配键保护：store.RemoveMatchingEntry 用「遍历匹配键、逐字段比对」的方式找目标，
+//     匹配键为空（nil 或零长度）时循环体不执行、match 恒为 true，于是会删掉该类型下的第一条记录——
+//     即「删错记录」而不是「什么都不删」。未知类型、字段整体缺失都会走到这条路径，
+//     因此这里在调用前拦截，宁可不动存储也不能误删
+//
+// 落盘为什么不在这里做：两处调用方的落盘粒度与错误上报方式不同
+//   - fix：一批删除完成后只落盘一次，并把「Save failed」计入 operationErrors，成功则打印「Deletion complete」
+//   - unlink：单条删除时只改内存（unlinkResult 的返回值用于判定「解除失败」），
+//     批量结束后由 RunUnlink 的 saveStore 闭包调用 saveTrackedStore 统一落盘并上报「Save failed」
+//
+// 若把 Save 硬塞进本函数，unlink 的落盘失败就会被 unlinkResult 当成「解除失败」上报（文案与退出码语义都变了），
+// fix 也会从「一批一次落盘」变成「一条一次落盘」；因此落盘单独抽成 saveTrackedStore 共享，
+// 「构造 entry → 校验 store → 移除」与「校验 store → 落盘」两条链路仍是同一份实现，没有重复
+//
+// 返回值：两处调用方都不消费它（重构前也没有消费等价的信号，输出决策取决于落盘是否成功），
+// 保留返回值是为了让「store 不可用」「空匹配键」这两种安全跳过在调用方与单测中可观测
+func removeTrackedRecord(result output.CheckResult) bool {
+	// 防御性判空：GlobalManager 可能因 InitStore 失败而为 nil
+	mgr := store.GlobalManager
+	if mgr == nil {
+		return false
+	}
+
+	// 空匹配键会命中该类型下的第一条记录，必须先拦截（详见函数注释第 3 点）
+	entry := buildRecordEntry(result)
+	if len(entry) == 0 {
+		return false
+	}
+
+	mgr.RemoveMatchingEntry(runtime.GOOS, result.Device, result.Type, entry)
+	return true
+}
+
+// saveTrackedStore 把内存中的存储改动落盘到全局存储路径
+//
+// 抽取理由：fix 原先内联 mgr.Save(store.StorePath)，unlink 原先用 saveStoreAfterUnlink 包一层，
+// 两处都是「判空 + Save」这同一件事；现在两个命令共用本函数，落盘路径只有一个来源
+//
+// 判空返回 nil（而不是错误）的语义：store 不可用时本来就无从落盘，命令不应因此再报一个保存失败，
+// 这与重构前 unlink 的 saveStoreAfterUnlink 行为一致，也是 fix 那处新增保护的落点
+// 潜在影响点：本函数只负责写盘，不含任何用户可见输出；「Save failed」文案与 operationErrors 的收集
+// 仍由各调用方决定，以保持 fix 与 unlink 各自的既有文案与退出码语义
+func saveTrackedStore() error {
+	mgr := store.GlobalManager
+	if mgr == nil {
+		return nil
+	}
+	return mgr.Save(store.StorePath)
+}
+
+// parseSelectionIndices 把交互输入中空格分隔的编号解析成 0 基索引，非法项打印警告后跳过
+//
+// 抽取理由（组4）：fix 的 `d<number>` 删除分支、fix 的普通修复分支、unlink 的解除分支
+// 原先各自内联了同一段循环——判断条件（err != nil || idx < 1 || idx > count）、
+// 警告文案（"Invalid number {{.Part}}"）与 idx-1 的转换逐字相同，只有「上限取哪个切片长度」不同；
+// 三份实现意味着越界口径或警告文案一旦调整，极可能只改一处，出现「fix 拒绝的编号 unlink 却接受」
+// 或「同类非法输入在一个命令里报错、在另一个命令里静默」这类很难被发现的交互不一致
+//
+// 边界设计（三条独立约束，缺一不可）：
+//   - 编号语义面向用户是 1 基序号，减一后返回，调用方可直接拿来做下标访问
+//   - input 由调用方负责去掉命令前缀：fix 的 `d<number>` 里 `d` 只表示「删除动作」而不是编号的一部分，
+//     本函数只认识「空格分隔的数字串」，不掺入任何 d 前缀语义，避免把删除分支的特例塞进公共函数
+//   - 非法项（非数字 / 0 / 负数 / 超出 count）只跳过自身并打印一条警告，不影响同一行里其它合法编号；
+//     警告条数等于非法项条数、顺序按输入先后，与重构前逐项 continue 的行为逐字一致
+//
+// 返回值形态：全部非法或空输入时返回 nil 而不是空切片，调用方只做 len 判断并跳过本轮，
+// 两种形态在调用点完全等价，保留 `var indices []int` 的零值形态只为让「无有效编号」可被单测钉死
+//
+// errOut 必须非 nil：三处调用点都传 cmd.ErrOrStderr()，警告属于交互诊断信息，
+// 必须与业务结果（stdout）分流，测试里传 io.Discard 或 buffer 即可
+//
+// 潜在影响点：本函数会产生用户可见输出（警告走 errOut），改动文案或越界判断都会直接改变
+// fix 与 unlink 的交互行为；警告必须在选中项之前按输入顺序打印，顺序变了用户看到的提示顺序也会变
+func parseSelectionIndices(input string, count int, errOut io.Writer) []int {
+	var indices []int
+	for _, part := range strings.Fields(input) {
+		idx, err := strconv.Atoi(part)
+		if err != nil || idx < 1 || idx > count {
+			pterm.Warning.WithWriter(errOut).Println(l10n.T("Invalid number {{.Part}}", map[string]any{"Part": part}))
+			continue
+		}
+		indices = append(indices, idx-1)
+	}
+	return indices
+}
+
+// filterCheckResults 按有效性过滤检查结果，keepValid 为真时保留有效记录，为假时保留无效记录
+//
+// 抽取理由（组4）：fix 的 checkAndDisplay 只保留 !result.Valid（待修复项），
+// unlink 的 checkAndDisplay 只保留 result.Valid（待解除项），两处循环结构一致、仅过滤方向相反；
+// 用布尔参数表达方向，比两处各写一份循环更不易在后续字段调整时只改一侧
+//
+// 返回值刻意使用 make([]output.CheckResult, 0) 而不是 var 声明：
+// 空结果必须是「非 nil 空切片」，因为 JSON 模式下 output.PrintCheckResults / PrintCheckResultsFix
+// 会直接序列化这个切片，nil 被编码成 null、空切片才是 []，脚本无法稳定解析；
+// 这也正是重构前两处 make(...) 的既有行为，改成 nil 会造成用户可见的 JSON 差异
+//
+// 潜在影响点：本函数是纯过滤，不读全局状态、不产生任何输出；
+// 判定只看 Valid 字段（与重构前一致），无效记录的 Error/ErrorType 即便为空也仍按 Valid 归类
+func filterCheckResults(results []output.CheckResult, keepValid bool) []output.CheckResult {
+	filtered := make([]output.CheckResult, 0)
+	for _, result := range results {
+		// 用一个等值比较同时覆盖两个方向：keepValid=true 保留有效，false 保留无效，
+		// 与重构前 `if result.Valid` / `if !result.Valid` 的判定完全等价
+		if result.Valid == keepValid {
+			filtered = append(filtered, result)
+		}
+	}
+	return filtered
 }

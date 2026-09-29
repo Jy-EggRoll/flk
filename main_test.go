@@ -287,6 +287,50 @@ func TestCLICreateNonInteractiveConfirmation(t *testing.T) {
 	}
 }
 
+// TestCLICreateRejectsInvalidDevice 验证 create 系列命令在 --device 含保留字符时快速失败
+//
+// 为什么必须守这条契约：设备名会作为 store 的 key 参与设备过滤，逗号与空格是记录分隔语义中的保留字符
+// 一旦非法设备名被接受，它会先写进 store 再在后续过滤中表现出难以定位的错乱，因此在任何日志与
+// 文件系统操作之前就要拒绝
+//
+// 断言全部基于真实子进程输出：退出码非零、默认英文文案恰好出现一次（失败结果由命令层渲染并标记，
+// 根层不得重复打印）、且非法输入不产生任何文件系统副作用
+func TestCLICreateRejectsInvalidDevice(t *testing.T) {
+	// 无 --lang 与语言环境变量时 l10n 回退到默认英文文案，与其它 CLI 契约用例的假设一致
+	const wantMessage = "Device name must not contain commas or spaces"
+
+	for _, testCase := range []struct {
+		name       string
+		deviceName string
+	}{
+		{name: "含逗号", deviceName: "a,b"},
+		{name: "含空格", deviceName: "a b"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			dir := t.TempDir()
+			fakePath := filepath.Join(dir, "fake.txt")
+			result := runCLI(t, "create", "symlink",
+				"--real", filepath.Join(dir, "real.txt"),
+				"--fake", fakePath,
+				"--device", testCase.deviceName,
+				"--store-path", filepath.Join(dir, "store.json"),
+			)
+
+			if result.exitCode == 0 {
+				t.Fatalf("非法设备名 %q 应导致非零退出，stdout=%q stderr=%q", testCase.deviceName, result.stdout, result.stderr)
+			}
+			// create 的失败结果写入 stdout 并被标记为已渲染，根层不再重复输出，因此合并两个流后断言次数
+			combined := result.stdout + result.stderr
+			if count := strings.Count(combined, wantMessage); count != 1 {
+				t.Fatalf("失败文案应恰好出现一次，实际 %d 次，stdout=%q stderr=%q", count, result.stdout, result.stderr)
+			}
+			if _, err := os.Lstat(fakePath); err == nil {
+				t.Fatal("设备名校验失败时不应创建 fake，说明校验发生在文件系统操作之后")
+			}
+		})
+	}
+}
+
 // TestCLIBatchCommandsAreNonInteractive 验证 fix/unlink 的批量模式（--all）在无终端环境下
 // 不再逐项弹确认，可完整跑完；这是 --yes 之外对“非交互能力”的重要补齐
 func TestCLIBatchCommandsAreNonInteractive(t *testing.T) {
