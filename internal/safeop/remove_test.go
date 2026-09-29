@@ -3,6 +3,7 @@ package safeop
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -309,4 +310,187 @@ func (w *failAfterOneWrite) Write(data []byte) (int, error) {
 		return 0, w.err
 	}
 	return io.Discard.Write(data)
+}
+
+// protectedPathCase 是受保护路径用例：name 用于子测试命名，path 是被保护目标本身
+type protectedPathCase struct {
+	name string
+	path string
+}
+
+// protectedPathCases 构造当前平台上的受保护路径用例（根目录本身，以及家目录的几种等价写法）
+// 这些路径只用于验证「函数在触碰文件系统之前就拒绝」，测试绝不对它们做任何删除或移动
+func protectedPathCases(t *testing.T) []protectedPathCase {
+	t.Helper()
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("无法获取家目录: %v", err)
+	}
+	home = filepath.Clean(home)
+	sep := string(os.PathSeparator)
+
+	// 根目录现场推导（Unix 为 "/"，Windows 为 "C:\" 之类的盘符根），不硬编码任何平台路径
+	root := filepath.VolumeName(home) + sep
+
+	return []protectedPathCase{
+		{"根目录", root},
+		{"家目录", home},
+		{"家目录带尾部斜杠", home + sep},
+		{"家目录中夹 .. 的归一化等价形式", filepath.Join(home, "..", filepath.Base(home))},
+	}
+}
+
+// TestValidateRemovableRejectsProtectedPaths 验证两处入口共用的围栏函数会拒绝根目录本身与家目录本身，
+// 且拒绝不产生任何文件系统变更
+// 红线：本用例只断言函数返回错误，绝不对受保护路径执行删除或移动
+func TestValidateRemovableRejectsProtectedPaths(t *testing.T) {
+	cases := protectedPathCases(t)
+
+	// 在临时目录里放一个探针文件，用于确认整个用例期间没有出现任何文件系统副作用
+	probe := filepath.Join(t.TempDir(), "probe.txt")
+	if err := os.WriteFile(probe, []byte("探针"), 0o644); err != nil {
+		t.Fatalf("创建探针文件失败: %v", err)
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateRemovable(tc.path)
+			if !errors.Is(err, ErrProtectedPath) {
+				t.Fatalf("validateRemovable(%q) 返回 %v，期望 %v", tc.path, err, ErrProtectedPath)
+			}
+			// 错误形态必须带可展示文案，否则命令层 failure(err.Error()) 会给出空信息
+			if err.Error() == "" {
+				t.Fatal("受保护路径错误必须带有可展示的文案")
+			}
+		})
+	}
+
+	if _, err := os.Lstat(probe); err != nil {
+		t.Fatalf("围栏拦截后探针文件不应受影响: %v", err)
+	}
+	for _, tc := range cases {
+		if _, err := os.Lstat(tc.path); err != nil {
+			t.Fatalf("受保护路径 %q 在拦截后应保持存在: %v", tc.path, err)
+		}
+	}
+}
+
+// TestValidateRemovableAllowsHomeChildrenAndTempDirs 验证围栏的口径边界：只挡「根目录本身与家目录本身」，
+// 家目录的子项与普通临时目录一律放行，避免这次加固误伤存量的覆盖删除
+// （create 系列的 dst、unlink 的派生位置）以及用户对自己家目录内容的正常管理
+func TestValidateRemovableAllowsHomeChildrenAndTempDirs(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("无法获取家目录: %v", err)
+	}
+	home = filepath.Clean(home)
+
+	allowed := []struct {
+		name string
+		path string
+	}{
+		{"家目录的子目录", filepath.Join(home, ".ssh")},
+		{"家目录的子文件", filepath.Join(home, ".bashrc")},
+		{"普通临时目录", t.TempDir()},
+	}
+	for _, tc := range allowed {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := validateRemovable(tc.path); err != nil {
+				t.Fatalf("validateRemovable(%q) = %v，期望放行", tc.path, err)
+			}
+		})
+	}
+
+	// home+"/.." 归一化后是家目录的父目录（如 /home）而不是家目录本身，按「不扩大保护范围」的约定放行；
+	// 仅当家目录本身挂在根目录下（如 root 用户的 /root）时它才等于根目录而被根规则拦下，
+	// 因此期望值按实际归一化结果推导，两种环境下都不会误判
+	t.Run("家目录的父目录遍历", func(t *testing.T) {
+		parent := filepath.Join(home, "..")
+		cleaned := filepath.Clean(parent)
+		shouldProtect := cleaned == home || filepath.Dir(cleaned) == cleaned
+
+		err := validateRemovable(parent)
+		if shouldProtect && !errors.Is(err, ErrProtectedPath) {
+			t.Fatalf("validateRemovable(%q) 返回 %v，期望 %v", parent, err, ErrProtectedPath)
+		}
+		if !shouldProtect && err != nil {
+			t.Fatalf("validateRemovable(%q) = %v，家目录的父目录不在约定保护范围内，期望放行", parent, err)
+		}
+	})
+}
+
+// TestDeleteRejectsProtectedPaths 验证唯一执行口 Delete 对两种删除策略都会拦截：
+// --no-trash 是真实删除，默认策略则会把目标整体 rename 进回收站，对根目录或家目录而言同样致命
+// 前置保险：先确认围栏函数本身能拦下同一路径，才继续调用 Delete——万一口径被改坏，
+// 本用例会在前置断言处失败退出，而不会真的把 / 或家目录交给 os.RemoveAll 或回收站
+// 红线：本用例只断言返回 ErrProtectedPath，绝不对受保护路径执行任何删除或移动
+func TestDeleteRejectsProtectedPaths(t *testing.T) {
+	cases := protectedPathCases(t)
+
+	for _, tc := range cases {
+		for _, noTrash := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/noTrash=%v", tc.name, noTrash), func(t *testing.T) {
+				if err := validateRemovable(tc.path); !errors.Is(err, ErrProtectedPath) {
+					t.Fatalf("前置断言失败：validateRemovable(%q) = %v，拒绝执行 Delete 以免造成不可逆破坏", tc.path, err)
+				}
+
+				if err := Delete(tc.path, noTrash); !errors.Is(err, ErrProtectedPath) {
+					t.Fatalf("Delete(%q, %v) 返回 %v，期望 %v", tc.path, noTrash, err, ErrProtectedPath)
+				}
+
+				// 拦截必须发生在任何文件系统操作之前：受保护路径必须原封不动
+				if _, err := os.Lstat(tc.path); err != nil {
+					t.Fatalf("受保护路径 %q 被删除或移动: %v", tc.path, err)
+				}
+			})
+		}
+	}
+}
+
+// TestRemoveWithConfirmRejectsProtectedPathBeforePlanAndConfirm 验证 RemoveWithConfirm 在生成并打印删除计划、
+// 询问确认之前就拒绝受保护路径——否则用户会先看到一份不可能执行的惊悚计划再被告知拒绝
+//
+// 两重保险：确认函数固定返回 false（即使围栏失效，最坏结果也只是「用户取消」而不会删除），
+// 并且在调用前先用 validateRemovable 做前置断言
+// 红线：本用例绝不对受保护路径执行删除或移动
+func TestRemoveWithConfirmRejectsProtectedPathBeforePlanAndConfirm(t *testing.T) {
+	cases := protectedPathCases(t)
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := validateRemovable(tc.path); !errors.Is(err, ErrProtectedPath) {
+				t.Fatalf("前置断言失败：validateRemovable(%q) = %v，拒绝执行 RemoveWithConfirm", tc.path, err)
+			}
+
+			var buffer bytes.Buffer
+			confirmCalled := false
+			paths, err := RemoveWithConfirm(tc.path, RemoveOptions{
+				Output: &buffer,
+				Confirm: func() (bool, error) {
+					confirmCalled = true
+					return false, nil
+				},
+			})
+
+			if !errors.Is(err, ErrProtectedPath) {
+				t.Fatalf("返回错误 = %v，期望 %v", err, ErrProtectedPath)
+			}
+			if errors.Is(err, ErrOperationCancelled) {
+				t.Fatal("受保护路径必须返回 ErrProtectedPath，而不是表达为「用户取消」")
+			}
+			if confirmCalled {
+				t.Fatal("受保护路径不应进入确认流程")
+			}
+			if buffer.Len() != 0 {
+				t.Fatalf("受保护路径不应打印删除计划，实际输出: %q", buffer.String())
+			}
+			if paths != nil {
+				t.Fatalf("拒绝时返回路径 = %#v，期望 nil", paths)
+			}
+			if _, err := os.Lstat(tc.path); err != nil {
+				t.Fatalf("受保护路径 %q 不应被删除或移动: %v", tc.path, err)
+			}
+		})
+	}
 }

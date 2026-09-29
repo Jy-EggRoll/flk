@@ -287,6 +287,8 @@ func unlinkResult(result output.CheckResult, skipConfirm bool, errorOutput ...io
 //   - 将派生位置的旧链接删除（默认移入回收站而非真实删除，所有数据都可恢复；
 //     全局 --no-trash 生效时改为真实删除）
 //   - 移动后用 pathutil.Copy 把真实数据复制到派生位置；Copy 会正确处理文件与目录（目录递归复制）
+//   - 自引用前置守卫（本次新增）：派生位置位于权威源内部、或两者是同一路径时直接报错并中止，
+//     保证在这次「先删后复制」的操作里不产生任何文件系统变更（详见函数体内的注释）
 //
 // skipConfirm 为真时跳过交互确认（来自 --all/--yes/--force）；为假且环境不可交互时，
 // prompt.Confirm 会返回错误而不是无限等待，保证不会在无人值守场景挂起
@@ -299,6 +301,29 @@ func replaceWithReal(source, derived, sourceLabel, derivedLabel string, skipConf
 	actualSource, err := filepath.EvalSymlinks(source)
 	if err != nil {
 		return fmt.Errorf("%s", l10n.T("{{.Source}} is unavailable ({{.Err}}); skipped to avoid data loss", map[string]any{"Source": sourceLabel, "Err": err.Error()}))
+	}
+
+	// 自引用前置守卫（本次新增）：命中的形态是「派生位置位于权威源内部」或「两者是同一路径」
+	// 这两种情况下复制会变成自毁——目标先被建出来，紧接着 ReadDir 源目录读到自己刚建的目标并
+	// 递归下钻，每层多一级同名子目录，直到路径超长报错，期间在用户的源目录里留下大量垃圾目录
+	// （可达路径：flk create symlink -r ~/repo -f ~/repo/self 之后执行 flk unlink）
+	//
+	// 为什么必须放在这里（三个位置约束，缺一不可）：
+	//   1. 必须在 safeop.Delete(derived) 之前：本函数是「先删除派生位置、再复制」的顺序，
+	//      若只依赖 pathutil.Copy 的底层守卫，报错时派生位置上的链接/数据已经被删除（默认进回收站、
+	//      --no-trash 时是永久删除），状态已被改变，用户还得自己恢复
+	//   2. 必须在 prompt.Confirm 之前：不能让用户先确认「删除链接并替换为真实文件」、回答 y 之后
+	//      才被告知这组路径非法——那既误导用户，也让人怀疑围栏是否真的生效
+	//   3. 必须使用 EvalSymlinks 之后的 actualSource 而不是入参 source：source 自身可能是符号链接，
+	//      复制真正读取的是解析后的真实路径，用未解析的写法判断会漏判
+	//
+	// 判定复用 pathutil.CheckCopyPaths（与 pathutil.Copy 内部守卫同一份口径与文案），
+	// 参数顺序与下面的复制调用 pathutil.Copy(actualSource, derived) 严格一致（src 在前、dst 在后）
+	//
+	// 错误原样返回、不再包一层「复制失败」：文案本身已经说清原因与方向，多包一层只会让用户看到
+	// 「复制失败: 拒绝把 X 复制进 Y」这种冗余信息；同时保持错误链首层就是哨兵错误，errors.Is 判定更直观
+	if err := pathutil.CheckCopyPaths(actualSource, derived); err != nil {
+		return err
 	}
 
 	if !skipConfirm {

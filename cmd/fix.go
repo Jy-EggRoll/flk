@@ -346,6 +346,8 @@ func repairResult(result output.CheckResult, idx int, skipConfirm bool, errorOut
 //     而非真实文件），此时同样判定为无法回填，交由上层报错
 //   - 其余情况（derived 为真实文件/目录）：用 pathutil.Copy 回填，复用项目已有的复制实现（会正确
 //     处理目录递归与内部符号链接）
+//   - 自引用前置守卫（本次新增）：source 位于 derived 内部、或两者是同一路径时直接报错并中止，
+//     保证不产生任何文件系统变更（详见函数体内的注释）
 func backfillSourceIfMissing(source, derived, sourceLabel, derivedLabel string) error {
 	if _, err := os.Stat(source); err == nil {
 		// source 存在，无需回填
@@ -360,6 +362,28 @@ func backfillSourceIfMissing(source, derived, sourceLabel, derivedLabel string) 
 	if derivedInfo.Mode()&os.ModeSymlink != 0 {
 		// derived 本身是符号链接，复制它得到的仍是链接，无法作为权威真实数据
 		return fmt.Errorf("%s", l10n.T("{{.Source}} is missing and {{.Derived}} is a symbolic link; cannot back-fill {{.Source}}", map[string]any{"Source": sourceLabel, "Derived": derivedLabel}))
+	}
+
+	// 自引用前置守卫（本次新增）：这里的复制方向是 derived -> source，因此命中的形态是
+	// 「source 位于 derived 内部」或「两者是同一路径」。命中时 pathutil.CopyDir 会先 MkdirAll(source)
+	// 再 ReadDir(derived)，读到自己刚建出来的 source 并递归下钻，边复制边把目标写进源里，
+	// 每层多一级同名子目录，直到路径超长报错或磁盘写满，在用户的 derived 目录里留下大量垃圾目录
+	//
+	// 为什么必须放在 logger.Info 与 pathutil.Copy 之前：本函数的唯一文件系统变更就是那次 Copy，
+	// 提前判断能保证「拒绝」不依赖任何文件系统状态，用户也不会先看到「正在尝试回填」的日志、
+	// 随后才被告知这组路径非法
+	//
+	// 为什么放在 derived 可用性检查之后：derived 缺失或本身是符号链接时，上面两条既有错误
+	// 更具体、更能说明「无从修复」的原因，先报这两条对用户更有用；且这两种情况本就不会触发复制，
+	// 不存在自引用损害
+	//
+	// 判定复用 pathutil.CheckCopyPaths（与 pathutil.Copy 内部守卫同一份口径与文案），
+	// 参数顺序与下面的复制调用 pathutil.Copy(derived, source) 严格一致（src=derived 在前、dst=source 在后）
+	//
+	// 错误原样返回、不再包一层「回填失败」：文案本身已说清原因与方向，多包一层只会让用户看到
+	// 「回填失败: 拒绝把 X 复制进 Y」这种冗余信息，同时保持错误链首层就是哨兵错误，errors.Is 判定更直观
+	if err := pathutil.CheckCopyPaths(derived, source); err != nil {
+		return err
 	}
 
 	logger.Info(l10n.T("Source missing; attempting to back-fill from the derived location", nil), "from", derived, "to", source)
