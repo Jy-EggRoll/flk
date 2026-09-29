@@ -31,9 +31,33 @@ type Manager struct {
 	Data RootConfig
 }
 
+// rootConfigOrEmpty 把 nil 的 RootConfig 归一成空表，是本包「nil 不流出」的唯一收口点
+// 防的是两类问题：nil map 赋值 panic（assignment to entry in nil map），以及序列化出裸 null
+// （json.MarshalIndent(nil) 得到 "null"，它不是对象，前端 /api/config 取属性会出错）
+// 潜在影响点：AddRecord / ToJSON / Save 都依赖它；新增任何读写 Data 的出口都应先过这里，别再各写一份判空
+func rootConfigOrEmpty(rc RootConfig) RootConfig {
+	if rc == nil {
+		return make(RootConfig)
+	}
+	return rc
+}
+
+// newManagerFromData 是 LoadFromFile 所有成功路径的统一出口，保证返回的 Manager 里 Data 永不为 nil
+// 关键场景：文件内容为 JSON null 时 json.Unmarshal 会成功并把 RootConfig 留成 nil map，
+// 若直接把 data 塞进 Manager，调用方一 AddRecord 就 panic
+// 潜在影响点：空文件、空对象、旧格式迁移结果都从这里出去，迁移分支也一并被覆盖
+func newManagerFromData(data RootConfig) *Manager {
+	return &Manager{Data: rootConfigOrEmpty(data)}
+}
+
 // AddRecord 添加一条链接记录，所有路径统一存储为折叠绝对路径（~ 格式）
 func (m *Manager) AddRecord(device, linkType string, fields map[string]string) {
 	platform := runtime.GOOS
+
+	// 兜底：Manager 的 Data 为 nil 时，下面的 m.Data[platform] = ... 会 panic（assignment to entry in nil map）
+	// LoadFromFile 已经保证不再返回 nil Data，这里防的是绕过它自行构造的使用者（例如调用方写 &Manager{}）
+	// 潜在影响点：这是唯一的兜底，此处归一后 m.Data 会被就地替换成空表，后续写入和序列化都走正常路径
+	m.Data = rootConfigOrEmpty(m.Data)
 
 	if m.Data[platform] == nil {
 		m.Data[platform] = make(DeviceGroup)
@@ -58,7 +82,8 @@ func (m *Manager) AddRecord(device, linkType string, fields map[string]string) {
 		}
 	}
 
-	// 去重：symlink 以 fake 去重，hardlink 以 seco 去重
+	// 去重：symlink 以 fake 去重，hardlink 以 seco 去重，copy 以 dst 去重
+	// 未识别的 linkType 不做去重，直接追加（dedupField 留空走下面的追加分支）
 	var dedupField string
 	switch linkType {
 	case "symlink":
@@ -89,9 +114,12 @@ func (m *Manager) AddRecord(device, linkType string, fields map[string]string) {
 // ToJSON 将当前数据序列化为格式化 JSON 字符串
 // 之前用 jsonResult, _ := 忽略了错误，序列化失败会静默返回空串，调用方（如 serve 的 /api/config）
 // 无法区分「空数据」与「序列化失败」。现在出错时记 warn 并返回 "{}"，保证返回值始终是合法 JSON
+// Data 为 nil 时也归一成空表再序列化，否则 json.MarshalIndent(nil) 会输出 "null" 这个合法但非对象的字面量，
+// 前端（cmd/ui/config.html）按对象取属性会出错
 func (m *Manager) ToJSON() string {
-	sortRootConfig(m.Data)
-	jsonResult, err := json.MarshalIndent(m.Data, "", "    ")
+	data := rootConfigOrEmpty(m.Data)
+	sortRootConfig(data)
+	jsonResult, err := json.MarshalIndent(data, "", "    ")
 	if err != nil {
 		logger.Warn(l10n.T("Failed to serialize the store data", nil), "error", err)
 		return "{}"
@@ -149,8 +177,11 @@ func InitStore(storePath string) error {
 
 // Save 将数据持久化到指定文件
 func (m *Manager) Save(filePath string) error {
-	sortRootConfig(m.Data)
-	data, err := json.MarshalIndent(m.Data, "", "    ")
+	// Data 为 nil 时同样归一成空表：否则会把裸 null 写进存储文件，下次启动读回又是 nil Data
+	// 那样本缺陷会随磁盘文件在「读入 → 写出」之间来回传递，永远清除不掉
+	data := rootConfigOrEmpty(m.Data)
+	sortRootConfig(data)
+	payload, err := json.MarshalIndent(data, "", "    ")
 	if err != nil {
 		return err
 	}
@@ -161,7 +192,7 @@ func (m *Manager) Save(filePath string) error {
 	if err := os.MkdirAll(filepath.Dir(expanded), 0755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(expanded, data, 0644); err != nil {
+	if err := os.WriteFile(expanded, payload, 0644); err != nil {
 		return err
 	}
 	return nil
@@ -179,13 +210,14 @@ func LoadFromFile(filePath string) (*Manager, error) {
 	}
 
 	if len(b) == 0 {
-		return &Manager{Data: make(RootConfig)}, nil
+		return newManagerFromData(nil), nil
 	}
 
 	// 先尝试新格式（3 层：platform → device → []Entry）
+	// 内容为裸 null 时这里也会解析成功，data 仍是 nil，交由 newManagerFromData 归一成空表
 	var data RootConfig
 	if err := json.Unmarshal(b, &data); err == nil {
-		return &Manager{Data: data}, nil
+		return newManagerFromData(data), nil
 	}
 
 	// 新格式解析失败，尝试旧格式（4 层带 parentPath）并迁移
@@ -195,10 +227,9 @@ func LoadFromFile(filePath string) (*Manager, error) {
 	}
 
 	migratedData := migrateFromLegacy(legacyData)
-	data = migratedData
 
 	// 自动写回新格式
-	manager := &Manager{Data: data}
+	manager := newManagerFromData(migratedData)
 	if saveErr := manager.Save(filePath); saveErr != nil {
 		logger.Warn(l10n.T("Failed to save after automatically migrating the store format", nil), "error", saveErr)
 	}
