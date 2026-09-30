@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -202,6 +203,190 @@ func TestCLIAuxiliaryCommands(t *testing.T) {
 			}
 			if strings.Contains(result.stdout, "Welcome to flk") || strings.Contains(result.stderr, "Welcome to flk") {
 				t.Fatalf("辅助命令不应输出欢迎语，stdout=%q stderr=%q", result.stdout, result.stderr)
+			}
+		})
+	}
+}
+
+// TestCLIHelpLanguageFlagOrder 从真实子进程验证「--help/-h 无论出现在 --lang/-l 之前还是之后，语言都必须生效」
+//
+// 回归背景：pflag 对未定义的 --help/-h 会立即中断解析并返回 ErrHelp，
+// 导致 `flk serve --help --lang zh-CN` 里的 --lang 被丢弃、帮助回退英文，
+// 也就是「--help 写在 --lang 之前」才失效、若把 --lang 挪到前面即可绕过；修复见 cmd/lang.go 的占位 flag
+//
+// 为什么用「不同顺序之间互相比对」而不是断言某句中文译文：
+// 译文由 internal/locales 维护、会随翻译迭代改动，把用例钉在具体措辞上会随翻译一起变红；
+// 这里真正要守住的是「同一语言下帮助参数的位置不改变输出」，以及与英文基线必须不同，
+// 两者都不依赖具体措辞，因此翻译怎么改都不会误报
+//
+// 同时它也守住了「语言确实生效」这一点：若 --lang 被丢弃而回退默认英文，
+// zh-CN 的输出会与 --lang en 完全相同，用例立即失败
+//
+// 根命令的场景同样必须覆盖，而它由另一处修复兜底：cobra 的 Find/stripFlags 在默认 help flag
+// 尚未注册时会把 --help/-h 误判成「需要取值的 flag」并吞掉下一个参数，随后根命令专属的
+// legacyArgs 直接报 unknown command；cmd/root.go 在执行前提前注册该 flag 即为修此问题
+// 两类缺陷的表现都是「帮助参数的位置改变结果」，因此放在同一个用例里逐条比对
+func TestCLIHelpLanguageFlagOrder(t *testing.T) {
+	tests := []struct {
+		name      string
+		reference []string
+		reordered []string
+	}{
+		{
+			name:      "serve 长参数",
+			reference: []string{"serve", "--lang", "zh-CN", "--help"},
+			reordered: []string{"serve", "--help", "--lang", "zh-CN"},
+		},
+		{
+			name:      "serve 短参数",
+			reference: []string{"serve", "-l", "zh-CN", "-h"},
+			reordered: []string{"serve", "-h", "-l", "zh-CN"},
+		},
+		{
+			name:      "check 叶子命令",
+			reference: []string{"check", "--lang", "zh-CN", "--help"},
+			reordered: []string{"check", "--help", "--lang", "zh-CN"},
+		},
+		{
+			name:      "根命令长参数",
+			reference: []string{"--lang", "zh-CN", "--help"},
+			reordered: []string{"--help", "--lang", "zh-CN"},
+		},
+		{
+			name:      "根命令短参数",
+			reference: []string{"-l", "zh-CN", "-h"},
+			reordered: []string{"-h", "-l", "zh-CN"},
+		},
+		{
+			name:      "根命令等号写法",
+			reference: []string{"--lang=zh-CN", "--help"},
+			reordered: []string{"--help", "--lang=zh-CN"},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			reference := runCLI(t, testCase.reference...)
+			reordered := runCLI(t, testCase.reordered...)
+
+			if reference.exitCode != 0 || reordered.exitCode != 0 {
+				t.Fatalf("帮助应正常退出，reference=%d reordered=%d，stderr=%q %q",
+					reference.exitCode, reordered.exitCode, reference.stderr, reordered.stderr)
+			}
+			if !strings.Contains(reference.stdout, "Usage:") || !strings.Contains(reordered.stdout, "Usage:") {
+				t.Fatalf("帮助输出缺少 Usage，reference=%q reordered=%q", reference.stdout, reordered.stdout)
+			}
+			if reordered.stdout != reference.stdout {
+				t.Fatalf("--help 位置改变了帮助内容，说明语言取值依赖参数顺序\nreference=%q\nreordered=%q",
+					reference.stdout, reordered.stdout)
+			}
+		})
+	}
+
+	// 语言有效性基线：显式 --lang en 与显式 --lang zh-CN 必须产出不同内容，
+	// 否则上面的「两种顺序一致」可能只是双双回退英文而假通过
+	english := runCLI(t, "serve", "--help", "--lang", "en")
+	chinese := runCLI(t, "serve", "--help", "--lang", "zh-CN")
+	if english.stdout == chinese.stdout {
+		t.Fatalf("--lang en 与 --lang zh-CN 输出相同，语言未真正生效: %q", chinese.stdout)
+	}
+
+	// 根命令不带 --lang 时必须照旧正常出帮助：退出码为 0、有 Usage、stderr 干净
+	plainHelp := runCLI(t, "--help")
+	if plainHelp.exitCode != 0 || plainHelp.stderr != "" || !strings.Contains(plainHelp.stdout, "Usage:") {
+		t.Fatalf("不带 --lang 的根帮助行为被改变: exit=%d stderr=%q stdout=%q",
+			plainHelp.exitCode, plainHelp.stderr, plainHelp.stdout)
+	}
+
+	// --help 后面跟着子命令名时，cobra 必须把它当子命令，而不是把子命令名当成 --help 的取值吞掉：
+	// 修改前这里打印的是根帮助，修改后才与 `flk help serve` 完全一致
+	flagHelp := runCLI(t, "--help", "serve", "--lang", "en")
+	commandHelp := runCLI(t, "help", "serve", "--lang", "en")
+	if flagHelp.exitCode != 0 || flagHelp.stdout != commandHelp.stdout {
+		t.Fatalf("`flk --help serve` 应与 `flk help serve` 等价: exit=%d\nflag=%q\ncommand=%q",
+			flagHelp.exitCode, flagHelp.stdout, commandHelp.stdout)
+	}
+}
+
+// helpFlagLine 从一行帮助里剥出「flag 名 → 说明」
+//
+// 帮助行的结构固定为「缩进 + 名称(可带类型) + 两个以上空格 + 说明」，
+// 例如 "  -l, --lang string        输出语言（如 en、zh-CN）；默认取 language 设置"，
+// 因此按「两个以上空格」切分即可稳定取到说明，不必理解各列的对齐规则
+// 正则要求出现 -- 前缀，因此 Usage/Aliases/Available Commands 等段落不会误命中
+var helpFlagLine = regexp.MustCompile(`^\s+(?:-\w,\s+)?--([\w.-]+)(?:\s+\w+)?\s{2,}(.+)$`)
+
+// parseHelpFlagUsages 把一份帮助输出解析成「flag 名 → 说明」，Local Flags 与 Global Flags 一并纳入
+func parseHelpFlagUsages(output string) map[string]string {
+	usages := make(map[string]string)
+	for _, line := range strings.Split(output, "\n") {
+		match := helpFlagLine.FindStringSubmatch(line)
+		if match == nil {
+			continue
+		}
+		usages["--"+match[1]] = strings.TrimSpace(match[2])
+	}
+	return usages
+}
+
+// withLanguage 复制一份参数并把 --lang 追加在末尾，避免调用方切片被 append 意外改写
+func withLanguage(arguments []string, lang string) []string {
+	return append(append([]string{}, arguments...), "--lang", lang)
+}
+
+// TestCLIHelpTranslatesPersistentFlags 守住「用 PersistentFlags 声明的 flag 说明也必须翻译」
+//
+// 回归背景：localizeTree 原先只遍历 cmd.Flags()，而语言在 cobra 解析之前就已确定，
+// 此刻持久化 flag 还没被合并进 Flags()；于是 flk 的全部全局 flag（--lang/--output/--yes…）
+// 与 serve 的 --host/-p 在 zh-CN 下恒为英文，帮助里出现整段中英混排的 Global Flags
+//
+// 断言用差分口径：把中英文帮助各解析成「flag 名 → 说明」，逐个要求 zh-CN 的说明与英文不同
+// 既不依赖任何具体译文措辞，又能同时覆盖 Local Flags 与 Global Flags 两个段落
+// 唯一豁免是 cobra 自动生成的 --help（"help for <命令>"）：该串不在语言文件里，
+// 且在本地化之后才由 cobra 创建，属于已知且有意保留的英文条目
+func TestCLIHelpTranslatesPersistentFlags(t *testing.T) {
+	tests := []struct {
+		name            string
+		arguments       []string
+		wantGlobalFlags bool
+	}{
+		{name: "根命令", arguments: []string{"--help"}},
+		{name: "check 叶子命令", arguments: []string{"check", "--help"}, wantGlobalFlags: true},
+		{name: "serve config 子命令", arguments: []string{"serve", "config", "--help"}, wantGlobalFlags: true},
+		{name: "create copy 子命令", arguments: []string{"create", "copy", "--help"}, wantGlobalFlags: true},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			englishOutput := runCLI(t, withLanguage(testCase.arguments, "en")...).stdout
+			chineseOutput := runCLI(t, withLanguage(testCase.arguments, "zh-CN")...).stdout
+
+			// 段落存在性自检：子命令的帮助必须有 Global Flags 段，
+			// 否则解析器可能整段漏读，下面「逐 flag 比对」就会在空集上假通过
+			if testCase.wantGlobalFlags && !strings.Contains(chineseOutput, "Global Flags:") {
+				t.Fatalf("帮助缺少 Global Flags 段，持久化 flag 未被纳入解析: %q", chineseOutput)
+			}
+
+			english := parseHelpFlagUsages(englishOutput)
+			chinese := parseHelpFlagUsages(chineseOutput)
+			if len(english) == 0 || len(chinese) == 0 {
+				t.Fatalf("帮助里没有解析到任何 flag: en=%d zh=%d", len(english), len(chinese))
+			}
+			if len(english) != len(chinese) {
+				t.Fatalf("中英文帮助解析出的 flag 数量不一致: en=%d zh=%d", len(english), len(chinese))
+			}
+
+			for name, chineseUsage := range chinese {
+				if name == "--help" {
+					continue
+				}
+				englishUsage, ok := english[name]
+				if !ok {
+					t.Fatalf("flag %s 只出现在 zh-CN 帮助里，en 帮助缺少它", name)
+				}
+				if chineseUsage == englishUsage {
+					t.Fatalf("flag %s 的说明在 zh-CN 下仍是英文源串: %q", name, chineseUsage)
+				}
 			}
 		})
 	}

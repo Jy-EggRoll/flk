@@ -228,6 +228,20 @@ func Execute() int {
 	}
 	localizeTree(rootCmd)
 
+	// 提前把根命令的默认 --help/-h 注册进 flag 集，修的是「根命令上 --help 写在 --lang 之前直接失败」：
+	// cobra 的 Find → stripFlags 判断某个 flag 会不会吃掉下一个参数，依据是它有没有 NoOptDefVal；
+	// 而默认 help flag 平时要等到 execute() 阶段才注册（Find 之后），此时它还不存在，
+	// 于是 `flk --help --lang zh-CN` 里的 --lang 被当成 --help 的取值吞掉，剩下的 "zh-CN"
+	// 被当作子命令名，最终由根命令专属的 legacyArgs 报 unknown command 并非零退出
+	//（子命令要么自身没有子命令、要么带有父命令，都会在 legacyArgs 里短路返回，
+	//  所以只有「既带子命令又没有父命令」的根命令会暴露这个问题）
+	//
+	// 这里只提前注册，帮助文案与其默认值展示都不变：execute() 里仍会用同一规则、同一名字创建它
+	// 位置刻意放在 localizeTree 之后：抽到它前面会让 mergePersistentFlags 提前把持久化 flag
+	// 并进 Flags()，虽然 visited 去重后结果等价，但遍历集合与既有顺序不一致，徒增理解成本；
+	// 其说明 "help for flk" 由 cobra 生成、不在语言文件里，与各子命令的 "help for X" 一样保持英文
+	rootCmd.InitDefaultHelpFlag()
+
 	err := rootCmd.Execute()
 	if err == nil {
 		return 0

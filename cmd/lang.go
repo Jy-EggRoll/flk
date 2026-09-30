@@ -48,6 +48,13 @@ func chooseLanguage() string {
 	return ""
 }
 
+// scanHelpFlagName / scanHelpFlagShorthand 是预扫描阶段为帮助参数注册的占位 flag
+// 取值本身没有任何意义，唯一作用是绕开 pflag 对「未定义的 help」的特殊处理，详见 scanLangFlag
+const (
+	scanHelpFlagName      = "help"
+	scanHelpFlagShorthand = "h"
+)
+
 // scanLangFlag 从原始命令行参数里预扫描 --lang/-l 的取值。
 //
 // 用 pflag 而不是手写循环，原因是手写极容易在两点上出错，而 pflag 已经处理妥当：
@@ -68,6 +75,19 @@ func scanLangFlag(args []string) string {
 
 	var lang string
 	fs.StringVarP(&lang, "lang", "l", "", "")
+
+	// 必须为 --help/-h 注册占位 flag，否则「--help 出现在 --lang 之前」时语言设置会失效
+	// pflag v1.0.10 对帮助参数有专门分支：FlagSet 里不存在 help 时，
+	//   - parseLongArg：case name == "help" → f.usage(); return a, ErrHelp
+	//   - parseSingleShortArg：case c == 'h' → f.usage(); err = ErrHelp
+	// 这两处都排在 ParseErrorsWhitelist.UnknownFlags 白名单判断之前，因此白名单救不了它；
+	// 而 parseArgs 一旦收到 error 就立即 return，--help 之后的所有参数再也不会被解析，
+	// 于是 --lang/-l 被整体丢弃，表现为 `flk serve --help --lang zh-CN` 输出英文
+	//（只有把 --lang 写在 --help 之前才生效，写成 --help 在前则语言失效，这是用户最容易踩的顺序，会误以为中文翻译没做）
+	// 注册占位 flag 后 exists 为真，pflag 走普通 bool 赋值路径即可继续扫描完整条命令行
+	// 这里只影响预扫描的取值，真实解析仍由 cobra 的命令树负责，与 --help 的实际行为无关
+	fs.BoolP(scanHelpFlagName, scanHelpFlagShorthand, false, "")
+
 	_ = fs.Parse(args)
 
 	return strings.TrimSpace(lang)
@@ -78,19 +98,49 @@ func scanLangFlag(args []string) string {
 //
 // 只能重译 Short/Long 与 flag 说明：命令的 Use、Aliases、RunE 等要么是符号、要么在
 // 运行期自行调用 T()，不需要也不应该在此处理。对空串直接跳过，避免用空 id 查询。
+//
+// 必须同时遍历 Flags() 与 PersistentFlags()，这是 Global Flags 曾经整段英文的根因：
+// 语言在 cobra 解析之前就已确定，此刻持久化 flag 还没被合并进 Flags()（合并只发生在执行/展示
+// 阶段，ParseFlags、InitDefaultHelpFlag、stripFlags、LocalFlags 等都会触发），只遍历 Flags()
+// 会漏掉所有用 PersistentFlags()
+// 声明的说明；而 flk 的全局 flag（--lang/--output/--verbose/--yes/--no-trash/
+// --store-path/--work-dir）与 serve 的 --host/-p 恰恰都是这么声明的，
+// 于是它们的说明始终停留在英文源串，用户在 zh-CN 下看到的是中英混排的帮助
 func localizeTree(cmd *cobra.Command) {
+	// visited 跨整棵树共享：cobra 合并父子 flag 时登记的是同一个 *pflag.Flag 指针
+	//（AddFlagSet 只登记指针不复制），父命令译一次即在全树生效，
+	// 因此按指针去重既保证「每条说明只译一次」，也避免同一 flag 被父子两条路径重复处理
+	// l10n 对缺失 key 会回落源串，重复翻译本不会损坏文本，去重是为了让行为可预期
+	localizeCommand(cmd, make(map[*pflag.Flag]struct{}))
+}
+
+// localizeCommand 是 localizeTree 的递归实现，visited 由调用方在整棵树范围内共享
+func localizeCommand(cmd *cobra.Command, visited map[*pflag.Flag]struct{}) {
 	if cmd.Short != "" {
 		cmd.Short = l10n.Retranslate(cmd.Short, nil)
 	}
 	if cmd.Long != "" {
 		cmd.Long = l10n.Retranslate(cmd.Long, nil)
 	}
-	cmd.Flags().VisitAll(func(f *pflag.Flag) {
-		if f.Usage != "" {
-			f.Usage = l10n.Retranslate(f.Usage, nil)
-		}
-	})
+
+	// 只改 Usage：DefValue、Annotations、Value 等属于 flag 的解析语义与默认值展示，
+	// 与文案翻译无关，误改会连带破坏 --help 里的 (default ...) 以及 cobra 对自身 flag 的识别
+	translateFlags := func(flags *pflag.FlagSet) {
+		flags.VisitAll(func(f *pflag.Flag) {
+			if _, done := visited[f]; done {
+				return
+			}
+			visited[f] = struct{}{}
+			if f.Usage != "" {
+				f.Usage = l10n.Retranslate(f.Usage, nil)
+			}
+		})
+	}
+	// 两次遍历的先后无关紧要：重复出现的 flag 由 visited 挡掉，不会被译第二遍
+	translateFlags(cmd.Flags())
+	translateFlags(cmd.PersistentFlags())
+
 	for _, child := range cmd.Commands() {
-		localizeTree(child)
+		localizeCommand(child, visited)
 	}
 }
