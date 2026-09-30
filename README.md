@@ -30,7 +30,7 @@ weight:
 
 0.1 版本的近期开发重点是：
 
-1. 将参数配置化，支持通过配置文件或环境变量来设置默认参数值，减少命令行输入的复杂度，如使用 Viper 集成。
+1. 将参数配置化，支持通过配置文件来设置默认参数值，减少命令行输入的复杂度（已实现：`flk config` 命令子树，见下文「设置（flk config）」一节。刻意不引入 Viper——本项目的设置只需要单键读写与键序保持，`encoding/json` 已经够用；也刻意不提供配置类环境变量）。
 2. 简化命令行参数，约定优于配置，提供更智能的默认值和参数推断，减少用户需要输入的参数数量（低优先级，穿插开发）
 
 ## 演示
@@ -113,17 +113,45 @@ flk 内置中英文两套界面，默认英文，可通过以下任一方式切�
 flk --lang zh-CN check
 flk check -l zh-CN
 
-# 2. 环境变量 FLK_LANG
-FLK_LANG=zh-CN flk check
-
-# 3. 设置文件 language 字段（持久生效）
-#    ~/.config/flk/flk-config.json
-{ "language": "zh-CN" }
+# 2. 设置文件 language 字段（持久生效）
+flk config set language zh-CN
 ```
+
+取值来源只有上面两处。环境变量 `FLK_LANG`（以及日志级别用的 `FLK_LOG_LEVEL`）已在本版本中**移除**：持久化设置统一由 `flk config` 承担，临时切换由命令行参数承担，多一层"改了文件却不生效、又想不起什么时候 export 过变量"的来源只会让人困惑。
 
 `flk serve` 打开的 WebUI 同样会跟随当前语言，并且可以在**页头直接切换**：切换不只是改页面文案，后端输出也一起变，同时写入设置文件的 `language` 字段，下次打开仍是这个语言。翻译缺失时自动回退到英文原文，不会出现空白或乱码。
 
 需要说清覆盖范围：被翻译的是 **flk 自身的文案**——命令说明、参数说明、运行输出与错误信息、页面文案。命令行框架（cobra）与终端 UI 库（pterm）**内置**的文案不在此列，所以在中文模式下，帮助里 `Usage:`、`Flags:`、`Available Commands:`、`Aliases:`、`help for <命令>` 这些段落标题与自动生成命令的说明仍然是英文，交互确认时的 `Yes`/`No` 也是英文。这是当前的已知边界，不是某处漏翻。
+
+### 设置（flk config）
+
+flk 的持久化设置都在一个 JSON 文件里（默认 `~/.config/flk/flk-config.json`，用 `flk config path` 查看实际路径），日常读写不必手工编辑这个文件：
+
+```sh
+flk config                             # 查看当前设置（等价于 flk config show）
+flk config path                        # 打印设置文件的路径
+flk config get language                # 打印某一项设置的生效值
+flk config set language zh-CN          # 写入一项设置（先校验取值，再落盘）
+flk config reset language              # 移除该项，回到内置默认值
+flk config reset language --defaults   # 改为显式写入默认值
+flk config reset --defaults --yes      # 整份设置改写为只含默认值
+flk config reset --all --yes           # 删除整份设置文件
+flk config validate                    # 体检设置文件，逐条指出会被静默忽略的问题
+```
+
+可以设置的项：
+
+- `language`：界面语言，取值为 `en` 或 `zh-CN`，默认 `en`。命令行 `--lang/-l` 优先级更高
+- `allowHosts`：WebUI 的长期访问白名单，逗号分隔（如 `flk config set allowHosts 192.168.1.5,my.dev.lan`），默认空。与 `--allow-host` 取并集，详见下文「访问控制」
+- `logLevel`：日志级别，取值为 `debug`、`info`、`warn`、`error`，默认 `warn`。命令行 `-v`（Info）/`-vv`（Debug）优先级更高
+
+几点约定：
+
+- `set` 只改动目标键，文件里其它键（包括 flk 不认识的键）与键的顺序都保持不动；写入是"同目录临时文件 + 改名"的原子替换，设置文件是符号链接时也会落在链接指向的真实文件上
+- 取值不合法会被拒绝，并提示该键期望的形式；键名拼错也会被拒绝，不会往文件里塞一个永远读不到的死键
+- `show`、`get`、`validate` 的输出不含颜色，可以直接管道消费（例如 `flk config show | jq`），给人看的状态提示一律走 stderr
+- 设置文件损坏时：`flk config validate` 会指出问题所在，`flk config reset --all --yes` 能直接把它修回默认状态（这条修复路径不依赖设置文件本身可读）
+- 刻意**没有**设置类的环境变量：取值只来自命令行与设置文件两处
 
 ### WebUI 管理面板（serve）
 
@@ -163,13 +191,15 @@ flk serve --no-open
 flk serve --allow-host 192.168.1.5 --allow-host my.dev.lan
 
 # 2. 设置文件：长期生效，适合固定的访问来源
-#    ~/.config/flk/flk-config.json
-{ "allowHosts": ["192.168.1.5", "my.dev.lan"] }
+flk config set allowHosts 192.168.1.5,my.dev.lan
+
+#    也可以手工编辑 ~/.config/flk/flk-config.json
+#    { "allowHosts": ["192.168.1.5", "my.dev.lan"] }
 ```
 
 服务启动时会打印当前生效的完整白名单（含内置的回环地址），可用它确认设置文件里的条目是否真的被读到。
 
-白名单**刻意不提供网页上的编辑入口**：它是访问边界本身，让已经拿到访问权的人从网页上把更多地址放进来，等于把边界交给被授权者自行调整。要改就手工编辑上面的设置文件（或用命令行参数），改完重启服务生效。
+白名单**刻意不提供网页上的编辑入口**：它是访问边界本身，让已经拿到访问权的人从网页上把更多地址放进来，等于把边界交给被授权者自行调整。要改就用 `flk config set allowHosts`、命令行参数或直接手工编辑设置文件，改完重启服务生效。
 
 WebUI 能直接读写你的文件与清单，属于高危入口，因此白名单不做自动推断，只放行你显式列出的主机；绑定 `--host 0.0.0.0` 这类通配地址时启动会打印警告。此外服务还会校验写请求的来源（同源校验）并限制请求体大小，用于挡住借用你浏览器发起的跨站请求。
 

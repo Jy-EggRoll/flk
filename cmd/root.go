@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jy-eggroll/flk/internal/config"
 	"github.com/jy-eggroll/flk/internal/locales"
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
@@ -139,19 +140,32 @@ func SetWindowsAdminChecker(checker func() bool) {
 func prepareCommand(command *cobra.Command) error {
 	errWriter := command.ErrOrStderr()
 
-	// 环境配置是基础层，显式 -v/-vv 在其上覆盖日志级别；所有日志强制跟随 Cobra 注入的 stderr，便于测试和重定向
-	config, err := logger.FromEnv()
-	if err != nil {
-		fallback := logger.DefaultConfig()
-		fallback.Writer = errWriter
-		logger.Init(fallback)
-		return err
+	// 日志级别的来源链：命令行 -v/-vv > 设置文件 logLevel > 内置默认（warn）
+	//
+	// 设置文件读不出来（不存在、损坏、权限不足）或取值非法时**不中止命令**，退回默认级别：
+	// 与语言一致，设置文件的问题只影响"多打或少打日志"，不该让整个 CLI 不可用；
+	// 想弄清文件到底哪里不对，入口是 flk config validate。
+	// 注意这里**不再读取任何环境变量**（原 FLK_LOG_LEVEL 已移除）
+	levelText := ""
+	if settings, loadErr := config.Load(); loadErr == nil {
+		levelText = settings.LogLevel
+	}
+	logConfig, levelErr := logger.FromLevelText(levelText)
+	if levelErr != nil {
+		logConfig = logger.DefaultConfig()
 	}
 	if verboseCount > 0 {
-		config = logger.ApplyVerbose(config, verboseCount)
+		logConfig = logger.ApplyVerbose(logConfig, verboseCount)
 	}
-	config.Writer = errWriter
-	logger.Init(config)
+	// 所有日志强制跟随 Cobra 注入的 stderr，便于测试和重定向
+	logConfig.Writer = errWriter
+	logger.Init(logConfig)
+
+	// 级别非法这件事必须说出来：静默降级会让用户以为设置生效了，而"日志怎么变少了"极难自查。
+	// 打印放在 Init 之后，确保这条警告本身就服从刚定下的级别并写入同一个 writer
+	if levelErr != nil {
+		logger.Warn(l10n.T("Ignoring an invalid logLevel in the settings file", nil), "error", levelErr)
+	}
 
 	// pterm 的交互确认、文本输入和选择器通过包级默认 writer 绘制；统一切到 stderr，避免提示符污染 stdout 业务数据
 	pterm.SetDefaultOutput(errWriter)

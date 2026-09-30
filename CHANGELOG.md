@@ -2,6 +2,16 @@
 
 ## 未发布
 
+- ⚠️ breaking: 新增 `flk config` 命令子树，并**彻底移除配置类环境变量**（`FLK_LANG`、`FLK_LOG_LEVEL`）
+  - 子命令：`flk config`（裸执行即查看）/ `show` / `path` / `get <key>` / `set <key> <value>` / `reset [key]` / `validate`，读写 `~/.config/flk/flk-config.json`
+  - 可设置的项收敛为三个：`language`（界面语言）、`allowHosts`（WebUI 长期访问白名单，命令行形态是逗号分隔）、`logLevel`（`debug`/`info`/`warn`/`error`）
+  - 四个操作共用同一份键定义：键名、类型、默认值、期望形式与解析器只在设置注册表里声明一次，因此 `set` 接受什么与 `validate` 认可什么不可能分歧；未知键与非法取值各有统一提示，不再为每个键各写一段文案
+  - 语言优先级变为两层：`--lang/-l` > 设置文件 `language` > 默认 `en`。日志级别优先级也变为两层：`-v`/`-vv` > 设置文件 `logLevel` > 内置 `warn`
+  - 移除环境变量之后，取值来源只剩命令行与设置文件两处："改了文件却不生效、又想不起什么时候 export 过变量"这类问题不复存在；`FLK_LANG=en flk check` 之类的旧用法现在**完全无效**
+  - 设置文件损坏时，`flk config validate` 会逐条指出问题，`flk config reset --all --yes` 能直接把它修回默认状态——该子树刻意遮蔽了根生命周期，诊断与修复不会因为文件本身读不懂而被挡在门外
+  - `flk config reset --defaults --yes` 可把整份设置重写为默认值；不加 `--defaults` 时删除设置文件（会先要求确认，非交互环境需显式 `--yes`，绝不挂起）
+  - `show`、`get`、`validate` 的输出不经过彩色终端库，可直接管道消费（`flk config show | jq`），状态提示统一走 stderr
+  - 写入仍是"同目录临时文件 + 改名"的原子替换，保留文件里其它键与键的顺序；设置文件是符号链接时（含目标尚未创建的断链）写入落在链接指向的位置，不会把链接替换成普通文件
 - ✨ feat: WebUI 支持在页面上切换语言，且**后端全量生效**并持久化
   - 切完立刻变的不是只有页面文案：CLI 命令树的帮助文案、之后所有输出都跟着变，无需重启
   - 选择写入设置文件 `~/.config/flk/flk-config.json` 的 `language` 字段；写入是原子替换，且保留文件里你手写的其它字段与键序

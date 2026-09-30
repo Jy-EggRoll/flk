@@ -24,7 +24,7 @@ func TestDefaultConfig(t *testing.T) {
 	}
 }
 
-// TestLogLevelFromString 分别覆盖大小写、首尾空白和全部受支持级别，防止环境变量解析与 slog 级别值发生偏差
+// TestLogLevelFromString 分别覆盖大小写、首尾空白和全部受支持级别，防止设置文件取值的解析与 slog 级别值发生偏差
 func TestLogLevelFromString(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -58,8 +58,25 @@ func TestLogLevelFromString(t *testing.T) {
 	}
 }
 
-// TestFromEnv 验证环境配置的默认行为、规范化解析和 Info/Debug 展示层次，确保命令层可直接初始化返回的配置
-func TestFromEnv(t *testing.T) {
+// TestDefaultLevelTextMatchesDefaultConfig 锁住「内置默认级别的文本形式」与「实际生效的默认级别」一致。
+//
+// 回归背景：设置文件的 logLevel 项在注册表里以 DefaultLevelText() 为默认值，
+// 而真正生效的默认级别来自 DefaultConfig()。两处若不一致，`flk config show` 会显示
+// 一个从未生效过的默认值，用户按它去理解日志行为必然被误导，
+// 而这种偏差在功能测试里完全看不出来，只能靠这条断言钉住
+func TestDefaultLevelTextMatchesDefaultConfig(t *testing.T) {
+	parsed, err := LogLevelFromString(DefaultLevelText())
+	if err != nil {
+		t.Fatalf("DefaultLevelText() = %q 不是合法级别: %v", DefaultLevelText(), err)
+	}
+	if parsed != DefaultConfig().Level {
+		t.Fatalf("DefaultLevelText() = %q 解析为 %v，而 DefaultConfig().Level = %v，两处必须同义",
+			DefaultLevelText(), parsed, DefaultConfig().Level)
+	}
+}
+
+// TestFromLevelText 验证设置文件取值的默认行为、规范化解析和 Info/Debug 展示层次，确保命令层可直接初始化返回的配置
+func TestFromLevelText(t *testing.T) {
 	tests := []struct {
 		name       string
 		value      string
@@ -68,6 +85,7 @@ func TestFromEnv(t *testing.T) {
 		wantSource bool
 	}{
 		{name: "空值沿用 Warn", value: "", wantLevel: slog.LevelWarn},
+		{name: "纯空白视为未设置", value: "   ", wantLevel: slog.LevelWarn},
 		{name: "Warn 不增加上下文", value: " WARN ", wantLevel: slog.LevelWarn},
 		{name: "Info 增加时间", value: " info ", wantLevel: slog.LevelInfo, wantTime: true},
 		{name: "Debug 增加时间和调用方", value: "DeBuG", wantLevel: slog.LevelDebug, wantTime: true, wantSource: true},
@@ -76,30 +94,28 @@ func TestFromEnv(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			t.Setenv(logLevelEnv, test.value)
-			config, err := FromEnv()
+			config, err := FromLevelText(test.value)
 			if err != nil {
-				t.Fatalf("FromEnv() 返回错误: %v", err)
+				t.Fatalf("FromLevelText(%q) 返回错误: %v", test.value, err)
 			}
 			if config.Level != test.wantLevel || config.ShowTime != test.wantTime || config.ShowSource != test.wantSource {
-				t.Fatalf("FromEnv() = {Level:%v ShowTime:%t ShowSource:%t}，期望 {%v %t %t}", config.Level, config.ShowTime, config.ShowSource, test.wantLevel, test.wantTime, test.wantSource)
+				t.Fatalf("FromLevelText(%q) = {Level:%v ShowTime:%t ShowSource:%t}，期望 {%v %t %t}", test.value, config.Level, config.ShowTime, config.ShowSource, test.wantLevel, test.wantTime, test.wantSource)
 			}
 			if config.Writer != os.Stderr {
-				t.Fatalf("FromEnv() Writer = %T，期望 os.Stderr", config.Writer)
+				t.Fatalf("FromLevelText(%q) Writer = %T，期望 os.Stderr", test.value, config.Writer)
 			}
 		})
 	}
 }
 
-// TestFromEnvRejectsInvalidLevel 确保错误环境值不会静默降级，同时保留变量名以便命令层给出可定位的问题信息
-func TestFromEnvRejectsInvalidLevel(t *testing.T) {
-	t.Setenv(logLevelEnv, "notice")
-	config, err := FromEnv()
+// TestFromLevelTextRejectsInvalidLevel 确保非法取值不会静默降级，便于命令层给出可定位的问题信息
+func TestFromLevelTextRejectsInvalidLevel(t *testing.T) {
+	config, err := FromLevelText("notice")
 	if err == nil {
-		t.Fatal("FromEnv() 对非法日志级别未返回错误")
+		t.Fatal("FromLevelText() 对非法日志级别未返回错误")
 	}
 	if config != nil {
-		t.Fatalf("FromEnv() 出错时返回了非 nil 配置: %#v", config)
+		t.Fatalf("FromLevelText() 出错时返回了非 nil 配置: %#v", config)
 	}
 }
 

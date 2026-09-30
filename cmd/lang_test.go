@@ -17,13 +17,13 @@ import (
 //
 // 为什么用同包单测而不只靠 main_test.go 的子进程用例：
 //   - 根因位于 scanLangFlag 的原始参数预扫描，直接对函数做表驱动断言，能精确指出是哪一段参数被丢弃
-//   - 取值优先级（--lang/-l > FLK_LANG > 设置文件 > 默认）由 chooseLanguage 一处决定，
+//   - 取值优先级（--lang/-l > 设置文件 > 默认）由 chooseLanguage 一处决定，
 //     同包可直接调用并逐级断言，不必为每一级都起一个子进程
 //   - localizeTree 之外还有 DefValue / annotation 这类「翻译不该碰」的字段，只有同包才方便直接断言
 //
 // 契约（与 cmd/record_test.go、cmd/selection_test.go 同一套）：
 //   - 用例只读环境变量与临时目录，不落盘到真实用户目录
-//   - 被改动的进程级状态（os.Args、FLK_LANG、HOME 以及 l10n 的 localizer）
+//   - 被改动的进程级状态（os.Args、HOME 以及 l10n 的 localizer）
 //     一律用 t.Setenv / t.Cleanup 还原，子用例串行执行，不开启 t.Parallel
 
 // TestScanLangFlagIsOrderIndependent 锁定「--help/-h 无论出现在 --lang/-l 之前还是之后，语言取值都必须被扫到」
@@ -75,56 +75,64 @@ func TestScanLangFlagIsOrderIndependent(t *testing.T) {
 	}
 }
 
-// TestChooseLanguagePrecedence 锁定取值优先级：--lang/-l > 环境变量 FLK_LANG > 设置文件 language 字段 > 空串（交由 l10n 兜底）
+// TestChooseLanguagePrecedence 锁定取值优先级：--lang/-l > 设置文件 language 字段 > 空串（交由 l10n 兜底）
+//
+// 环境变量 FLK_LANG 已**彻底移除**，下面刻意保留两条"设了环境变量也必须无效"的用例：
+// 少了它们，日后有人图省事再往 chooseLanguage 里加回一次 os.Getenv，
+// 用例会照常全绿，而这条"配置类环境变量一律不要"的取向就被悄悄破坏了
 //
 // 每个子用例都必须同时隔离 os.Args 与 HOME：
 //   - chooseLanguage 直接读 os.Args[1:]，签名不接受注入参数（改签名需要连带修改 cmd/root.go 的调用点，超出本次范围）
-//   - 未设 FLK_LANG 且命令行无 --lang 时会去读 ~/.config/flk/flk-config.json，
+//   - 未传 --lang 时会去读 ~/.config/flk/flk-config.json，
 //     不隔离 HOME 就会读到开发者本机的真实设置，用例结果将不可复现
 //
 // 断言口径是「上一级存在时取上一级、缺失时才降级」，避免只覆盖到其中一条分支
 func TestChooseLanguagePrecedence(t *testing.T) {
 	tests := []struct {
-		name        string
-		args        []string
-		env         string
+		name string
+		args []string
+		// envLang 是刻意设置的 FLK_LANG 取值，用来证明该环境变量已失效（空串表示不设）
+		envLang     string
 		writeConfig bool
 		want        string
 	}{
 		{
-			name:        "命令行长写在帮助之前并覆盖环境变量与设置文件",
+			name:        "命令行长写在帮助之前并覆盖设置文件",
 			args:        []string{"flk", "serve", "--help", "--lang", "zh-CN"},
-			env:         "en",
 			writeConfig: true,
 			want:        "zh-CN",
 		},
 		{
-			name:        "命令行短写在帮助之后同样覆盖环境变量",
+			name:        "命令行短写在帮助之后同样覆盖设置文件",
 			args:        []string{"flk", "serve", "-h", "-l", "zh-CN"},
-			env:         "en",
 			writeConfig: true,
 			want:        "zh-CN",
 		},
 		{
-			name:        "无命令行语言时取环境变量 FLK_LANG",
+			name:        "无命令行语言时取设置文件",
 			args:        []string{"flk", "serve", "--help"},
-			env:         "zh-CN",
-			writeConfig: true,
-			want:        "zh-CN",
-		},
-		{
-			name:        "无命令行语言且无环境变量时取设置文件",
-			args:        []string{"flk", "--help"},
-			env:         "",
 			writeConfig: true,
 			want:        "zh-CN",
 		},
 		{
 			name:        "全部缺失时返回空串交由 l10n 使用默认语言",
 			args:        []string{"flk", "--help"},
-			env:         "",
 			writeConfig: false,
 			want:        "",
+		},
+		{
+			name:        "环境变量 FLK_LANG 不再有任何效果",
+			args:        []string{"flk", "--help"},
+			envLang:     "zh-CN",
+			writeConfig: false,
+			want:        "",
+		},
+		{
+			name:        "设置文件优先于环境变量",
+			args:        []string{"flk", "--help"},
+			envLang:     "en",
+			writeConfig: true,
+			want:        "zh-CN",
 		},
 	}
 
@@ -133,8 +141,9 @@ func TestChooseLanguagePrecedence(t *testing.T) {
 			// HOME 每个子用例独立，设置文件与真实用户目录彻底隔离
 			home := t.TempDir()
 			t.Setenv("HOME", home)
-			// 显式写入（即使是空串）可屏蔽调用者 shell 里残留的 FLK_LANG，保证用例可复现
-			t.Setenv(langEnv, testCase.env)
+			// 显式写入（即使是空串）可屏蔽调用者 shell 里残留的取值，保证用例可复现。
+			// 这里刻意用字面量而不是常量：常量已随环境变量层一起删除，写死才能守住"它不该再被读"
+			t.Setenv("FLK_LANG", testCase.envLang)
 
 			if testCase.writeConfig {
 				configDir := filepath.Join(home, ".config", "flk")
@@ -153,7 +162,7 @@ func TestChooseLanguagePrecedence(t *testing.T) {
 
 			if got := chooseLanguage(); got != testCase.want {
 				t.Fatalf("chooseLanguage() = %q，期望 %q（args=%q env=%q writeConfig=%v）",
-					got, testCase.want, testCase.args, testCase.env, testCase.writeConfig)
+					got, testCase.want, testCase.args, testCase.envLang, testCase.writeConfig)
 			}
 		})
 	}

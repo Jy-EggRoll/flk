@@ -26,25 +26,23 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// langEnv 是语言的环境变量名，与 logger 的 FLK_LOG_LEVEL 属同一类约定。
-// 引入它是为了让用户在不想改配置文件时也能临时切换语言，而不必新增一整套配置命令。
-const langEnv = "FLK_LANG"
-
 // chooseLanguage 按优先级挑出要使用的语言串（**未经归一化**）：
 //
-//	命令行 --lang/-l  >  环境变量 FLK_LANG  >  配置文件 language 字段  >  空串（交由 l10n 用默认语言）
+//	命令行 --lang/-l  >  设置文件 language 字段  >  空串（交由 l10n 用默认语言）
+//
+// 刻意只有两层来源：本项目**不读取任何语言环境变量**（FLK_LANG 已移除）。
+// 曾经的取值链是"命令行 > 环境变量 > 设置文件"，问题出在最下面两层谁说了算很难向用户解释清楚
+// ——他改了设置文件却不生效，又想不起自己什么时候 export 过变量；而临时切换语言
+// 命令行已经能覆盖，持久化切换则由 `flk config set language` 正式承担，环境变量这一层是多余的
 //
 // 刻意不在这里归一化：语言白名单属于 l10n.Options，而 Options 要交给 l10n.Init，
 // 归一化在 Init 内部完成即可——否则这里就得再持有并手工维护一份语言列表，
 // 两份列表迟早会漂移。
 //
 // 任何一步失败都静默降级、绝不返回错误：语言只影响展示，不该让命令整体失败。
-// 尤其是配置文件损坏时也必须能正常输出帮助——这是 --help 路径会走到这里的前提。
+// 尤其是设置文件损坏时也必须能正常输出帮助——这是 --help 路径会走到这里的前提。
 func chooseLanguage() string {
 	if lang := scanLangFlag(os.Args[1:]); lang != "" {
-		return lang
-	}
-	if lang := strings.TrimSpace(os.Getenv(langEnv)); lang != "" {
 		return lang
 	}
 	if lang, err := config.LoadLanguage(); err == nil && lang != "" {

@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"unicode"
 
 	flkcmd "github.com/jy-eggroll/flk/cmd"
 )
@@ -61,13 +62,26 @@ func runCLI(t *testing.T, arguments ...string) cliResult {
 func runCLIWithEnv(t *testing.T, childHome string, arguments ...string) cliResult {
 	t.Helper()
 
+	return runCLIWithExtraEnv(t, childHome, nil, arguments...)
+}
+
+// runCLIWithExtraEnv 与 runCLIWithEnv 一致，但允许追加额外的环境变量。
+//
+// 需要它的场景：验证"某个环境变量已经彻底失效"——例如把 FLK_LANG 设成一个与设置文件
+// 相反的取值，输出必须仍由设置文件决定。这类断言不能靠改 os.Environ() 完成，
+// 否则会污染同进程的其它用例
+func runCLIWithExtraEnv(t *testing.T, childHome string, extraEnv []string, arguments ...string) cliResult {
+	t.Helper()
+
 	helperArguments := append([]string{"-test.run=^TestCLIHelperProcess$", "--"}, arguments...)
 	command := exec.Command(os.Args[0], helperArguments...)
+	// 刻意不设置任何日志级别或语言的环境变量：flk 已不再读取它们（配置类环境变量全部移除），
+	// 设置文件的路径由隔离的 HOME 决定，因此每个用例都跑在确定的默认状态上
 	command.Env = append(os.Environ(),
 		cliHelperEnv+"=1",
-		"FLK_LOG_LEVEL=",
 		"HOME="+childHome,
 	)
+	command.Env = append(command.Env, extraEnv...)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -769,5 +783,224 @@ func TestCLIUnlinkNoTrashRemovesLinkPermanently(t *testing.T) {
 	trashRoot := filepath.Join(childHome, ".local", "share", "flk", "trash")
 	if trashContainsFile(t, trashRoot, filepath.Base(fakePath)) {
 		t.Fatalf("--no-trash 下旧链接不应进入回收站: %s", trashRoot)
+	}
+}
+
+// configFilePath 返回隔离 HOME 下设置文件的路径，规则与 internal/config 的默认路径一致
+// （~/.config/flk/flk-config.json）。用例自己拼一遍而不是向被测代码索取：
+// 这正是要被验证的对外契约之一——路径一旦变了，用户脚本里写死的路径就失效了
+func configFilePath(home string) string {
+	return filepath.Join(home, ".config", "flk", "flk-config.json")
+}
+
+// hasHanText 判断输出里是否含汉字，用来确认"语言确实变成了中文"
+//
+// 用「是否含汉字」而不是比对具体译文：译文措辞会随翻译迭代改动，
+// 把用例钉在某一句话上会让它跟着翻译一起变红，而这里要守住的是"语言设置真的生效了"
+func hasHanText(text string) bool {
+	for _, r := range text {
+		if unicode.Is(unicode.Han, r) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestCLIConfigSubtreeContract 端到端验证 `flk config` 子树的对外契约。
+//
+// 覆盖的是"命令层与配置层对不对得上"这类只有真实进程才暴露的问题：
+// path 打印的路径与实际读写的是不是同一个、get 的输出能不能被脚本消费、
+// 未知键与非法值会不会被拒绝，以及**损坏的设置文件能不能靠 reset 救回来**
+func TestCLIConfigSubtreeContract(t *testing.T) {
+	home := t.TempDir()
+	configPath := configFilePath(home)
+
+	// path：必须与读取侧用的是同一个路径，否则"设了却不生效"就无从排查
+	if got := runCLIWithEnv(t, home, "config", "path"); got.exitCode != 0 || strings.TrimSpace(got.stdout) != configPath {
+		t.Fatalf("config path = %q (exit=%d)，期望 %q", got.stdout, got.exitCode, configPath)
+	}
+
+	// show：文件不存在时输出全默认值，且 stdout 只有一份 JSON 文档（路径提示走 stderr）
+	shown := runCLIWithEnv(t, home, "config", "show")
+	if shown.exitCode != 0 {
+		t.Fatalf("config show 失败: exit=%d stderr=%q", shown.exitCode, shown.stderr)
+	}
+	var settings struct {
+		Language   string   `json:"language"`
+		AllowHosts []string `json:"allowHosts"`
+		LogLevel   string   `json:"logLevel"`
+	}
+	if err := json.Unmarshal([]byte(shown.stdout), &settings); err != nil {
+		t.Fatalf("config show 的 stdout 不是合法 JSON: %q", shown.stdout)
+	}
+	if settings.Language != "en" || settings.LogLevel != "warn" {
+		t.Fatalf("默认设置不符: %#v", settings)
+	}
+	// allowHosts 必须是 [] 而不是 null：空值与"字段没设置"在用户眼里是两回事
+	if settings.AllowHosts == nil || len(settings.AllowHosts) != 0 {
+		t.Fatalf("allowHosts 默认应为 []，实际 %#v", settings.AllowHosts)
+	}
+	if !strings.Contains(shown.stderr, configPath) {
+		t.Fatalf("show 应在 stderr 提示设置文件路径: %q", shown.stderr)
+	}
+
+	// 裸 flk config 等价于 show
+	if bare := runCLIWithEnv(t, home, "config"); bare.stdout != shown.stdout {
+		t.Fatalf("裸 config 与 config show 输出不一致:\n%q\n%q", bare.stdout, shown.stdout)
+	}
+
+	// get 是业务叶子命令：遮盖 PersistentPreRunE 之后不应出现欢迎语，
+	// 否则脚本里 `flk config get language` 的 stderr 会混进一行与本次查询无关的招呼
+	got := runCLIWithEnv(t, home, "config", "get", "language")
+	if got.exitCode != 0 || strings.TrimSpace(got.stdout) != "en" {
+		t.Fatalf("config get language = %q (exit=%d)", got.stdout, got.exitCode)
+	}
+	if strings.Contains(got.stderr, "Welcome") {
+		t.Fatalf("config 子树未遮盖根生命周期，stderr 混入了欢迎语: %q", got.stderr)
+	}
+
+	// set/get：写入后由**新进程**读回，证明落盘而不是只改了内存
+	if set := runCLIWithEnv(t, home, "config", "set", "allowHosts", "192.168.1.5,my.dev.lan"); set.exitCode != 0 {
+		t.Fatalf("config set allowHosts 失败: exit=%d stderr=%q", set.exitCode, set.stderr)
+	}
+	hosts := runCLIWithEnv(t, home, "config", "get", "allowHosts")
+	if strings.TrimSpace(hosts.stdout) != "192.168.1.5\nmy.dev.lan" {
+		t.Fatalf("config get allowHosts = %q，期望每行一个主机（便于管道消费）", hosts.stdout)
+	}
+	// 键名大小写不敏感，用户不必记得注册表里的规范写法
+	if upper := runCLIWithEnv(t, home, "config", "get", "ALLOWHOSTS"); strings.TrimSpace(upper.stdout) != "192.168.1.5\nmy.dev.lan" {
+		t.Fatalf("config get ALLOWHOSTS = %q，键名匹配应当大小写不敏感", upper.stdout)
+	}
+
+	// 未知键：拒绝并指向 --help（顺带列出全部可用键）
+	unknown := runCLIWithEnv(t, home, "config", "set", "nosuchkey", "x")
+	if unknown.exitCode == 0 || !strings.Contains(unknown.stderr, "config --help") {
+		t.Fatalf("未知键应被拒绝并指向 --help: exit=%d stderr=%q", unknown.exitCode, unknown.stderr)
+	}
+
+	// 非法值：拒绝并给出期望形式（合法取值由注册表描述，不是每个键一段专属文案）
+	invalid := runCLIWithEnv(t, home, "config", "set", "language", "fr")
+	if invalid.exitCode == 0 {
+		t.Fatalf("不受支持的语言应被拒绝: stderr=%q", invalid.stderr)
+	}
+	if !strings.Contains(invalid.stderr, "language") {
+		t.Fatalf("非法取值的报错应点名出错的键: %q", invalid.stderr)
+	}
+
+	// validate：合法文件以 0 退出
+	if ok := runCLIWithEnv(t, home, "config", "validate"); ok.exitCode != 0 {
+		t.Fatalf("合法设置文件不应体检失败: exit=%d stdout=%q stderr=%q", ok.exitCode, ok.stdout, ok.stderr)
+	}
+
+	// 手写一份有问题的文件：validate 以非零退出并逐条点名（面向脚本，输出不含颜色）
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("创建设置目录失败: %v", err)
+	}
+	if err := os.WriteFile(configPath, []byte(`{"language":"fr","nosuchkey":1}`), 0o644); err != nil {
+		t.Fatalf("写入设置文件失败: %v", err)
+	}
+	bad := runCLIWithEnv(t, home, "config", "validate")
+	if bad.exitCode != 1 {
+		t.Fatalf("有问题的设置文件应以退出码 1 结束: exit=%d stdout=%q", bad.exitCode, bad.stdout)
+	}
+	for _, want := range []string{"nosuchkey", "language"} {
+		if !strings.Contains(bad.stdout, want) {
+			t.Fatalf("体检结果未点名 %q: %q", want, bad.stdout)
+		}
+	}
+
+	// 文件彻底损坏：reset --defaults --yes 必须仍能修复它。
+	// 这是"遮盖 PersistentPreRunE"的核心理由——诊断与救命的两条命令
+	// 不能因为文件本身读不懂而一起被挡在门外
+	if err := os.WriteFile(configPath, []byte("{not json"), 0o644); err != nil {
+		t.Fatalf("写入损坏文件失败: %v", err)
+	}
+	if reset := runCLIWithEnv(t, home, "config", "reset", "--defaults", "--yes"); reset.exitCode != 0 {
+		t.Fatalf("损坏文件下 reset --defaults 应能修复: exit=%d stderr=%q", reset.exitCode, reset.stderr)
+	}
+
+	// 修好之后各键回到默认值
+	recovered := runCLIWithEnv(t, home, "config", "show")
+	if recovered.exitCode != 0 {
+		t.Fatalf("修复后 config show 仍失败: exit=%d stderr=%q", recovered.exitCode, recovered.stderr)
+	}
+	settings = struct {
+		Language   string   `json:"language"`
+		AllowHosts []string `json:"allowHosts"`
+		LogLevel   string   `json:"logLevel"`
+	}{}
+	if err := json.Unmarshal([]byte(recovered.stdout), &settings); err != nil {
+		t.Fatalf("修复后的输出不是合法 JSON: %q", recovered.stdout)
+	}
+	if settings.Language != "en" || settings.LogLevel != "warn" || len(settings.AllowHosts) != 0 {
+		t.Fatalf("reset --defaults 后各键应回到默认: %#v", settings)
+	}
+}
+
+// TestCLIConfigSettingsTakeEffect 验证"设置文件真的改变了后续进程的行为"，
+// 并守住本次的核心删除点：语言与日志级别的**环境变量来源已彻底失效**。
+//
+// 为什么必须用真实子进程：语言与日志级别都在进程启动阶段就定下了，
+// 它们是否被正确读取只有在"新起一次进程"里才看得出来；
+// 同进程内断言只能证明代码路径被走过，证明不了用户看到的变化
+func TestCLIConfigSettingsTakeEffect(t *testing.T) {
+	home := t.TempDir()
+	storePath := filepath.Join(home, "store.json")
+	checkArgs := []string{"check", "--output", "json", "--store-path", storePath}
+
+	// 默认英文
+	if english := runCLIWithEnv(t, home, "version"); hasHanText(english.stdout) {
+		t.Fatalf("默认语言应为英文: %q", english.stdout)
+	}
+
+	// 写入语言设置后，**不带 --lang** 的新进程也必须输出中文
+	if set := runCLIWithEnv(t, home, "config", "set", "language", "zh-CN"); set.exitCode != 0 {
+		t.Fatalf("设置语言失败: exit=%d stderr=%q", set.exitCode, set.stderr)
+	}
+	if chinese := runCLIWithEnv(t, home, "version"); !hasHanText(chinese.stdout) {
+		t.Fatalf("设置文件里的 language 未生效: %q", chinese.stdout)
+	}
+
+	// 环境变量 FLK_LANG 已彻底失效：把它设成与设置文件相反的取值，输出仍由设置文件决定
+	if withEnv := runCLIWithExtraEnv(t, home, []string{"FLK_LANG=en"}, "version"); !hasHanText(withEnv.stdout) {
+		t.Fatalf("FLK_LANG 不应再有任何效果，输出应由设置文件决定: %q", withEnv.stdout)
+	}
+
+	// --lang 仍然优先于设置文件（临时覆盖的既有能力不能被改动破坏）
+	if overridden := runCLIWithEnv(t, home, "version", "--lang", "en"); hasHanText(overridden.stdout) {
+		t.Fatalf("--lang 应覆盖设置文件: %q", overridden.stdout)
+	}
+
+	// 日志级别：内置默认是 warn，Info 级的 "Check complete" 不应出现
+	base := runCLIWithEnv(t, home, checkArgs...)
+	if strings.Contains(base.stderr, "level=INFO") {
+		t.Fatalf("默认级别下不应输出 Info 级日志: %q", base.stderr)
+	}
+
+	// 环境变量 FLK_LOG_LEVEL 已彻底失效：设成 debug 也不该让日志多出来
+	envLevel := runCLIWithExtraEnv(t, home, []string{"FLK_LOG_LEVEL=debug"}, checkArgs...)
+	if strings.Contains(envLevel.stderr, "level=INFO") {
+		t.Fatalf("FLK_LOG_LEVEL 不应再有任何效果: %q", envLevel.stderr)
+	}
+
+	// 设置文件里的 logLevel 才是有效来源
+	if set := runCLIWithEnv(t, home, "config", "set", "logLevel", "debug"); set.exitCode != 0 {
+		t.Fatalf("设置日志级别失败: exit=%d stderr=%q", set.exitCode, set.stderr)
+	}
+	if fromFile := runCLIWithEnv(t, home, checkArgs...); !strings.Contains(fromFile.stderr, "level=INFO") {
+		t.Fatalf("设置文件里的 logLevel=debug 应让 Info 级日志出现（level=INFO 与语言无关，因此不受本用例前面切换语言的影响）: %q", fromFile.stderr)
+	}
+
+	// 收紧设置文件后日志随之消失（证明读取的是文件里的值，而不是碰巧的默认值）
+	if set := runCLIWithEnv(t, home, "config", "set", "logLevel", "error"); set.exitCode != 0 {
+		t.Fatalf("设置日志级别失败: exit=%d stderr=%q", set.exitCode, set.stderr)
+	}
+	if quiet := runCLIWithEnv(t, home, checkArgs...); strings.Contains(quiet.stderr, "level=INFO") {
+		t.Fatalf("logLevel=error 时不应输出 Info 级日志: %q", quiet.stderr)
+	}
+
+	// 命令行 -v 覆盖设置文件（-v 是 Info，比文件里的 error 更宽松）
+	if verbose := runCLIWithEnv(t, home, "-v", "check", "--output", "json", "--store-path", storePath); !strings.Contains(verbose.stderr, "level=INFO") {
+		t.Fatalf("-v 应覆盖设置文件里的 logLevel: %q", verbose.stderr)
 	}
 }
