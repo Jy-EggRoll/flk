@@ -17,6 +17,7 @@
   "Both Owner and Repo must be configured": "必须同时配置 Owner 与 Repo",
   "Both files are missing": "两个文件都不存在",
   "Both the source and destination files are missing": "源文件和目标文件都不存在",
+  "Cannot ask for confirmation (stdin is not a terminal); rerun with --yes": "无法向用户确认（标准输入不是终端），请改用 --yes 重试",
   "Cannot interact with the user (stdin is not a terminal); rerun with --all or --yes": "当前环境无法与用户交互（标准输入不是终端），请改用 --all 或 --yes 重试",
   "Cannot interact with the user (stdin is not a terminal); rerun with --yes to assume yes": "当前环境无法与用户交互（标准输入不是终端），请改用 --yes 重试以自动同意",
   "Cannot parse the settings file: {{.Err}}": "无法解析设置文件: {{.Err}}",

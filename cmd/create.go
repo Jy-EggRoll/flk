@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jy-eggroll/flk/internal/output"
+	"github.com/jy-eggroll/flk/internal/prompt"
 	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/jy-eggroll/flk/pkg/l10n"
 	"github.com/pterm/pterm"
@@ -67,6 +68,34 @@ func validateCreateDevice(deviceName string) string {
 		return l10n.T("Device name must not contain commas or spaces", nil)
 	}
 	return ""
+}
+
+// ensureCreateConfirmable 在非交互环境下，提前拦下「本次创建会在某一环节要求确认」的请求
+//
+// 前因（真实缺陷）：--smart 的语义是「自动备份、不询问」，于是备份会立即执行；而备份之后
+// 「删除派生位置以腾出链接位」这一环节仍要确认。非交互且未 --yes 时那次确认会失败退出——
+// 此时备份（对权威源 real/prim/src 的改写）**已经发生**：用户看到的是「失败」，
+// 仓库侧的文件却已经变了。副作用一旦产生就无法靠「提前失败」挽回，因此检查必须前移到这里。
+//
+// 判定取保守口径：只要调用链上**可能**出现确认就要求 --yes
+//   - 备份确认：未被 --smart 跳过时可能出现（见 internal/create/shared 的 HandleTargetBackup）
+//   - 删除确认：未被 --force 跳过时可能出现
+//
+// 只有两者都被跳过（同时给了 --smart 与 --force）才认为全程无需确认。
+// 代价是会拒绝一部分「其实不需要确认」的调用（例如派生位置本就不存在时，两个确认都不会发生），
+// 但它们加 --yes 即可通过；反向的代价是静默产生不可逆的副作用，两种代价并不对称
+//
+// 潜在影响点：本检查只作用于 create 的三个叶子命令入口。fix 与 unlink 走 repairResult /
+// unlinkResult 并且已经显式传了 skipConfirm，WebUI 的 /api/repair 与 /api/unlink 同理，
+// 都不会经过这里，因此不会因本函数而行为改变
+func ensureCreateConfirmable() string {
+	if prompt.Interactive() || prompt.AssumeYes() {
+		return ""
+	}
+	if createSmart && createForce {
+		return ""
+	}
+	return l10n.T("Cannot ask for confirmation (stdin is not a terminal); rerun with --yes", nil)
 }
 
 // renderCreateResult 把唯一的最终创建结果写入 Cobra stdout，并在业务失败已经成功渲染后附加根层可识别的标记

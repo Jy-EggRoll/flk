@@ -422,8 +422,9 @@ func TestCLIRejectsUnsupportedJSON(t *testing.T) {
 	}
 }
 
-// TestCLICreateNonInteractiveConfirmation 验证 create 在非终端下的两种契约：
-//   - 未加 --yes：备份确认无法进行时必须快速失败并给出提示，而不是挂起等待 /dev/tty
+// TestCLICreateNonInteractiveConfirmation 验证 create 在非终端下的契约：
+//   - 未加 --yes：必须在**任何文件操作之前**快速失败并给出提示，而不是挂起等待 /dev/tty；
+//     更不能"先改了文件再报错"——--smart 会自动备份（改写权威源），那种副作用不可逆
 //   - 加了 --yes：自动同意备份并完成建链，整个过程无需任何输入
 //
 // runCLI 的子进程没有控制终端（stdin 被重定向），正好复现脚本/CI 环境；
@@ -456,7 +457,7 @@ func TestCLICreateNonInteractiveConfirmation(t *testing.T) {
 	// create 的失败结果由命令层渲染到 stdout（标记为已渲染后根层不再重复），
 	// 因此断言合并两个流，只关心提示语确实出现且命令快速失败
 	combined := failure.stdout + failure.stderr
-	if !strings.Contains(combined, "Cannot interact with the user") {
+	if !strings.Contains(combined, "Cannot ask for confirmation") {
 		t.Fatalf("应提示无法交互，stdout=%q stderr=%q", failure.stdout, failure.stderr)
 	}
 	if _, err := os.Lstat(fakePath); err != nil {
@@ -464,6 +465,28 @@ func TestCLICreateNonInteractiveConfirmation(t *testing.T) {
 	}
 	if info, err := os.Lstat(fakePath); err == nil && info.Mode()&os.ModeSymlink != 0 {
 		t.Fatal("失败路径不应把 fake 变成符号链接")
+	}
+
+	// --smart 场景的零副作用契约（本次修复的缺陷）：
+	// --smart 的语义是"自动备份、不询问"，备份于是立即执行；而备份之后"删除 fake 以腾出链接位"
+	// 仍需确认。非交互且未 --yes 时那次确认会失败，若检查不前置，就会留下
+	// 「命令报失败、权威源 real 却已被 fake 内容改写」的分叉状态——副作用不可逆
+	smartDir := t.TempDir()
+	smartReal := filepath.Join(smartDir, "real.txt")
+	smartFake := filepath.Join(smartDir, "fake.txt")
+	if err := os.WriteFile(smartFake, []byte("fake-only"), 0o644); err != nil {
+		t.Fatalf("写入 smart 场景的 fake 失败: %v", err)
+	}
+	smartFailure := runCLI(t, "create", "symlink",
+		"--real", smartReal, "--fake", smartFake, "--store-path", storePath, "--smart")
+	if smartFailure.exitCode != 1 {
+		t.Fatalf("--smart 且非交互未加 --yes 时应失败，退出码 = %d，stdout=%q", smartFailure.exitCode, smartFailure.stdout)
+	}
+	if _, err := os.Stat(smartReal); !os.IsNotExist(err) {
+		t.Fatalf("失败路径不得改写权威源 real（这正是修复前的缺陷），stat err=%v", err)
+	}
+	if _, err := os.Lstat(smartFake); err != nil {
+		t.Fatalf("失败路径不应删掉 fake: %v", err)
 	}
 
 	// 启用 --yes：自动备份并建链，fake 最终应是指向 real 的符号链接

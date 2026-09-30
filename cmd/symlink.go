@@ -52,6 +52,10 @@ func Symlink(cmd *cobra.Command, args []string) error {
 	if message := validateCreateDevice(createDevice); message != "" {
 		return failure(message, errors.New(message))
 	}
+	// 非交互环境的前置检查必须排在所有文件操作之前（理由见 ensureCreateConfirmable 的注释）
+	if message := ensureCreateConfirmable(); message != "" {
+		return failure(message, errors.New(message))
+	}
 
 	// 日志调用始终执行，是否展示完全由根层配置的日志级别决定
 	logger.Info(l10n.T("Creating a symbolic link", nil), "real", symlinkReal, "fake", symlinkFake, "device", createDevice, "force", createForce)

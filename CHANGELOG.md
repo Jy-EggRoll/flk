@@ -2,6 +2,9 @@
 
 ## 未发布
 
+- 🐛 fix: `create --smart` 在非交互环境下不再「先改文件、再报错」
+  - 前因：`--smart` 的语义是「自动备份、不询问」，于是备份会立即执行；而备份之后「删除派生位置以腾出链接位」仍需确认，非交互且未 `--yes` 时那一步会失败退出——此时权威源 `real`/`prim`/`src` 已被改写，用户看到的是「失败」，仓库侧的文件却已经变了
+  - 现在把「非交互且未 `--yes`」的判定前置到命令入口：只要调用链上可能出现确认（未被 `--smart` 与 `--force` 同时跳过），就在任何文件操作之前失败，报错时零副作用
 - ⚠️ breaking: 新增 `flk config` 命令子树，并**彻底移除配置类环境变量**（`FLK_LANG`、`FLK_LOG_LEVEL`）
   - 子命令：`flk config`（裸执行即查看）/ `show` / `path` / `get <key>` / `set <key> <value>` / `reset [key]` / `validate`，读写 `~/.config/flk/flk-config.json`
   - 可设置的项收敛为三个：`language`（界面语言）、`allowHosts`（WebUI 长期访问白名单，命令行形态是逗号分隔）、`logLevel`（`debug`/`info`/`warn`/`error`）

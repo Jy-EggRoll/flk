@@ -54,6 +54,10 @@ func Copy(cmd *cobra.Command, args []string) error {
 	if message := validateCreateDevice(createDevice); message != "" {
 		return failure(message, errors.New(message))
 	}
+	// 非交互环境的前置检查必须排在所有文件操作之前（理由见 ensureCreateConfirmable 的注释）
+	if message := ensureCreateConfirmable(); message != "" {
+		return failure(message, errors.New(message))
+	}
 
 	logger.Info(l10n.T("Copying file", nil), "src", copySrc, "dst", copyDst, "device", createDevice, "force", createForce)
 

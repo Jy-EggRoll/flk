@@ -25,6 +25,7 @@
   "Both files are missing": "Both files are missing",
   "Both the source and destination files are missing": "Both the source and destination files are missing",
   "Cancel": "Cancel",
+  "Cannot ask for confirmation (stdin is not a terminal); rerun with --yes": "Cannot ask for confirmation (stdin is not a terminal); rerun with --yes",
   "Cannot interact with the user (stdin is not a terminal); rerun with --all or --yes": "Cannot interact with the user (stdin is not a terminal); rerun with --all or --yes",
   "Cannot interact with the user (stdin is not a terminal); rerun with --yes to assume yes": "Cannot interact with the user (stdin is not a terminal); rerun with --yes to assume yes",
   "Cannot parse the settings file: {{.Err}}": "Cannot parse the settings file: {{.Err}}",
