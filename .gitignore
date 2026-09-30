@@ -1,6 +1,10 @@
 build/
 .task/
 
+# tools/e2e 下的浏览器验收依赖（pnpm 装的 playwright-core），只供本地跑 E2E，不入库
+# 依赖清单与锁定版本在 tools/e2e/package.json 与 pnpm-lock.yaml，那两份是要入库的
+node_modules/
+
 flk
 flk-test
 *.exe

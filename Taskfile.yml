@@ -12,6 +12,12 @@ vars:
   # l10n 工具的三个位置参数：消息函数所在包、扫描目录、语言文件目录
   # 与 internal/locales/locales.go 里的语言列表是一对，改动时要一起看
   L10N_ARGS: '--pkg github.com/jy-eggroll/flk/pkg/l10n --src cmd,internal --dir internal/locales'
+  # E2E 现场（截图、录屏、回看页、临时 store）的落点，只在这里声明一次
+  # 刻意放在 .task/ 下面，并且核实过 .task/ 确实被 .gitignore 忽略（第 2 行的 .task/），
+  # 现场再大也不会污染 git status
+  # 不放 build/ 的原因：clean 任务是 rm -rf build/，现场放那儿会被 clean 顺手删掉；.task/ 是
+  # Task 自己的元数据目录，与构建产物无关，clean 不碰它
+  E2E_ARTIFACTS: .task/e2e
 
 tasks:
   default:
@@ -92,6 +98,45 @@ tasks:
       - task: l10n:check
       - task: test
       - task: test:race
+
+  # verify:browser 是浏览器层的按需验收，刻意不挂进 verify/default：它要构建二进制、要起真实服务、
+  # 要开真实 Chromium，代价比其它检查高一个量级，只在改 WebUI 或交付前跑
+  # 二进制构建到系统临时目录而不是 build/：build/ 是 build-all 的地盘，两边同时跑会互相踩
+  # 现场落在 {{.E2E_ARTIFACTS}}（.gitignore 已忽略 .task/，clean 也不会碰它），所以它不会往
+  # git status 里加东西
+  # 用法：task verify:browser [ONLY=B1,B2] [LABEL=名字]；ONLY 用来只跑指定编号，调断言时省时间
+  verify:browser:
+    desc: '用真实 Chromium 验收 flk serve config 的 WebUI 并生成回看页（按需，用法: task verify:browser [ONLY=B1,B2] [LABEL=名字]）'
+    cmds:
+      - |
+        set -eu
+
+        # 依赖前置检查：缺什么就直接讲清楚，而不是把 ERR_MODULE_NOT_FOUND 之类的堆栈丢给使用者
+        # Chromium 不做在这里检查：定位顺序是 lib/browser.mjs 的知识，重复一份必然漂移，
+        # 那份提示由 verify.mjs 的启动自检给出（缺浏览器时退出码 2，不是构建失败）
+        if ! command -v node >/dev/null 2>&1; then
+          printf '缺少 node：本任务用 Node 跑浏览器断言\n  安装（mise）：mise use -g node@24\n' >&2
+          exit 1
+        fi
+        if ! (cd tools/e2e && node -e "import('playwright-core')" 2>/dev/null); then
+          printf '缺少 playwright-core：浏览器断言依赖它（仓库是纯 Go 项目，这份依赖只装在 tools/e2e 下）\n  安装：cd tools/e2e && pnpm install\n' >&2
+          exit 1
+        fi
+
+        # 临时目录用 mktemp 生成，退出时清掉；--label 与 --only 用任务变量传入，未传时为空
+        work="$(mktemp -d "${TMPDIR:-/tmp}/flk-e2e.XXXXXX")"
+        trap 'rm -rf "$work"' EXIT
+
+        go build -ldflags="{{.LDFLAGS}}" -trimpath -o "$work/{{.APP}}" .
+
+        label="{{.LABEL}}"
+        if [ -z "$label" ]; then label=local; fi
+        # 用位置参数拼命令行而不是拼字符串：可选参数一个一个追加，空值时不会多出一个空参数，
+        # 也不需要为了「能不能加引号」纠结（--only=B1,B2 本身就是一个参数，必须整体加引号）
+        set -- --binary="$work/{{.APP}}" --root="{{.E2E_ARTIFACTS}}" --label="$label"
+        if [ -n "{{.ONLY}}" ]; then set -- "$@" --only="{{.ONLY}}"; fi
+
+        node tools/e2e/verify.mjs "$@"
 
   build-all:
     desc: Build all platform binaries in parallel
