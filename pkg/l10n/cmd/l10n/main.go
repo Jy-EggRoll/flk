@@ -296,24 +296,43 @@ func cmdCheck(o options) error {
 	return nil
 }
 
-// reportTranslations 打印某个语言相对默认语言的翻译缺口。
+// reportTranslations 打印某个语言相对默认语言的双向差异：待翻译缺口与失效译文。
 // 缺失只作警告不阻断：翻译允许滞后于源码。
+//
+// 反向清单（entries 里有、默认语言里已没有）对应源码中已被删除或改写过的原文，
+// 这类条目若不清理会一直白留在译文文件里，直到 l10n:check 以「失效译文」判失败才暴露。
+// 在 export 这个修复动作里当场列出，把问题前移；check 的判定语义保持不变，仍由它兜底
+// 只打印不自动删除：译文文件是译者手工维护的，工具擅自删条目会掩盖「原文被误改」这类问题
 func reportTranslations(lang string, entries, en map[string]string) {
-	var missing []string
+	var missing, stale []string
 	for k := range en {
 		if _, ok := entries[k]; !ok {
 			missing = append(missing, k)
 		}
 	}
+	for k := range entries {
+		if _, ok := en[k]; !ok {
+			stale = append(stale, k)
+		}
+	}
 	sort.Strings(missing)
+	sort.Strings(stale)
 
-	if len(missing) == 0 {
+	if len(missing) == 0 && len(stale) == 0 {
 		fmt.Printf("✓ %s：%d 条译文，无缺口\n", lang, len(entries))
 		return
 	}
-	fmt.Printf("! %s：%d 条译文，尚有 %d 条未翻译\n", lang, len(entries), len(missing))
-	for _, k := range missing {
-		fmt.Printf("    未翻译: %s\n", oneLine(k))
+	if len(missing) > 0 {
+		fmt.Printf("! %s：%d 条译文，尚有 %d 条未翻译\n", lang, len(entries), len(missing))
+		for _, k := range missing {
+			fmt.Printf("    未翻译: %s\n", oneLine(k))
+		}
+	}
+	if len(stale) > 0 {
+		fmt.Printf("! %s：有 %d 条失效译文（源码中已不存在），请删除\n", lang, len(stale))
+		for _, k := range stale {
+			fmt.Printf("    失效: %s\n", oneLine(k))
+		}
 	}
 }
 
