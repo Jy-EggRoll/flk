@@ -13,7 +13,7 @@ var serveCmd = &cobra.Command{
 	Use:     "serve",
 	Aliases: []string{"server"},
 	Short:   l10n.T("Open the web service", nil),
-	Long:    l10n.T("Open the web service with a visual management UI.\nUse the serve config subcommand to view the config file in a browser.", nil),
+	Long:    l10n.T("Open the web service with a visual management UI.\nUse the serve config subcommand to view and edit the config file in a browser.", nil),
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},

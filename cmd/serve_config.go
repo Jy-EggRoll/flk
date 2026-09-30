@@ -38,10 +38,30 @@ func servedConfigHTML() []byte {
 	return bytes.Replace(configHTML, []byte("__FLK_LANG_VALUE__"), []byte(l10n.Current()), 1)
 }
 
+// storeRev 计算 store 文件的版本标识，用于前端区分「本页保存」与「外部修改」
+// 返回空串表示文件当前不可读，调用方需容忍
+func storeRev() string {
+	normalizedPath, err := pathutil.NormalizePath(store.StorePath)
+	if err != nil {
+		return ""
+	}
+	fi, err := os.Stat(normalizedPath)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("%d-%d", fi.ModTime().UnixNano(), fi.Size())
+}
+
 // sseHub 管理 SSE 客户端连接，用于广播文件变更事件
+//
+// lastRev 记录最近一次变更的 store 版本号：前端靠它判断「这次事件是不是我自己保存引起的」，
+// 从而避免自己写盘后触发一次多余的整表重载。版本号放在 hub 上而不是塞进 channel，
+// 是因为 channel 只承担「有新变更」这一信号，即便多次变更被合并成一次唤醒，
+// 客户端读到的也始终是最新版本，语义上更稳
 type sseHub struct {
 	mu      sync.Mutex
 	clients map[chan struct{}]struct{}
+	lastRev string
 }
 
 func newSSEHub() *sseHub {
@@ -62,8 +82,10 @@ func (h *sseHub) unregister(ch chan struct{}) {
 	h.mu.Unlock()
 }
 
-func (h *sseHub) notify() {
+// notify 广播一次文件变更，并记住本次变更对应的 store 版本
+func (h *sseHub) notify(rev string) {
 	h.mu.Lock()
+	h.lastRev = rev
 	for ch := range h.clients {
 		select {
 		case ch <- struct{}{}:
@@ -73,11 +95,18 @@ func (h *sseHub) notify() {
 	h.mu.Unlock()
 }
 
+// currentRev 读取最近一次变更的版本号，供 SSE 连接协程组装事件负载
+func (h *sseHub) currentRev() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.lastRev
+}
+
 var serveConfigCmd = &cobra.Command{
 	Use:     "config",
 	Aliases: []string{"cfg", "c"},
-	Short:   l10n.T("View the store file in a browser", nil),
-	Long:    l10n.T("Start an HTTP server that visualizes the full contents of flk-store.json and reflects local file changes in real time.", nil),
+	Short:   l10n.T("View and edit the store file in a browser", nil),
+	Long:    l10n.T("Start an HTTP server to view and edit flk-store.json in the browser, keeping the page in sync with local file changes.", nil),
 	RunE:    runServeConfig,
 }
 
@@ -144,9 +173,12 @@ func runServeConfig(cmd *cobra.Command, args []string) error {
 				http.Error(w, l10n.T("Save failed: {{.Err}}", map[string]any{"Err": err.Error()}), http.StatusInternalServerError)
 				return
 			}
-			hub.notify()
+			// 保存成功后广播变更并回传版本号：前端保存成功时记下这个 rev，
+			// 随后的 SSE 事件带上同一个 rev 就会被判定为「本页自己保存」，不做多余重载
+			rev := storeRev()
+			hub.notify(rev)
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"success":true}`))
+			json.NewEncoder(w).Encode(map[string]any{"success": true, "rev": rev})
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -159,7 +191,8 @@ func runServeConfig(cmd *cobra.Command, args []string) error {
 			return
 		}
 		normalizedPath, _ := pathutil.NormalizePath(store.StorePath)
-		info := map[string]string{"storePath": normalizedPath}
+		// rev 是文件版本标识：前端加载页面时记下它，后续用于识别外部修改
+		info := map[string]string{"storePath": normalizedPath, "rev": storeRev()}
 		if fi, err := os.Stat(normalizedPath); err == nil {
 			info["modTime"] = fi.ModTime().Format("2006-01-02 15:04:05")
 			info["fileSize"] = formatFileSize(fi.Size())
@@ -213,7 +246,14 @@ func runServeConfig(cmd *cobra.Command, args []string) error {
 			case <-ctx.Done():
 				return
 			case <-ch:
-				fmt.Fprintf(w, "event: updated\ndata: {}\n\n")
+				// 事件负载带上 rev，前端据此区分本页保存与外部修改
+				// map[string]string 的 json.Marshal 不会失败，下面的 "{}" 只是防御性兜底；
+				// 真走到那里，前端会因 rev 为空而把它当成「本页保存」忽略，反而吞掉一次真实的外部变更
+				payload, err := json.Marshal(map[string]string{"rev": hub.currentRev()})
+				if err != nil {
+					payload = []byte("{}")
+				}
+				fmt.Fprintf(w, "event: updated\ndata: %s\n\n", payload)
 				flusher.Flush()
 			}
 		}
@@ -288,7 +328,7 @@ func watchStoreFile(hub *sseHub) {
 		} else {
 			store.GlobalManager.Data = newMgr.Data
 		}
-		hub.notify()
+		hub.notify(storeRev())
 	}
 }
 

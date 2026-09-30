@@ -36,6 +36,14 @@ body { display: flex; flex-direction: column; font-family: -apple-system, BlinkM
 .error-msg { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 10px 16px; border-radius: 8px; font-size: 14px; display: none; margin-bottom: 8px; }
 .success-msg { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; padding: 10px 16px; border-radius: 8px; font-size: 14px; display: none; margin-bottom: 8px; }
 
+/* 未保存改动区 — 与 Re-check 同排，无改动时整体隐藏 */
+#saveActions { display: flex; align-items: center; gap: 10px; }
+#dirtyCount { font-size: 13px; font-weight: 600; color: #fff; }
+
+/* 外部冲突提示条 — 琥珀色左竖条 + 浅黄底，与整体暖色配色一致 */
+.conflict-bar { flex-shrink: 0; max-width: 94%; margin: 10px auto 0; width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; border-radius: 8px; color: #92400e; font-size: 13px; }
+.conflict-bar #conflictText { flex: 1; font-weight: 600; }
+
 /* Main content area — 自定义滚动条 */
 .main { flex: 1; overflow-y: auto; max-width: 94%; margin: 0 auto; width: 100%; padding: 24px 28px; }
 .main::-webkit-scrollbar { width: 6px; }
@@ -62,16 +70,16 @@ tbody tr:last-child td { border-bottom: none; }
 tbody tr:hover { background: #fafaf9; }
 tr.dragging { opacity: .35; background: #fef3c7 !important; }
 tr.drag-over { border-top: 2px solid #d97706; }
-.cell-text { font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace; font-size: 13px; color: #444; padding: 4px 0; word-break: break-all; }
 .cell-input { width: 100%; font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace; font-size: 13px; padding: 6px 10px; border: 1px solid #d6d3d1; border-radius: 6px; outline: none; background: #fff; transition: border-color .15s, box-shadow .15s; }
 .cell-input:focus { border-color: #d97706; box-shadow: 0 0 0 3px rgba(217,119,6,.12); }
+/* 脏单元格 — 与已保存版本不同的输入框标黄，便于用户一眼定位未保存改动 */
+.cell-input.dirty { border-color: #f59e0b; background: #fffbeb; box-shadow: 0 0 0 3px rgba(245,158,11,.12); }
 .num-col { width: 32px; text-align: center; color: #a8a29e; font-size: 12px; }
 .drag-handle { cursor: grab; color: #d6d3d1; font-size: 18px; user-select: none; width: 28px; text-align: center; line-height: 1; } .drag-handle:hover { color: #a8a29e; } .drag-handle:active { cursor: grabbing; }
 .action-col { width: 1%; white-space: nowrap; }
 
 /* Empty state */
 .empty-state { text-align: center; padding: 48px 20px; color: #a8a29e; font-size: 14px; }
-.empty-state p { margin-bottom: 14px; }
 
 /* Footer */
 .footer { flex-shrink: 0; max-width: 94%; margin: 0 auto; width: 100%; padding: 10px 28px 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px; }
@@ -94,12 +102,13 @@ tr.drag-over { border-top: 2px solid #d97706; }
 .cb-col { width: 36px; text-align: center; }
 .cb-all, .cb-row { cursor: pointer; width: 16px; height: 16px; accent-color: #d97706; }
 
-/* 可用性状态徽标 — 查看模式专用列 */
+/* 可用性状态徽标 — 常驻列，脏行降级为「待重检」 */
 .health-col { width: 1%; white-space: nowrap; }
 .health-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
 .health-ok { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
 .health-bad { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; cursor: help; }
 .health-none { background: transparent; color: #a8a29e; border: 1px solid #e7e5e4; }
+.health-pending { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
 
 /* Action bar */
 .action-bar { padding: 10px 14px; border-top: 1px solid #f0efed; display: flex; align-items: center; gap: 12px; font-size: 13px; }
@@ -126,13 +135,12 @@ tr.drag-over { border-top: 2px solid #d97706; }
 <header class="header">
   <h1 data-i18n="flk config">flk config</h1>
   <div class="header-right">
-    <div id="viewActions">
-      <button id="recheckBtn" class="btn btn-edit" data-i18n-title="Re-check the availability of all entries on the current platform" data-i18n="Re-check">Re-check</button>
-      <button id="editBtn" class="btn btn-edit" data-i18n="Edit">Edit</button>
-    </div>
-    <div id="editActions" class="hidden">
+    <button id="recheckBtn" class="btn btn-edit" data-i18n-title="Re-check the availability of all entries on the current platform" data-i18n="Re-check">Re-check</button>
+    <!-- 未保存改动区：无改动时带 hidden 隐藏，出现改动后由 refreshDirtyUI 显隐 -->
+    <div id="saveActions" class="hidden">
+      <span id="dirtyCount"></span>
       <button id="saveBtn" class="btn btn-save" data-i18n="Save">Save</button>
-      <button id="cancelBtn" class="btn btn-cancel" data-i18n="Cancel">Cancel</button>
+      <button id="discardBtn" class="btn btn-cancel" data-i18n="Discard changes">Discard changes</button>
     </div>
     <div class="status">
       <span class="dot offline" id="statusDot"></span>
@@ -140,6 +148,13 @@ tr.drag-over { border-top: 2px solid #d97706; }
     </div>
   </div>
 </header>
+
+<!-- 外部冲突提示条：页面存在未保存改动时，磁盘文件被页面外修改才会出现 -->
+<div id="conflictBar" class="conflict-bar hidden">
+  <span id="conflictText" data-i18n="The config file was modified outside this page"></span>
+  <button id="conflictReloadBtn" class="btn btn-sm btn-cancel" data-i18n="Reload (discard my changes)"></button>
+  <button id="conflictKeepBtn" class="btn btn-sm btn-save" data-i18n="Keep my changes"></button>
+</div>
 
 <div class="msg-bar">
   <div id="error" class="error-msg"></div>
@@ -172,7 +187,8 @@ tr.drag-over { border-top: 2px solid #d97706; }
           <thead><tr id="tableHead"></tr></thead>
           <tbody id="tableBody"></tbody>
         </table>
-        <div id="actionBar" class="action-bar hidden">
+        <!-- 操作条常驻：无条目时它也是「+ 新增条目」的唯一入口，空状态里不再放第二个按钮 -->
+        <div id="actionBar" class="action-bar">
           <span id="selCount" class="sel-count"></span>
           <button id="migrateBtn" class="btn btn-sm btn-add hidden" data-i18n="Migrate">Migrate</button>
           <span style="flex:1"></span>
@@ -181,7 +197,6 @@ tr.drag-over { border-top: 2px solid #d97706; }
       </div>
       <div id="emptyState" class="empty-state hidden">
         <p data-i18n="No entries">No entries</p>
-        <button id="addEntryBtnEmpty" class="btn btn-sm btn-add hidden" data-i18n="+ Add entry">+ Add entry</button>
       </div>
     </div>
   </div>
@@ -230,18 +245,28 @@ tr.drag-over { border-top: 2px solid #d97706; }
 ;(function () {
 'use strict';
 
+/* ---------- 页面结构总览（一体化改造后） ----------
+   本页不再有「查看模式 / 编辑模式」两个互斥状态：单元格常态就是输入框，
+   复选框、拖拽手柄、状态列、操作列常驻，用户改动先落在内存里，
+   只有点保存才写盘。由此衍生三件事，都在下面的代码里对应实现：
+   1) 脏值计算与展示：computeDiff() 对比 data 与 originData，refreshDirtyUI() 只做局部刷新
+   2) 显式保存：顶部 #saveActions 仅在存在未保存改动时出现
+   3) 外部冲突：SSE 携带的 rev 与 knownRev 不同即代表页面外被改动（唯一例外是本页正在
+      保存的窗口——那段窗口里的 rev 变化多半就是自己这次写盘引起的，只暂存不弹条），
+      有未保存改动时弹 #conflictBar 交给用户决定，绝不静默覆盖 */
+
 /* ---------- i18n ----------
    WebUI 文案不走 Go 源码提取管线（该管线只扫描 .go），因此把英文源串作为 key，
    翻译表内嵌在本页；Go 端仅把当前语言注入 window.__FLK_LANG__。
    tr() 取译文（无译文时回退英文源串），trf() 再替换 {name} 占位符，
-   applyI18N() 负责把 data-i18n / placeholder / title 三类静态文案一次翻译完。 */
+   applyI18N() 负责把 data-i18n / placeholder / title 三类静态文案一次翻译完，
+   冲突提示条的文案同样写在元素的 data-i18n 上，随 applyI18N 一起翻译 */
 var LANG = (window.__FLK_LANG__ || 'en');
 var MSG = {
   'zh-CN': {
     'flk config': 'flk 配置',
     'Re-check the availability of all entries on the current platform': '重新检测当前平台所有条目的链接可用性',
     'Re-check': '重新检测',
-    'Edit': '编辑',
     'Save': '保存',
     'Cancel': '取消',
     'Connecting…': '连接中…',
@@ -292,7 +317,14 @@ var MSG = {
     'Saved successfully': '保存成功',
     'Save failed: {msg}': '保存失败: {msg}',
     'Last updated: {time}': '最后更新: {time}',
-    'Connecting to the server…': '连接服务端…'
+    'Connecting to the server…': '连接服务端…',
+    'Unsaved changes: {n}': '未保存改动 {n} 处',
+    'Discard changes': '撤销改动',
+    'Pending re-check': '待重检',
+    'The config file was modified outside this page': '配置文件已在页面外被修改',
+    'Reload (discard my changes)': '重新加载（丢弃我的改动）',
+    'Keep my changes': '保留我的改动',
+    'You have unsaved changes': '你有未保存的改动'
   }
 };
 function tr(s) { var d = MSG[LANG]; return (d && d[s]) || s; }
@@ -310,6 +342,7 @@ function applyI18N() {
 
 /* ---------- Constants ---------- */
 var STORE_API = '/api/config';
+var META_API = '/api/meta';
 var EVENT_API = '/api/events';
 var CHECK_API = '/api/check';
 
@@ -340,12 +373,14 @@ var fileInfo      = document.getElementById('fileInfo');
 var checkInfoEl   = document.getElementById('checkInfo');
 var updateInfo    = document.getElementById('updateInfo');
 var storePathEl   = document.getElementById('storePath');
-var editBtn       = document.getElementById('editBtn');
 var recheckBtn    = document.getElementById('recheckBtn');
+var saveActions   = document.getElementById('saveActions');
+var dirtyCount    = document.getElementById('dirtyCount');
 var saveBtn       = document.getElementById('saveBtn');
-var cancelBtn     = document.getElementById('cancelBtn');
-var viewActions   = document.getElementById('viewActions');
-var editActions   = document.getElementById('editActions');
+var discardBtn    = document.getElementById('discardBtn');
+var conflictBar   = document.getElementById('conflictBar');
+var conflictReloadBtn = document.getElementById('conflictReloadBtn');
+var conflictKeepBtn   = document.getElementById('conflictKeepBtn');
 var loading       = document.getElementById('loading');
 var panel         = document.getElementById('panel');
 var platformTabs  = document.getElementById('platformTabs');
@@ -353,11 +388,9 @@ var deviceTabs    = document.getElementById('deviceTabs');
 var typeTabs      = document.getElementById('typeTabs');
 var tableHead     = document.getElementById('tableHead');
 var tableBody     = document.getElementById('tableBody');
-var actionBar     = document.getElementById('actionBar');
 var migrateBtn    = document.getElementById('migrateBtn');
 var emptyState    = document.getElementById('emptyState');
 var addEntryBtn   = document.getElementById('addEntryBtn');
-var addEntryBtnEmpty = document.getElementById('addEntryBtnEmpty');
 var addDeviceArea    = document.getElementById('addDeviceArea');
 var newDeviceInput   = document.getElementById('newDeviceInput');
 var addDeviceBtn     = document.getElementById('addDeviceBtn');
@@ -374,17 +407,23 @@ var migrateCancelBtn   = document.getElementById('migrateCancelBtn');
 var migrateActionRadios = document.querySelectorAll('input[name="migrateAction"]');
 
 /* ---------- State ---------- */
-var data       = null;    /* 完整配置数据 */
-var origin     = null;    /* 进入编辑前的数据快照，用于取消 */
-var isEditing  = false;
+var data       = null;    /* 完整配置数据，用户输入直接原地修改它，因此保存时无需整体替换；整份替换只出现在「加载」与「撤销改动」两条路径上 */
+var originData = null;    /* 最近一次「加载成功 / 保存成功」时的深拷贝，用于算脏值与撤销 */
+var knownRev   = '';      /* 本页已知的 store 文件版本，SSE 收到相同 rev 即判定为本页自己保存引起 */
+var originRev  = '';      /* originData 快照对应的文件版本，用来判断本地快照是否已经落后于磁盘 */
+var pendingRev = '';      /* 冲突提示条对应的外部版本，「重新加载」与「保留我的改动」两个出口都用它推进 knownRev */
+var saving     = false;   /* 本页正在保存：服务端在写响应体之前就广播 SSE，这段窗口里的 rev 变化不能当成外部冲突 */
+var revDuringSave = '';   /* 保存期间最后一次观察到的 SSE 版本：窗口内多次变更只留最后一次，与响应里的版本不同才说明外部确实也改过文件 */
 var currentPlat = '';
 var currentDev  = '';
 var currentType = 'symlink';
 var dragSrcIdx  = -1;     /* 拖拽起始行索引 */
-var selectedIndices = {}; /* 当前选中的行索引（编辑模式） */
+var dragOriginInInput = false; /* 本次鼠标手势是否从输入框内按下：整行可拖拽会把输入框里的拖动劫持成拖动整行 */
+var selectedIndices = {}; /* 当前选中的行索引，用于批量迁移 */
 var checkPlatform = '';   /* 可用性检测结果所属平台（仅该平台页签下展示状态） */
 var checkMap      = {};   /* key: device|type|字段值… → {valid, error} */
 var checkLoaded   = false;/* 是否已成功完成过一次检测（区分「未检测」与「无匹配」） */
+var beforeUnloadAttached = false; /* beforeunload 是否已注册，避免重复挂载或漏摘 */
 
 /* ---------- UI Helpers ---------- */
 function setOnline(online) {
@@ -401,12 +440,6 @@ function hideError() { errorDiv.style.display = 'none'; }
 function showSuccess(msg) {
   successDiv.textContent = msg; successDiv.style.display = 'block';
   setTimeout(function () { successDiv.style.display = 'none'; }, 3000);
-}
-
-function setModeUI(editing) {
-  isEditing = editing;
-  viewActions.classList.toggle('hidden', editing);
-  editActions.classList.toggle('hidden', !editing);
 }
 
 /* ---------- Data access helpers ---------- */
@@ -442,15 +475,160 @@ function getDevices(plat) {
   return Object.keys(data[plat]).sort();
 }
 
+/* ---------- 脏值计算 ----------
+   一体化后表格不再区分模式，必须随时知道「哪些格子与磁盘上的版本不同」，
+   算法刻意不用引用比较（保存后对象会被整体替换，引用比较会整表误标），
+   也不用 O(n²) 的 LCS：先用规范串做贪心前后缀对齐，再针对未对齐区段细算 */
+
+/* 行规范串：按 TYPE_FIELDS 顺序取字段值拼成 JSON 数组，与对象 key 顺序无关。
+   缺失字段统一归一成空串，避免 undefined / '' / null 造成假脏 */
+function canonicalRow(type, entry) {
+  var fields = TYPE_FIELDS[type] || [];
+  return JSON.stringify(fields.map(function (f) {
+    var v = entry ? entry[f.key] : '';
+    return v == null ? '' : v;
+  }));
+}
+
+/* 收集 data 与 originData 中出现过的所有 plat|dev|type 路径。
+   两侧都要扫：撤销可能让某个平台/设备重新出现，而当前数据里未必还有它 */
+function collectPaths() {
+  var paths = {};
+  [data, originData].forEach(function (root) {
+    if (!root) return;
+    Object.keys(root).forEach(function (plat) {
+      Object.keys(root[plat] || {}).forEach(function (dev) {
+        TYPE_NAMES.forEach(function (t) {
+          paths[plat + '|' + dev + '|' + t] = { plat: plat, dev: dev, type: t };
+        });
+      });
+    });
+  });
+  return paths;
+}
+
+/* computeDiff 返回 { cells, newRows, dirtyRows, count }
+   cells     key = plat|dev|type|idx|field
+   newRows   key = plat|dev|type|idx
+   dirtyRows key = plat|dev|type|idx（字段被改或整行新增）
+   count 语义：字段级变更数 + 新增行数 + 删除行数 */
+function computeDiff() {
+  var res = { cells: {}, newRows: {}, dirtyRows: {}, count: 0 };
+  if (!data || !originData) return res;
+  var paths = collectPaths();
+  Object.keys(paths).forEach(function (p) {
+    var seg = paths[p];
+    var cur = ((data[seg.plat] || {})[seg.dev] || {})[seg.type] || [];
+    var old = ((originData[seg.plat] || {})[seg.dev] || {})[seg.type] || [];
+    var n = cur.length, m = old.length;
+
+    /* 贪心前后缀对齐：先吃掉完全相同的头部，再吃掉完全相同的尾部，
+       剩下的未对齐区段才是「真正发生变化的区域」，这样单点修改不会被放大 */
+    var i = 0;
+    while (i < n && i < m && canonicalRow(seg.type, cur[i]) === canonicalRow(seg.type, old[i])) i++;
+    var j = 0;
+    while (j < n - i && j < m - i && canonicalRow(seg.type, cur[n - 1 - j]) === canonicalRow(seg.type, old[m - 1 - j])) j++;
+
+    var curSegLen = n - i - j;
+    var oldSegLen = m - i - j;
+    var overlap = Math.min(curSegLen, oldSegLen);
+
+    /* 重叠部分逐字段对位比较，精确标出脏单元格 */
+    var fields = TYPE_FIELDS[seg.type] || [];
+    for (var k = 0; k < overlap; k++) {
+      var rowIdx = i + k;
+      for (var fi = 0; fi < fields.length; fi++) {
+        var fk = fields[fi].key;
+        var cv = cur[rowIdx][fk] == null ? '' : cur[rowIdx][fk];
+        var ov = old[rowIdx][fk] == null ? '' : old[rowIdx][fk];
+        if (cv !== ov) {
+          res.cells[p + '|' + rowIdx + '|' + fk] = true;
+          res.dirtyRows[p + '|' + rowIdx] = true;
+          res.count++;
+        }
+      }
+    }
+    /* 当前侧多出的行视为新增：整行脏、整行计入 count */
+    for (var x = overlap; x < curSegLen; x++) {
+      var newIdx = i + x;
+      res.newRows[p + '|' + newIdx] = true;
+      res.dirtyRows[p + '|' + newIdx] = true;
+      res.count++;
+    }
+    /* 旧侧多出的行视为删除：表格里没有对应行可高亮，只计数 */
+    if (oldSegLen > curSegLen) res.count += oldSegLen - curSegLen;
+  });
+  return res;
+}
+
+/* ---------- 脏值 UI 刷新 ----------
+   只做局部更新（改 class、改徽标、改文本），绝不重建表格：
+   用户在格子里打字时若重建 tbody，光标和选区会立刻丢失 */
+function refreshDirtyUI() {
+  var diff = computeDiff();
+  var hasDirty = diff.count > 0;
+
+  saveActions.classList.toggle('hidden', !hasDirty);
+  dirtyCount.textContent = trf('Unsaved changes: {n}', { n: diff.count });
+
+  var prefix = currentPlat + '|' + currentDev + '|' + currentType;
+  /* 单元格脏标记 */
+  tableBody.querySelectorAll('.cell-input').forEach(function (inp) {
+    var tr = inp.closest('tr');
+    if (!tr) return;
+    inp.classList.toggle('dirty', !!diff.cells[prefix + '|' + tr.dataset.idx + '|' + inp.dataset.key]);
+  });
+  /* 状态列：脏行降级为「待重检」，干净行回落到 checkMap 的真实结果 */
+  var entries = getEntries();
+  tableBody.querySelectorAll('tr').forEach(function (tr) {
+    var cell = tr.querySelector('.health-col');
+    if (!cell) return;
+    var idx = tr.dataset.idx;
+    if (diff.dirtyRows[prefix + '|' + idx]) {
+      cell.innerHTML = pendingBadge();
+      return;
+    }
+    var entry = entries[parseInt(idx)];
+    cell.innerHTML = entry ? healthBadge(entry) : '';
+  });
+
+  updateBeforeUnload(hasDirty);
+}
+
+/* 待重检徽标：该行与已保存版本不一致，旧的检测结论已经不可信 */
+function pendingBadge() {
+  return '<span class="health-badge health-pending">' + tr('Pending re-check') + '</span>';
+}
+
+/* ---------- 离开拦截 ----------
+   有未保存改动时注册 beforeunload，避免用户关页/刷新时无声丢失输入 */
+function onBeforeUnload(e) {
+  e.preventDefault();
+  e.returnValue = tr('You have unsaved changes');
+  return e.returnValue;
+}
+
+function updateBeforeUnload(hasDirty) {
+  if (hasDirty && !beforeUnloadAttached) {
+    window.addEventListener('beforeunload', onBeforeUnload);
+    beforeUnloadAttached = true;
+  } else if (!hasDirty && beforeUnloadAttached) {
+    window.removeEventListener('beforeunload', onBeforeUnload);
+    beforeUnloadAttached = false;
+  }
+}
+
 /* ---------- Tab rendering ---------- */
 function renderPlatformTabs() {
   var plats = getPlatforms();
-  platformTabs.innerHTML = plats.map(function (p) {
-    return '<button class="tab' + (p === currentPlat ? ' active' : '') + '" data-plat="' + p + '">' + p + '</button>';
-  }).join('');
+  /* 先修正 currentPlat 再渲染：撤销/重新加载可能让当前平台不复存在，
+     若先渲染后修正，页签高亮会和表格数据错位 */
   if (plats.indexOf(currentPlat) < 0 && plats.length > 0) {
     currentPlat = plats[0];
   }
+  platformTabs.innerHTML = plats.map(function (p) {
+    return '<button class="tab' + (p === currentPlat ? ' active' : '') + '" data-plat="' + attrEsc(p) + '">' + escHtml(p) + '</button>';
+  }).join('');
   platformTabs.querySelectorAll('.tab').forEach(function (el) {
     el.addEventListener('click', function () {
       currentPlat = el.dataset.plat;
@@ -462,23 +640,20 @@ function renderPlatformTabs() {
 
 function renderDeviceTabs() {
   var devs = getDevices(currentPlat);
-  var html = devs.map(function (d) {
-    var active = d === currentDev ? ' active' : '';
-    if (isEditing) {
-      return '<span class="tab' + active + '" data-dev="' + d + '" style="display:inline-flex;align-items:center;gap:4px;">' +
-        d +
-        '<button class="btn-dev-del" data-dev="' + d + '" title="' + attrEsc(trf('Delete device {dev}', {dev: d})) + '">&times;</button>' +
-        '</span>';
-    }
-    return '<button class="tab' + active + '" data-dev="' + d + '">' + d + '</button>';
-  }).join('');
-  if (isEditing) {
-    html += '<button class="tab btn-ghost" id="showAddDeviceBtn" style="color:#d97706;">' + tr('+ New device') + '</button>';
-  }
-  deviceTabs.innerHTML = html;
+  /* 同上：先兜底 currentDev，设备删除后页签高亮才不会指向不存在的设备 */
   if (devs.indexOf(currentDev) < 0 && devs.length > 0) {
     currentDev = devs[0];
   }
+  /* 设备删除按钮 × 与「+ 新建设备」常驻：一体化后设备增删不再依赖编辑模式 */
+  var html = devs.map(function (d) {
+    var active = d === currentDev ? ' active' : '';
+    return '<span class="tab' + active + '" data-dev="' + attrEsc(d) + '" style="display:inline-flex;align-items:center;gap:4px;">' +
+      escHtml(d) +
+      '<button class="btn-dev-del" data-dev="' + attrEsc(d) + '" title="' + attrEsc(trf('Delete device {dev}', {dev: d})) + '">&times;</button>' +
+      '</span>';
+  }).join('');
+  html += '<button class="tab btn-ghost" id="showAddDeviceBtn" style="color:#d97706;">' + tr('+ New device') + '</button>';
+  deviceTabs.innerHTML = html;
   deviceTabs.querySelectorAll('.tab[data-dev]').forEach(function (el) {
     el.addEventListener('click', function () {
       currentDev = el.dataset.dev;
@@ -493,8 +668,8 @@ function renderDeviceTabs() {
       if (!confirm(trf('Delete device "{dev}" and all its entries?', {dev: dev}))) return;
       delete data[currentPlat][dev];
       if (currentDev === dev) {
-        var devs = getDevices(currentPlat);
-        currentDev = devs.length > 0 ? devs[0] : '';
+        var remain = getDevices(currentPlat);
+        currentDev = remain.length > 0 ? remain[0] : '';
       }
       renderAll();
     });
@@ -520,86 +695,101 @@ function renderTypeTabs() {
   });
 }
 
+/* ---------- 焦点保持 ----------
+   renderTable 会重建整个 tbody，若不记录并恢复，
+   「正在输入时 Re-check 完成 / SSE 自动重载」都会把光标踢走 */
+function captureFocus() {
+  var el = document.activeElement;
+  if (!el || !el.classList || !el.classList.contains('cell-input')) return null;
+  var tr = el.closest('tr');
+  if (!tr) return null;
+  return {
+    idx: tr.dataset.idx,
+    key: el.dataset.key,
+    start: el.selectionStart,
+    end: el.selectionEnd
+  };
+}
+
+function restoreFocus(snap) {
+  if (!snap) return;
+  var el = tableBody.querySelector('tr[data-idx="' + snap.idx + '"] .cell-input[data-key="' + snap.key + '"]');
+  if (!el) return; /* 原焦点行可能已被删除，此时无需恢复 */
+  el.focus();
+  try {
+    el.setSelectionRange(snap.start, snap.end);
+  } catch (_) {
+    /* 个别输入类型不支持选区操作，忽略即可 */
+  }
+}
+
 /* ---------- Table rendering ---------- */
 function renderTable() {
-  if (!isEditing) { selectedIndices = {}; }
   var entries = getEntries();
   var fields = TYPE_FIELDS[currentType];
+  var focus = captureFocus();
+
+  /* 修剪越界的选中标记：删除条目后旧索引可能指向不存在的行 */
+  var pruned = {};
+  Object.keys(selectedIndices).forEach(function (k) {
+    if (selectedIndices[k] && parseInt(k) < entries.length) pruned[k] = true;
+  });
+  selectedIndices = pruned;
   var allSelected = entries.length > 0 && entries.every(function (_, i) { return selectedIndices[i]; });
 
-  /* Head */
-  var headHtml = '';
-  if (isEditing) headHtml += '<th class="cb-col"><input type="checkbox" class="cb-all"' + (allSelected ? ' checked' : '') + ' id="cbAll"></th>';
-  if (isEditing) headHtml += '<th class="drag-handle"></th>';
+  /* Head：复选框 / 拖拽手柄 / 序号 / 字段 / 状态 / 操作 六类列常驻，
+     表格结构在页面生命周期内保持稳定，不再随模式增删 */
+  var headHtml = '<th class="cb-col"><input type="checkbox" class="cb-all"' + (allSelected ? ' checked' : '') + ' id="cbAll"></th>';
+  headHtml += '<th class="drag-handle"></th>';
   headHtml += '<th class="num-col">#</th>';
   fields.forEach(function (f) { headHtml += '<th>' + tr(f.label) + '</th>'; });
-  /* 可用性状态列仅查看模式展示：编辑模式下条目值可能被改动，旧状态会误导 */
-  if (!isEditing) headHtml += '<th class="health-col">' + tr('Status') + '</th>';
-  if (isEditing) headHtml += '<th class="action-col">' + tr('Actions') + '</th>';
+  headHtml += '<th class="health-col">' + tr('Status') + '</th>';
+  headHtml += '<th class="action-col">' + tr('Actions') + '</th>';
   tableHead.innerHTML = headHtml;
 
-  /* Body */
-  if (entries.length === 0) {
-    tableBody.innerHTML = '';
-    emptyState.classList.remove('hidden');
-    actionBar.classList.add('hidden');
-    addEntryBtnEmpty.classList.toggle('hidden', !isEditing);
-    updateMigrateBtn();
-    return;
+  /* 全选：常驻绑定 */
+  var cbAll = document.getElementById('cbAll');
+  if (cbAll) {
+    cbAll.addEventListener('change', function () {
+      getEntries().forEach(function (_, i) { selectedIndices[i] = cbAll.checked; });
+      renderTable();
+    });
   }
 
-  emptyState.classList.add('hidden');
-  actionBar.classList.toggle('hidden', !isEditing);
-  addEntryBtnEmpty.classList.add('hidden');
+  if (entries.length === 0) {
+    /* 无条目时只显示空状态提示，不在这里再放新增按钮：
+       常驻的操作条已经是「+ 新增条目」的唯一入口，同一功能不留两个入口 */
+    tableBody.innerHTML = '';
+    emptyState.classList.remove('hidden');
+  } else {
+    emptyState.classList.add('hidden');
 
-  var rowsHtml = '';
-  entries.forEach(function (entry, idx) {
-    rowsHtml += '<tr data-idx="' + idx + '" draggable="' + isEditing + '">';
-    if (isEditing) {
+    var rowsHtml = '';
+    entries.forEach(function (entry, idx) {
+      rowsHtml += '<tr data-idx="' + idx + '" draggable="true">';
       rowsHtml += '<td class="cb-col"><input type="checkbox" class="cb-row"' + (selectedIndices[idx] ? ' checked' : '') + ' data-idx="' + idx + '"></td>';
       rowsHtml += '<td class="drag-handle" draggable="true">⣿</td>';
-    }
-    rowsHtml += '<td class="num-col">' + (idx + 1) + '</td>';
-    fields.forEach(function (f) {
-      var val = entry[f.key] || '';
-      if (isEditing) {
-        rowsHtml += '<td><input class="cell-input" data-key="' + f.key + '" value="' + attrEsc(val) + '"></td>';
-      } else {
-        rowsHtml += '<td><div class="cell-text">' + escHtml(val) + '</div></td>';
-      }
-    });
-    if (!isEditing) {
-      rowsHtml += '<td class="health-col">' + healthBadge(entry) + '</td>';
-    }
-    if (isEditing) {
-      rowsHtml += '<td class="action-col"><button class="btn btn-sm btn-dell" data-idx="' + idx + '">' + tr('Delete') + '</button></td>';
-    }
-    rowsHtml += '</tr>';
-  });
-  tableBody.innerHTML = rowsHtml;
-
-  updateMigrateBtn();
-
-  if (isEditing) {
-    /* 全选 */
-    var cbAll = document.getElementById('cbAll');
-    if (cbAll) {
-      cbAll.addEventListener('change', function () {
-        var entries = getEntries();
-        entries.forEach(function (_, i) { selectedIndices[i] = cbAll.checked; });
-        renderTable();
+      rowsHtml += '<td class="num-col">' + (idx + 1) + '</td>';
+      fields.forEach(function (f) {
+        var val = entry[f.key] || '';
+        rowsHtml += '<td><input class="cell-input" data-key="' + attrEsc(f.key) + '" value="' + attrEsc(val) + '"></td>';
       });
-    }
+      rowsHtml += '<td class="health-col">' + healthBadge(entry) + '</td>';
+      rowsHtml += '<td class="action-col"><button class="btn btn-sm btn-dell" data-idx="' + idx + '">' + tr('Delete') + '</button></td>';
+      rowsHtml += '</tr>';
+    });
+    tableBody.innerHTML = rowsHtml;
+
     /* 行复选框 */
     tableBody.querySelectorAll('.cb-row').forEach(function (cb) {
       cb.addEventListener('change', function () {
-        var idx = parseInt(cb.dataset.idx);
-        selectedIndices[idx] = cb.checked ? true : false;
+        selectedIndices[parseInt(cb.dataset.idx)] = cb.checked ? true : false;
         renderTable();
       });
     });
-    /* Drag-and-drop events */
+    /* Drag-and-drop events：常驻绑定；mousedown 先于 dragstart 记录手势起点 */
     tableBody.querySelectorAll('tr').forEach(function (tr) {
+      tr.addEventListener('mousedown', onRowMouseDown);
       tr.addEventListener('dragstart', onDragStart);
       tr.addEventListener('dragover',  onDragOver);
       tr.addEventListener('dragleave', onDragLeave);
@@ -608,33 +798,22 @@ function renderTable() {
     });
     /* Delete buttons */
     tableBody.querySelectorAll('.btn-dell').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var idx = parseInt(btn.dataset.idx);
-        var arr = getEntries().slice();
-        arr.splice(idx, 1);
-        setEntries(arr);
-        /* 清理被删条目的选中状态 */
-        var newSel = {};
-        Object.keys(selectedIndices).forEach(function (k) {
-          var ki = parseInt(k);
-          if (ki < idx) newSel[ki] = selectedIndices[ki];
-          if (ki > idx) newSel[ki - 1] = selectedIndices[ki];
-        });
-        selectedIndices = newSel;
-        renderTable();
-      });
+      btn.addEventListener('click', function () { deleteRow(parseInt(btn.dataset.idx)); });
     });
-    /* Input change track */
+    /* 单元格输入：用 input 事件（而非 change/blur）做到即时同步，
+       回调里只写回 data 并局部刷新脏值 UI，绝不重建表格 */
     tableBody.querySelectorAll('.cell-input').forEach(function (inp) {
-      inp.addEventListener('change', onCellChange);
-      inp.addEventListener('blur', onCellChange);
+      inp.addEventListener('input', onCellInput);
     });
   }
+
+  updateMigrateBtn();
+  restoreFocus(focus);
+  refreshDirtyUI();
 }
 
 function updateMigrateBtn() {
   var count = Object.keys(selectedIndices).filter(function (k) { return selectedIndices[k]; }).length;
-  var migrateBtn = document.getElementById('migrateBtn');
   if (migrateBtn) {
     migrateBtn.classList.toggle('hidden', count === 0);
   }
@@ -642,8 +821,14 @@ function updateMigrateBtn() {
   if (selLabel) { selLabel.textContent = trf('Selected {n} items', {n: count}); }
 }
 
-function attrEsc(s) { return String(s).replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-function escHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+/* ---------- HTML 转义 ----------
+   平台名与设备名由用户命名，拼进 innerHTML 前必须转义，否则含引号或尖括号的名字会破坏属性或渲染
+   只保留一份映射实现：文本走 escHtml，属性值在其基础上补一个引号转义
+   这样两处转义不会各自演化，也不会出现「已删除的函数」与注释不一致 */
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function attrEsc(s) { return escHtml(s).replace(/"/g, '&quot;'); }
 
 /* ---------- 可用性检测 ---------- */
 /* 检测状态匹配 key：device|type|各字段值
@@ -655,7 +840,8 @@ function buildCheckKey(device, type, entry) {
   return parts.join('|');
 }
 
-/* 查看模式状态列单元格：有效/无效/未知三态，无效时 tooltip 展示后端返回的错误详情 */
+/* 状态列单元格：有效/无效/未知三态，无效时 tooltip 展示后端返回的错误详情。
+   脏行的「待重检」由 refreshDirtyUI 覆盖，不走这里 */
 function healthBadge(entry) {
   if (!checkLoaded || currentPlat !== checkPlatform) {
     return '<span class="health-badge health-none">—</span>';
@@ -666,8 +852,9 @@ function healthBadge(entry) {
   return '<span class="health-badge health-bad" title="' + attrEsc(st.error) + '">' + tr('Invalid') + '</span>';
 }
 
-/* 调用 /api/check 全量检测当前平台，完成后非编辑态下刷新状态列
-   检测涉及文件系统操作可能较慢，异步执行不阻塞主渲染 */
+/* 调用 /api/check 全量检测当前平台，完成后刷新状态列
+   检测涉及文件系统操作可能较慢，异步执行不阻塞主渲染；
+   renderTable 自带焦点恢复，所以即使用户正在输入也不会丢光标 */
 async function loadCheckStatus() {
   checkInfoEl.textContent = tr('Checking…');
   try {
@@ -685,24 +872,53 @@ async function loadCheckStatus() {
     checkLoaded = false;
     checkInfoEl.textContent = trf('Availability check failed: {msg}', {msg: err.message});
   }
-  /* 编辑模式下不重绘表格，避免打断用户输入；状态会在退出编辑后自然更新 */
-  if (!isEditing) renderTable();
+  renderTable();
 }
 
-function onCellChange(e) {
+/* 输入即写回：data 原地修改，不复制整份数组，避免每敲一个键就产生一份垃圾 */
+function onCellInput(e) {
   var inp = e.target;
   var tr = inp.closest('tr');
   if (!tr) return;
-  var idx = parseInt(tr.dataset.idx);
-  var key = inp.dataset.key;
-  var entries = getEntries().slice();
-  if (!entries[idx]) return;
-  entries[idx][key] = inp.value;
-  setEntries(entries);
+  var entry = getEntries()[parseInt(tr.dataset.idx)];
+  if (!entry) return;
+  entry[inp.dataset.key] = inp.value;
+  refreshDirtyUI();
+}
+
+/* 删除一行：结构性操作，与新增/拖拽/迁移一样走 renderTable 重建 */
+function deleteRow(idx) {
+  var arr = getEntries().slice();
+  if (idx < 0 || idx >= arr.length) return;
+  arr.splice(idx, 1);
+  setEntries(arr);
+  /* 清理被删条目的选中状态：删除位之后的下标整体前移 */
+  var newSel = {};
+  Object.keys(selectedIndices).forEach(function (k) {
+    var ki = parseInt(k);
+    if (ki < idx) newSel[ki] = selectedIndices[ki];
+    if (ki > idx) newSel[ki - 1] = selectedIndices[ki];
+  });
+  selectedIndices = newSel;
+  renderTable();
 }
 
 /* Drag & Drop */
+/* 按下时先记住这次手势的起点，供 onDragStart 判断拖拽意图：
+   行本身是 draggable 的，用户在输入框里按下拖动时，浏览器会把这次手势劫持成「拖动整行」——
+   于是文字既选不中，行序还会被顺手改掉。这种情况下 dragstart 的 target 是 TR 而不是 INPUT，
+   只看 e.target 会漏判，所以必须借助 mousedown 的落点 */
+function onRowMouseDown(e) {
+  dragOriginInInput = !!e.target.closest('.cell-input');
+}
+
 function onDragStart(e) {
+  /* 输入框内的拖拽一律不是换序意图：既包括「在输入框里按下往外拖」，
+     也包括「双击选中文字后从选中文字往外拖」（后者 dragstart 的 target 是 INPUT） */
+  if (dragOriginInInput || e.target.closest('.cell-input')) {
+    e.preventDefault();
+    return;
+  }
   var tr = e.target.closest('tr');
   if (!tr) return;
   dragSrcIdx = parseInt(tr.dataset.idx);
@@ -726,14 +942,17 @@ function onDragLeave(e) {
 
 function onDrop(e) {
   e.preventDefault();
+  /* 没有经过认可的拖拽起点（例如被拦下的输入框拖拽）绝不能重排：
+     dragSrcIdx 为 -1 时 splice(-1) 会把整份数据最后一条挪到目标行，静默改坏配置 */
+  if (dragSrcIdx < 0) return;
   var tr = e.target.closest('tr');
   if (!tr) return;
   var targetIdx = parseInt(tr.dataset.idx);
   if (dragSrcIdx === targetIdx) return;
-  var entries = getEntries().slice();
-  var item = entries.splice(dragSrcIdx, 1)[0];
-  entries.splice(targetIdx, 0, item);
-  setEntries(entries);
+  var arr = getEntries().slice();
+  var item = arr.splice(dragSrcIdx, 1)[0];
+  arr.splice(targetIdx, 0, item);
+  setEntries(arr);
   renderTable();
 }
 
@@ -747,8 +966,7 @@ function onDragEnd(e) {
 /* ---------- Add entry ---------- */
 function addEntry() {
   var entry = {};
-  var fields = TYPE_FIELDS[currentType];
-  fields.forEach(function (f) { entry[f.key] = ''; });
+  (TYPE_FIELDS[currentType] || []).forEach(function (f) { entry[f.key] = ''; });
   var arr = getEntries().slice();
   arr.push(entry);
   setEntries(arr);
@@ -770,13 +988,10 @@ function addDevice() {
   newDeviceInput.value = '';
   addDeviceArea.classList.add('hidden');
   renderAll();
-  /* 进入编辑模式 */
-  if (!isEditing) { enterEditMode(); }
 }
 
 /* ---------- Migration ---------- */
 function openMigrateModal() {
-  collectInputs();
   var count = Object.keys(selectedIndices).filter(function (k) { return selectedIndices[k]; }).length;
   if (count === 0) { showError(tr('Select the entries to migrate first')); return; }
   migrateCount.textContent = trf('Selected {n} entries', {n: count});
@@ -784,7 +999,7 @@ function openMigrateModal() {
   /* 填充目标平台列表 */
   var plats = getPlatforms();
   migrateTargetPlat.innerHTML = plats.map(function (p) {
-    return '<option value="' + p + '"' + (p === currentPlat ? ' selected' : '') + '>' + p + '</option>';
+    return '<option value="' + attrEsc(p) + '"' + (p === currentPlat ? ' selected' : '') + '>' + escHtml(p) + '</option>';
   }).join('');
 
   /* 填充目标类型列表 */
@@ -804,16 +1019,21 @@ function fillTargetDevs() {
   var plat = migrateTargetPlat.value;
   var devs = getDevices(plat);
   migrateTargetDev.innerHTML = devs.map(function (d) {
-    return '<option value="' + d + '">' + d + '</option>';
+    return '<option value="' + attrEsc(d) + '">' + escHtml(d) + '</option>';
   }).join('');
   if (devs.length === 0) {
-    /* 目标平台没有设备，自动添加一个 */
+    /* 目标平台没有任何设备：只渲染一个空值占位项，提示用户先去目标平台创建设备，
+       这里刻意不隐式造一个设备——设备名与初始类型都需要用户确认，
+       悄悄造出来的设备既不符合用户意图，用户也无从得知它是谁在何时建的
+       该占位项只承载提示文案、不携带有效取值，因此在 doMigrate 里一定会被
+       targetDev 空值校验拦下并提示「请选择目标设备」，迁移流程不会在半途产生半成品数据
+       若日后想让这里真正创建设备，必须同步考虑该占位项与 doMigrate 校验的分工，
+       否则会出现「建了设备却仍提示未选择目标设备」的矛盾状态 */
     migrateTargetDev.innerHTML = '<option value="">' + tr('-- Create a device first --') + '</option>';
   }
 }
 
 function doMigrate() {
-  collectInputs();
   var targetPlat = migrateTargetPlat.value;
   var targetDev  = migrateTargetDev.value;
   var targetType = migrateTargetType.value;
@@ -825,7 +1045,7 @@ function doMigrate() {
   /* 确保目标路径存在 */
   ensurePath(targetPlat, targetDev);
 
-  /* 收集选中的条目 */
+  /* 收集选中的条目：data 里的值始终是最新的（输入即写回），无需再从 DOM 收集 */
   var sourceEntries = getEntries();
   var toMigrate = [];
   Object.keys(selectedIndices).sort(function (a, b) { return a - b; }).forEach(function (k) {
@@ -852,7 +1072,6 @@ function doMigrate() {
   }
 
   migrateModal.classList.add('hidden');
-  updateMigrateBtn();
   renderTable();
   showSuccess(trf('Migration complete: {n} entries', {n: toMigrate.length}));
 }
@@ -865,21 +1084,66 @@ function renderAll() {
   renderTable();
 }
 
+/* ---------- 冲突处理 ----------
+   knownRev 与 SSE 事件里的 rev 相同 ⇒ 这次变更就是本页保存引起的，忽略；
+   不同 ⇒ 页面外有人改了文件：有未保存改动就交给用户裁决，没有就直接重载 */
+function showConflict(rev) {
+  if (rev) pendingRev = rev;
+  conflictBar.classList.remove('hidden');
+}
+
+function hideConflict() {
+  conflictBar.classList.add('hidden');
+  pendingRev = '';
+}
+
+function resolveConflict(reload) {
+  var rev = pendingRev;
+  conflictBar.classList.add('hidden');
+  pendingRev = '';
+  /* 无论选哪个出口，都要把 knownRev 推进到外部版本：
+     选「保留我的改动」时不重载，但后续保存会整体覆盖磁盘内容，
+     若不同步 knownRev，下一次轮询通知还会重复弹同一个提示条 */
+  if (rev) knownRev = rev;
+  if (reload) loadConfig(true);
+}
+
 /* ---------- Load / Save ---------- */
-async function loadConfig() {
+/* 读取文件元信息并同步 knownRev */
+async function loadMeta() {
+  try {
+    var meta = await fetch(META_API).then(function (r) { return r.json(); });
+    if (meta.storePath) storePathEl.textContent = trf('Path: {path}', {path: meta.storePath});
+    var info = '';
+    if (meta.modTime) info += trf('Modified: {time}', {time: meta.modTime});
+    if (meta.fileSize) info += trf(' | Size: {size}', {size: meta.fileSize});
+    fileInfo.textContent = info;
+    if (meta.rev) knownRev = meta.rev;
+  } catch (_) {
+    /* 元信息读取失败不影响配置展示，静默忽略 */
+  }
+}
+
+/* 加载配置。force=true 用于「用户明确选择丢弃本地改动」的场景（冲突条的重新加载）
+   非 force 时若存在未保存改动，绝不覆盖用户输入，改为弹出冲突提示条 */
+async function loadConfig(force) {
   try {
     var resp = await fetch(STORE_API);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    data = await resp.json();
+    var fetched = await resp.json();
 
-    try {
-      var meta = await fetch('/api/meta').then(function (r) { return r.json(); });
-      if (meta.storePath) storePathEl.textContent = trf('Path: {path}', {path: meta.storePath});
-      var info = '';
-      if (meta.modTime) info += trf('Modified: {time}', {time: meta.modTime});
-      if (meta.fileSize) info += trf(' | Size: {size}', {size: meta.fileSize});
-      fileInfo.textContent = info;
-    } catch (_) {}
+    if (!force && computeDiff().count > 0) {
+      showConflict('');
+      return;
+    }
+
+    data = fetched;
+    /* 加载成功即视为「与磁盘一致」，快照既用于脏值计算也用于撤销 */
+    originData = JSON.parse(JSON.stringify(data));
+    hideConflict();
+    await loadMeta();
+    /* 快照版本与已知版本在此刻对齐，之后两者的差异就代表「磁盘又前进了一步」 */
+    originRev = knownRev;
 
     /* 初始化导航到第一个有数据的平台/设备 */
     var plats = getPlatforms();
@@ -892,13 +1156,13 @@ async function loadConfig() {
     panel.classList.remove('hidden');
     renderAll();
     hideError();
-    setOnline(true);
+    /* 这里刻意不再设置连接状态：绿点必须反映 SSE 的真实连接与否，
+       由 connectSSE 的 onopen/onerror 独占负责，否则配置加载成功会造出一个假的「已连接」 */
     /* 配置加载完成后异步检测可用性，不阻塞主渲染；
        这也使 SSE updated 触发的 loadConfig 自动带动状态刷新，形成自动刷新闭环 */
     loadCheckStatus();
   } catch (err) {
     showError(trf('Failed to load the config: {msg}', {msg: err.message}));
-    setOnline(false);
   }
 }
 
@@ -906,63 +1170,102 @@ async function saveConfig() {
   saveBtn.disabled = true;
   saveBtn.textContent = tr('Saving…');
   hideError();
-
-  /* 收集所有 input 最新值 */
-  if (isEditing) collectInputs();
+  /* 服务端在写响应体之前就广播了 SSE，而页面要等响应回来才知道本次写盘的 rev：
+     这段窗口里若把 rev 变化当作「页面外被修改」，自己保存也会弹出冲突提示条。
+     置位 saving 期间只暂存 rev、不弹条，等响应回来再比对 */
+  saving = true;
+  revDuringSave = '';
 
   try {
+    /* 请求体在发起请求的这一刻固化：保存期间表格与「撤销改动」并未禁用，
+       用户完全可能继续打字、删行、新增、拖拽换序，
+       这些新改动不属于本次写盘内容，后续必须能与快照区分开 */
+    var sentBody = JSON.stringify(data);
     var resp = await fetch(STORE_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
+      body: sentBody
     });
     if (!resp.ok) { var txt = await resp.text(); throw new Error(txt || 'HTTP ' + resp.status); }
+    var payload = {};
+    try { payload = await resp.json(); } catch (_) {}
     showSuccess(tr('Saved successfully'));
-    origin = JSON.parse(JSON.stringify(data));
-    setModeUI(false);
-    renderAll();
+    /* 保存成功：快照必须等于「真正写进磁盘的那份内容」，即 sentBody，
+       因此这里从固化的请求体重建快照，绝不读此刻的 data ——
+       响应回来之前用户产生的新改动不在 sentBody 里，读当前 data 会把它们一起标成「已保存」，
+       脏值随之归零、保存按钮消失，页面再也不会自愈，用户以为存上了、实际内容已丢
+       用 sentBody 重建后，这些窗口内改动会继续显示为未保存，撤销改动同理（内存与磁盘分叉可见）
+       版本号仍取响应里的 rev：磁盘此刻对应的就是 sentBody 这一版，
+       这样紧随其后的 SSE 事件（rev 相同）会被识别为本页自己触发的而忽略 */
+    originData = JSON.parse(sentBody);
+    if (payload.rev) knownRev = payload.rev;
+    originRev = knownRev;
+    hideConflict();
+    /* 只重绘表格不动导航，用户停留在当前平台/设备上；
+       renderTable 内部会调用 refreshDirtyUI，保存按钮随之隐藏 */
+    renderTable();
+    /* 保存期间还观察到别的版本，说明外部确实也改过文件：
+       此刻才按真冲突处理——还有未保存改动就提示，否则直接采纳磁盘内容 */
+    var seenDuringSave = revDuringSave;
+    revDuringSave = '';
+    if (seenDuringSave && seenDuringSave !== knownRev) {
+      if (computeDiff().count > 0) showConflict(seenDuringSave);
+      else { knownRev = seenDuringSave; loadConfig(); }
+    }
   } catch (err) {
     showError(trf('Save failed: {msg}', {msg: err.message}));
   } finally {
+    saving = false;
     saveBtn.disabled = false;
     saveBtn.textContent = tr('Save');
   }
 }
 
-/* 收集编辑中的 input 值，确保保存时是最新数据 */
-function collectInputs() {
-  tableBody.querySelectorAll('.cell-input').forEach(function (inp) {
-    var tr = inp.closest('tr');
-    if (!tr) return;
-    var idx = parseInt(tr.dataset.idx);
-    var key = inp.dataset.key;
-    var entries = getEntries();
-    if (entries[idx]) entries[idx][key] = inp.value;
-  });
-}
-
-/* ---------- Edit / Cancel ---------- */
-function enterEditMode() {
-  hideError();
-  origin = JSON.parse(JSON.stringify(data));
-  setModeUI(true);
+/* ---------- 撤销改动 ----------
+   把 data 整份替换回快照：被删除的设备/平台可能因此复活，必须 renderAll 重建导航。
+   快照本身也可能已经落后于磁盘（冲突待裁决，或用户先选了「保留我的改动」、磁盘随后又被外部改过）：
+   本地改动既然已经放弃，就直接采纳磁盘内容，避免页面停在过期数据上再也不会自我纠正 */
+function discardChanges() {
+  if (!originData) return;
+  data = JSON.parse(JSON.stringify(originData));
   renderAll();
+  refreshDirtyUI();
+  if (pendingRev || originRev !== knownRev) {
+    hideConflict();
+    loadConfig(true);
+  }
 }
 
-function cancelEdit() {
-  data = JSON.parse(JSON.stringify(origin));
-  setModeUI(false);
-  renderAll();
-}
-
-/* ---------- SSE ---------- */
+/* ---------- SSE ----------
+   连接必须在页面初始化时立刻建立：若延迟建立，这段时间内发生的文件变更事件会永久丢失，
+   用户就会看到一份不弹冲突、也不自动重载的过期页面 */
 function connectSSE() {
   var es = new EventSource(EVENT_API);
+  /* 连接状态只有一个来源：EventSource 自己。
+     onerror 在浏览器自动重连期间也会触发，此时先如实显示「已断开」，重连成功后 onopen 再改回来 */
   es.onopen  = function () { setOnline(true); };
   es.onerror = function () { setOnline(false); };
-  es.addEventListener('updated', function () {
+  es.addEventListener('updated', function (e) {
     updateInfo.textContent = trf('Last updated: {time}', {time: new Date().toLocaleTimeString()});
-    if (isEditing) return;
+    var rev = '';
+    try { rev = (JSON.parse(e.data || '{}') || {}).rev || ''; } catch (_) { rev = ''; }
+    /* rev 为空（服务端未提供版本）或与本页已知版本相同 ⇒ 视为本页自己的保存，忽略 */
+    if (!rev || rev === knownRev) return;
+    /* 本页正在保存：此刻的 rev 变化很可能就是自己这次写盘引起的（响应还没回来，knownRev 尚未更新），
+       只暂存不弹条，等 saveConfig 拿到响应版本后再判断是不是真的外部改动 */
+    if (saving) { revDuringSave = rev; return; }
+    /* 首次加载尚未完成：此刻没有本地改动可言，直接整份重载即可 */
+    if (!data) {
+      knownRev = rev;
+      loadConfig();
+      return;
+    }
+    if (computeDiff().count > 0) {
+      /* 有未保存改动：只提示，不重载，用户的输入原样保留 */
+      showConflict(rev);
+      return;
+    }
+    knownRev = rev;
     loadConfig();
   });
 }
@@ -972,12 +1275,12 @@ function init() {
   storePathEl.textContent = tr('Connecting to the server…');
   applyI18N();
 
-  editBtn.addEventListener('click', enterEditMode);
   recheckBtn.addEventListener('click', loadCheckStatus);
   saveBtn.addEventListener('click', saveConfig);
-  cancelBtn.addEventListener('click', cancelEdit);
+  discardBtn.addEventListener('click', discardChanges);
+  conflictReloadBtn.addEventListener('click', function () { resolveConflict(true); });
+  conflictKeepBtn.addEventListener('click', function () { resolveConflict(false); });
   addEntryBtn.addEventListener('click', addEntry);
-  addEntryBtnEmpty.addEventListener('click', addEntry);
   migrateBtn.addEventListener('click', openMigrateModal);
   migrateConfirmBtn.addEventListener('click', doMigrate);
   migrateCancelBtn.addEventListener('click', function () { migrateModal.classList.add('hidden'); });
@@ -991,8 +1294,10 @@ function init() {
     if (e.key === 'Escape') { addDeviceArea.classList.add('hidden'); newDeviceInput.value = ''; }
   });
 
+  /* 先接 SSE 再拉配置：SSE 不能晚于首次加载建立，否则建立前发生的文件变更会被永久漏掉，
+     而 updated 事件万一早于首次加载到达，connectSSE 里对 data == null 的兜底会直接重载 */
+  connectSSE();
   loadConfig();
-  setTimeout(connectSSE, 2000);
 }
 
 init();
