@@ -8,12 +8,17 @@
 // 其中 Short/Long 与 flag 说明里的 l10n.T(...) 在 l10n.Init 之前求值，当时 localizer
 // 尚未就绪，T 只能返回英文源串。因此 Init 之后必须再走一遍 localizeTree 把这些
 // 静态文案重译一次。运行期才调用的 T（pterm 输出、错误信息）不受此影响。
+//
+// 本文件在「WebUI 运行期切换语言」之后又承担了第二个职责：可重复本地化。
+// 因为英文源串同时是消息 id，被就地覆盖后就再也拿不回来，所以重译必须建立在
+// 一份英文快照之上（见 treeTexts 的注释），入口是 relocalizeCommands()
 package cmd
 
 import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/jy-eggroll/flk/internal/config"
 	"github.com/jy-eggroll/flk/pkg/l10n"
@@ -93,11 +98,67 @@ func scanLangFlag(args []string) string {
 	return strings.TrimSpace(lang)
 }
 
-// localizeTree 在 l10n.Init 之后，递归地把命令树在包初始化阶段固定的静态文案
-// （Short/Long 与全部 flag 的说明）重新翻译为当前语言。
+// treeTexts 是命令树在**本地化之前**的英文源串快照。
 //
-// 只能重译 Short/Long 与 flag 说明：命令的 Use、Aliases、RunE 等要么是符号、要么在
-// 运行期自行调用 T()，不需要也不应该在此处理。对空串直接跳过，避免用空 id 查询。
+// 为什么必须有它：英文源串同时充当消息 id（见 pkg/l10n 的包注释），一旦被译文就地覆盖，
+// 原串就永久丢失——想再译成另一种语言时拿到的入参已经是中文，查表必然落空，
+// 于是"切回英文"只能把中文原样留下。实测过这个缺陷：en→zh→en 之后，命令树与
+// flag 说明仍然是中文，因为 localizeTree 是不可逆的。存下每个节点的原始文案后，
+// 每次重译都是"先还原英文源串、再按当前语言翻译"，因此可以任意次往复而不丢信息。
+//
+// 为什么快照由调用方传入、而不是做成包级全局：map 的键是指针，而命令对象可能被回收、
+// 其地址被后续新建的对象复用，全局 map 会把上一个对象的文案错认成本对象的原文
+// （表现为"还原"出一个从未存在过的英文串）。根命令树用包级 rootTexts——它与进程同生命周期，
+// 不存在指针复用问题；测试里的一次性命令树各自持有一份新快照，互不干扰。
+//
+// 字段与 localizeTree 处理的范围严格对应：Short/Long 是帮助里的摘要与长说明，
+// Use 是用法行的骨架（当前没有译文，记录它是为了让"快照=原始文案全集"这件事成立，
+// 日后若给 Use 加上译文也不会变成不可逆），usage 是全部 flag 的说明。
+// Aliases/RunE/DefValue/Annotations 刻意不在其中：它们要么是符号、要么参与解析语义，
+// 误改会连带破坏 --help 的默认值展示甚至 cobra 对自身 flag 的识别
+type treeTexts struct {
+	short map[*cobra.Command]string
+	long  map[*cobra.Command]string
+	use   map[*cobra.Command]string
+	usage map[*pflag.Flag]string
+}
+
+// newTreeTexts 建立一份空快照，供 localizeTree 边翻译边补记
+func newTreeTexts() *treeTexts {
+	return &treeTexts{
+		short: make(map[*cobra.Command]string),
+		long:  make(map[*cobra.Command]string),
+		use:   make(map[*cobra.Command]string),
+		usage: make(map[*pflag.Flag]string),
+	}
+}
+
+// remember 记录一条命令的原始文案，已记录过的保持不动（首次记录即为原文）。
+//
+// "首次遇到即记录"是安全的，因为本函数只可能作用于两类对象：
+//   - 包初始化阶段构造完毕的命令：当时语言尚未确定，文案必是英文源串
+//   - cobra 在 execute() 阶段自动补建的 help/completion 命令：cobra 写入的是固定英文
+//
+// 两者都不会出现"把译文当成原文记下来"的情况，因此不需要额外的初始化时机约束
+func (t *treeTexts) remember(cmd *cobra.Command) {
+	if _, ok := t.short[cmd]; !ok {
+		t.short[cmd] = cmd.Short
+	}
+	if _, ok := t.long[cmd]; !ok {
+		t.long[cmd] = cmd.Long
+	}
+	if _, ok := t.use[cmd]; !ok {
+		t.use[cmd] = cmd.Use
+	}
+}
+
+// localizeTree 把命令树上的静态文案重译成当前语言。
+//
+// 过程是"先还原快照、再翻译"，因此**可重复调用**：无论树上是英文还是任意语言的译文，
+// 结果都等于"按当前语言翻译英文源串"。这一点是 WebUI 运行期切换语言的前提。
+//
+// 只能重译 Short/Long/Use 与 flag 说明（处理范围的取舍见 treeTexts 的注释）：
+// 命令的 Aliases、RunE 等要么是符号、要么在运行期自行调用 T()，不需要也不应该在此处理。
 //
 // 必须同时遍历 Flags() 与 PersistentFlags()，这是 Global Flags 曾经整段英文的根因：
 // 语言在 cobra 解析之前就已确定，此刻持久化 flag 还没被合并进 Flags()（合并只发生在执行/展示
@@ -106,21 +167,33 @@ func scanLangFlag(args []string) string {
 // 声明的说明；而 flk 的全局 flag（--lang/--output/--verbose/--yes/--no-trash/
 // --store-path/--work-dir）与 serve 的 --host/-p 恰恰都是这么声明的，
 // 于是它们的说明始终停留在英文源串，用户在 zh-CN 下看到的是中英混排的帮助
-func localizeTree(cmd *cobra.Command) {
+func localizeTree(cmd *cobra.Command, texts *treeTexts) {
+	// 未传快照时兜底新建：调用方漏传只会让"可逆"退化成"当次可用"，
+	// 而不是 panic——这条路径实际不可达，保留它只为让误用不至于崩在用户面前
+	if texts == nil {
+		texts = newTreeTexts()
+	}
 	// visited 跨整棵树共享：cobra 合并父子 flag 时登记的是同一个 *pflag.Flag 指针
 	//（AddFlagSet 只登记指针不复制），父命令译一次即在全树生效，
 	// 因此按指针去重既保证「每条说明只译一次」，也避免同一 flag 被父子两条路径重复处理
-	// l10n 对缺失 key 会回落源串，重复翻译本不会损坏文本，去重是为了让行为可预期
-	localizeCommand(cmd, make(map[*pflag.Flag]struct{}))
+	// 快照本身已按指针去重（map 键），这里的 visited 只负责"当次遍历不重复翻译"
+	localizeCommand(cmd, texts, make(map[*pflag.Flag]struct{}))
 }
 
 // localizeCommand 是 localizeTree 的递归实现，visited 由调用方在整棵树范围内共享
-func localizeCommand(cmd *cobra.Command, visited map[*pflag.Flag]struct{}) {
-	if cmd.Short != "" {
-		cmd.Short = l10n.Retranslate(cmd.Short, nil)
+func localizeCommand(cmd *cobra.Command, texts *treeTexts, visited map[*pflag.Flag]struct{}) {
+	// 先补记原文再翻译：未记录过的节点此刻文案仍是英文源串（见 treeTexts.remember）
+	texts.remember(cmd)
+
+	// 空串不入快照也不翻译：用空 id 查表没有意义（结果必然还是空串），跳过更省事
+	if src := texts.short[cmd]; src != "" {
+		cmd.Short = l10n.Retranslate(src, nil)
 	}
-	if cmd.Long != "" {
-		cmd.Long = l10n.Retranslate(cmd.Long, nil)
+	if src := texts.long[cmd]; src != "" {
+		cmd.Long = l10n.Retranslate(src, nil)
+	}
+	if src := texts.use[cmd]; src != "" {
+		cmd.Use = l10n.Retranslate(src, nil)
 	}
 
 	// 只改 Usage：DefValue、Annotations、Value 等属于 flag 的解析语义与默认值展示，
@@ -131,8 +204,12 @@ func localizeCommand(cmd *cobra.Command, visited map[*pflag.Flag]struct{}) {
 				return
 			}
 			visited[f] = struct{}{}
-			if f.Usage != "" {
-				f.Usage = l10n.Retranslate(f.Usage, nil)
+			// 与命令文案同理：先取快照里的英文源串，再翻译
+			if _, ok := texts.usage[f]; !ok {
+				texts.usage[f] = f.Usage
+			}
+			if src := texts.usage[f]; src != "" {
+				f.Usage = l10n.Retranslate(src, nil)
 			}
 		})
 	}
@@ -141,6 +218,32 @@ func localizeCommand(cmd *cobra.Command, visited map[*pflag.Flag]struct{}) {
 	translateFlags(cmd.PersistentFlags())
 
 	for _, child := range cmd.Commands() {
-		localizeCommand(child, visited)
+		localizeCommand(child, texts, visited)
 	}
+}
+
+// rootTexts 是根命令树的英文源串快照，与 rootCmd 同生命周期
+var rootTexts = newTreeTexts()
+
+// relocalizeMu 串行化对根命令树的重译。
+//
+// 为什么需要锁：serve 期间 POST /api/language 可能被并发调用（多个标签页同时切换语言），
+// 而重译是就地改写整棵树的 Short/Long/Use 与 flag 说明，两次重译交错会出现
+// "A 还原成英文 → B 按另一种语言翻译完 → A 再翻译成第三种结果"的互相覆盖，
+// 最终树上的文案与 l10n.Current() 对不上。锁只覆盖一次树遍历（微秒级），
+// 不会给切换操作带来可感知的延迟
+var relocalizeMu sync.Mutex
+
+// relocalizeCommands 按当前语言重译根命令树，供运行期切换语言后调用。
+//
+// 与 CLI 启动路径共用同一份实现（Execute 也调它）：走两条路径就会有两份"如何本地化命令树"
+// 的知识，迟早漂移成"启动时译得对、切换后译错"这类只在特定顺序下出现的缺陷。
+//
+// 潜在影响点：本函数就地改写包级命令对象的文案，与"同时正在渲染帮助"的路径天然互斥不了。
+// flk 的进程模型下这不构成实际问题——serve 是唯一的常驻命令，它不会在执行期间渲染帮助；
+// 若日后出现"边服务边打印帮助"的命令，需要改为对命令树的只读快照取文案
+func relocalizeCommands() {
+	relocalizeMu.Lock()
+	defer relocalizeMu.Unlock()
+	localizeTree(rootCmd, rootTexts)
 }

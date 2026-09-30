@@ -1,10 +1,13 @@
-// Package scan 从 Go 源码里提取 l10n 消息。
+// Package scan 从 Go 源码与 HTML 页面里提取 l10n 消息。
 //
 // 因为采用"英文源串即消息 id"的模型（见 pkg/l10n 的包注释），提取规则极其简单：
 // 消息函数的第一个参数就是一条消息。不存在"某个字面量到底算不算文案"的启发式判断，
 // 也因此不需要标记注释或白名单——这正是该模型相对"符号 key"方案的核心优势。
 //
-// 识别方式只有一种：**导入路径解析到 Config.ImportPath 的那个别名上的 .T(...) 调用**。
+// 两个来源的规则各自只有一条，都不靠猜：
+//   - Go 侧：**导入路径解析到 Config.ImportPath 的那个别名上的 .T(...) 调用**
+//   - HTML 侧：**HTML 内嵌翻译表（var MSG = {...}）里带引号的 key**，详见 html.go
+//
 // 刻意不支持"在调用方再包一层转发函数"：那会让消息 id 变成运行期的变量，
 // 提取器无法静态读出，规则一旦开口子就会到处漏水。
 package scan
@@ -33,6 +36,12 @@ type Config struct {
 	ImportPath string
 	// SrcDirs 是参与扫描的顶层目录（相对 Root）。目录不存在会被跳过。
 	SrcDirs []string
+	// HTMLSrc 是内嵌翻译表所在的 HTML 文件或目录（相对 Root），目录会递归收集 .html。
+	//
+	// 为空表示不做 HTML 提取。此时 WebUI 页面的文案不在覆盖范围内，而页面文案漏译只会
+	// 静默回退英文、不会以任何方式报错，所以仓库里使用本工具的调用方都应当显式配置它；
+	// cmd/l10n 在未收到 --html 时会往 stderr 打一行提醒，避免这个缺口被当成"已覆盖"
+	HTMLSrc []string
 }
 
 // Literal 记录一处字符串字面量及其源码位置。
@@ -43,13 +52,21 @@ type Literal struct {
 
 // Result 汇总一次源码扫描的结果。
 type Result struct {
-	// Messages 是被消息函数引用的消息，按文本去重、按文本排序
+	// Messages 是被消息函数或内嵌翻译表引用的消息，按文本去重、按文本排序。
+	// 两个来源在此合并成同一份语料：消息 id 就是英文源串，同一句话无论出现在
+	// Go 代码还是页面里都是同一条消息，因此默认语言文件只需要一份
 	Messages []Literal
-	// Unwrapped 是"含非 ASCII 字母但没被消息函数包住"的字面量，即尚未迁移的存量文案。
+	// Unwrapped 是"含非 ASCII 字母但没被消息函数/翻译表包住"的字面量，即尚未迁移的存量文案。
 	// 它是迁移进度的度量：迁移完成后应当为空
 	Unwrapped []Literal
-	// Files 是实际解析的文件数，供调用方识别"一个文件都没扫到"这种门禁静默失效
+	// Files 是实际解析的文件数（Go 与 HTML 合计），供调用方识别"一个文件都没扫到"这种门禁静默失效
 	Files int
+	// HTMLFiles 是实际参与扫描的 HTML 文件（相对 Root，已排序），供调用方识别
+	// "配置了 --html 却一个文件都没扫到"这种失效形态
+	HTMLFiles []string
+	// HTMLTables 是各 HTML 文件的内嵌翻译表。它保留每条消息在哪些语言段里存在，
+	// 供调用方判断"某语言下会不会静默回退英文"
+	HTMLTables []HTMLTable
 }
 
 // Scan 扫描 cfg 指定的源码范围，提取消息与待迁移文案。
@@ -59,6 +76,10 @@ func Scan(cfg Config) (*Result, error) {
 	}
 
 	paths, err := goFiles(cfg.Root, cfg.SrcDirs)
+	if err != nil {
+		return nil, err
+	}
+	htmlPaths, err := htmlFiles(cfg.Root, cfg.HTMLSrc)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +98,11 @@ func Scan(cfg Config) (*Result, error) {
 		files = append(files, parsedFile{p, f})
 	}
 
-	res := &Result{Files: len(files)}
+	res := &Result{Files: len(files) + len(htmlPaths)}
+	for _, p := range htmlPaths {
+		res.HTMLFiles = append(res.HTMLFiles, rel(cfg.Root, p))
+	}
+
 	seen := map[string]bool{}
 	wrapped := map[token.Pos]bool{}
 
@@ -92,6 +117,23 @@ func Scan(cfg Config) (*Result, error) {
 			return nil, err
 		}
 		collectUnwrapped(fset, pf.file, wrapped, res)
+	}
+
+	// HTML 侧：内嵌翻译表的 key 与 Go 消息合并进同一份语料，
+	// 于是"语言文件与源码一致"这条校验自动把页面文案也算进去
+	for _, p := range htmlPaths {
+		table, unwrapped, err := scanHTMLFile(cfg.Root, p)
+		if err != nil {
+			return nil, err
+		}
+		res.HTMLTables = append(res.HTMLTables, *table)
+		for _, m := range table.Msgs {
+			if !seen[m.Text] {
+				seen[m.Text] = true
+				res.Messages = append(res.Messages, Literal{Text: m.Text, Pos: m.Pos})
+			}
+		}
+		res.Unwrapped = append(res.Unwrapped, unwrapped...)
 	}
 
 	sort.Slice(res.Messages, func(i, j int) bool { return res.Messages[i].Text < res.Messages[j].Text })

@@ -1,5 +1,7 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<!-- lang 属性由服务端按当前语言注入（占位符见 cmd/serve_web.go 的 servedConfigHTML）：
+     它不影响页面文案，但决定浏览器用哪套字体/断词规则、以及读屏软件用哪种语音朗读 -->
+<html lang="__FLK_HTML_LANG__">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -29,6 +31,10 @@ body { display: flex; flex-direction: column; font-family: -apple-system, BlinkM
 .btn-add { background: #d97706; color: #fff; } .btn-add:hover { background: #b45309; }
 .btn-dell { background: transparent; color: #dc2626; border: 1px solid #fca5a5; } .btn-dell:hover { background: #fef2f2; border-color: #f87171; }
 .btn-ghost { background: transparent; color: #d97706; } .btn-ghost:hover { background: #fef3c7; }
+/* 语言选择器 — 与页头的白底按钮同一套配色，避免橙色底上出现第二块抢眼的高饱和色块 */
+.lang-select { background: #fff; color: #b45309; border: none; border-radius: 6px; padding: 6px 10px; font-size: 13px; font-weight: 600; cursor: pointer; outline: none; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.lang-select:hover { background: #fef3c7; }
+.lang-select:disabled { opacity: .45; cursor: not-allowed; }
 .hidden { display: none !important; }
 
 /* Messages */
@@ -128,6 +134,25 @@ tr.drag-over { border-top: 2px solid #d97706; }
 .modal-box .radio-group label { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; color: #1c1917; cursor: pointer; }
 .modal-box .radio-group input[type="radio"] { accent-color: #d97706; width: 16px; height: 16px; }
 .modal-box .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+
+/* 待修复清单 — 等宽字体便于逐字符核对路径，超高时内部滚动，避免弹窗被长列表撑破 */
+.repair-list { max-height: 220px; overflow-y: auto; border: 1px solid #e7e5e4; border-radius: 8px; padding: 8px 10px; font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace; font-size: 12px; color: #57534e; line-height: 1.7; }
+.repair-list .repair-item + .repair-item { border-top: 1px dashed #f0efed; padding-top: 4px; margin-top: 4px; }
+.repair-list .repair-type { color: #d97706; font-weight: 700; }
+/* 修复输出 — 服务端返回的整段文本原样展示（plan 行 + 逐条结果），等宽字体 + 保留换行 */
+.repair-output { max-height: 260px; overflow: auto; margin: 0 0 16px; padding: 10px 12px; border-radius: 8px; background: #1c1917; color: #e7e5e4; font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; }
+.repair-output.failed { background: #450a0a; color: #fecaca; }
+
+/* 行内解除按钮 — 独立类名，刻意不挂 .btn-dell：浏览器验收按 .btn-dell 逐行计数（每行应恰好一个），
+   复用同一个类会让「删除」的计数翻倍，属于改样式时顺手打破既有断言 */
+.btn-unlink { background: transparent; color: #b45309; border: 1px solid #fcd34d; } .btn-unlink:hover { background: #fffbeb; border-color: #f59e0b; }
+/* 解除弹窗 — 后果说明与「真实删除」复选框；后者是危险选项，用红框与红字提示不可恢复 */
+.unlink-desc { font-size: 12px; color: #57534e; line-height: 1.6; margin-bottom: 16px; }
+.unlink-check { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; }
+.unlink-check input[type="checkbox"] { width: 16px; height: 16px; accent-color: #dc2626; margin-top: 2px; cursor: pointer; }
+.unlink-check label { margin: 0; cursor: pointer; color: #991b1b; }
+.unlink-check .hint { display: block; font-size: 12px; font-weight: 400; color: #b91c1c; margin-top: 3px; }
+
 </style>
   <script>window.__FLK_LANG__ = "__FLK_LANG_VALUE__";</script>
 </head>
@@ -135,6 +160,15 @@ tr.drag-over { border-top: 2px solid #d97706; }
 <header class="header">
   <h1 data-i18n="flk config">flk config</h1>
   <div class="header-right">
+    <!-- 语言选择器：切换成功后整页重载（见 switchLanguage），
+         因此不需要在这里逐个刷新页面上的文案。
+         两个选项的文案刻意**不翻译**：语言名应当以它自己的语言书写
+         （中文用户找"English"、英文用户找"简体中文"都比看译文快），
+         这也是各大软件的通行做法；它们因此不在 MSG 表里，data-i18n-title 只翻译悬停提示 -->
+    <select id="langSelect" class="lang-select" data-i18n-title="Language">
+      <option value="en">English</option>
+      <option value="zh-CN">简体中文</option>
+    </select>
     <button id="recheckBtn" class="btn btn-edit" data-i18n-title="Re-check the availability of all entries on the current platform" data-i18n="Re-check">Re-check</button>
     <!-- 未保存改动区：无改动时带 hidden 隐藏，出现改动后由 refreshDirtyUI 显隐 -->
     <div id="saveActions" class="hidden">
@@ -192,6 +226,8 @@ tr.drag-over { border-top: 2px solid #d97706; }
           <span id="selCount" class="sel-count"></span>
           <button id="migrateBtn" class="btn btn-sm btn-add hidden" data-i18n="Migrate">Migrate</button>
           <span style="flex:1"></span>
+          <!-- 一键修复：把清单里的无效记录真正建成磁盘上的链接；无无效项时隐藏，文案带无效条数 -->
+          <button id="repairBtn" class="btn btn-sm btn-save hidden" data-i18n="Repair invalid entries">Repair invalid entries</button>
           <button id="addEntryBtn" class="btn btn-sm btn-add" data-i18n="+ Add entry">+ Add entry</button>
         </div>
       </div>
@@ -207,6 +243,8 @@ tr.drag-over { border-top: 2px solid #d97706; }
     <span id="fileInfo"></span>
     <span id="checkInfo"></span>
     <span id="updateInfo"></span>
+    <!-- 版本信息：内容是品牌名与版本号，没有需要翻译的自然语言，因此不走 MSG 翻译表 -->
+    <span id="versionInfo"></span>
   </div>
   <div class="path-info" id="storePath"></div>
 </footer>
@@ -241,6 +279,47 @@ tr.drag-over { border-top: 2px solid #d97706; }
   </div>
 </div>
 
+<!-- 修复确认 / 结果弹窗：同一个弹窗承担两个阶段，避免再开一个只读结果框
+     阶段一（确认）：列出将修复的条目，Confirm repair 才开始真正操作文件系统
+     阶段二（结果）：把服务端返回的整段输出原样展示，直到用户点 Close 关闭 -->
+<div id="repairModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <h2 id="repairTitle" data-i18n="Repair invalid entries">Repair invalid entries</h2>
+    <div class="field"><span id="repairCount" style="font-size:13px;color:#a8a29e;"></span></div>
+    <div class="field repair-list" id="repairList"></div>
+    <pre id="repairOutput" class="repair-output hidden"></pre>
+    <div class="modal-actions">
+      <button id="repairCloseBtn" class="btn btn-save hidden" data-i18n="Close">Close</button>
+      <button id="repairCancelBtn" class="btn btn-ghost" data-i18n="Cancel">Cancel</button>
+      <button id="repairConfirmBtn" class="btn btn-save" data-i18n="Confirm repair">Confirm repair</button>
+    </div>
+  </div>
+</div>
+
+<!-- 解除链接确认 / 结果弹窗：与修复弹窗同构，复用同一套 .modal-box / .repair-list / .repair-output 样式
+     阶段一（确认）：列出要解除的条目（设备 / 类型 / 路径）与后果说明，「真实删除」复选框默认不勾，
+     点 Confirm unlink 才开始操作文件系统；阶段二（结果）：把服务端返回的整段输出原样展示，直到点 Close -->
+<div id="unlinkModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <h2 id="unlinkTitle" data-i18n="Unlink">Unlink</h2>
+    <div class="field repair-list" id="unlinkList"></div>
+    <p class="unlink-desc" id="unlinkDesc" data-i18n="Replaces the link at the derived path with a real copy of the content from the authoritative path, then removes this entry from the config">Replaces the link at the derived path with a real copy of the content from the authoritative path, then removes this entry from the config</p>
+    <div class="field unlink-check">
+      <input type="checkbox" id="unlinkNoTrash">
+      <label for="unlinkNoTrash">
+        <span data-i18n="Delete permanently (unrecoverable)">Delete permanently (unrecoverable)</span>
+        <span class="hint" data-i18n="When checked, the old link is deleted permanently instead of being moved to the trash; the deleted data cannot be recovered">When checked, the old link is deleted permanently instead of being moved to the trash; the deleted data cannot be recovered</span>
+      </label>
+    </div>
+    <pre id="unlinkOutput" class="repair-output hidden"></pre>
+    <div class="modal-actions">
+      <button id="unlinkCloseBtn" class="btn btn-save hidden" data-i18n="Close">Close</button>
+      <button id="unlinkCancelBtn" class="btn btn-ghost" data-i18n="Cancel">Cancel</button>
+      <button id="unlinkConfirmBtn" class="btn btn-cancel" data-i18n="Confirm unlink">Confirm unlink</button>
+    </div>
+  </div>
+</div>
+
 <script>
 ;(function () {
 'use strict';
@@ -267,6 +346,8 @@ var MSG = {
     'flk config': 'flk 配置',
     'Re-check the availability of all entries on the current platform': '重新检测当前平台所有条目的链接可用性',
     'Re-check': '重新检测',
+    'Language': '语言',
+    'Failed to switch language: {msg}': '切换语言失败: {msg}',
     'Save': '保存',
     'Cancel': '取消',
     'Connecting…': '连接中…',
@@ -324,7 +405,29 @@ var MSG = {
     'The config file was modified outside this page': '配置文件已在页面外被修改',
     'Reload (discard my changes)': '重新加载（丢弃我的改动）',
     'Keep my changes': '保留我的改动',
-    'You have unsaved changes': '你有未保存的改动'
+    'You have unsaved changes': '你有未保存的改动',
+    'Repair invalid entries': '修复无效项',
+    'Repair': '修复',
+    '{n} invalid entries will be repaired': '将修复 {n} 条无效条目',
+    'Confirm repair': '确认修复',
+    'Repairing…': '修复中…',
+    'Repair result': '修复结果',
+    'Repaired successfully': '修复成功',
+    'Repair failed': '修复失败',
+    'Repair failed: {msg}': '修复失败: {msg}',
+    'Save or discard your unsaved changes before repairing': '请先保存或撤销未保存的改动，再进行修复',
+    'Unlink': '解除',
+    'Replaces the link at the derived path with a real copy of the content from the authoritative path, then removes this entry from the config': '解除会把权威路径的真实内容复制到派生位置（派生位置从此成为一份独立副本），并从清单中删除这一条记录',
+    'Delete permanently (unrecoverable)': '真实删除（不可恢复）',
+    'When checked, the old link is deleted permanently instead of being moved to the trash; the deleted data cannot be recovered': '勾选后旧的链接会被真实删除而不进入回收站，删掉的数据无法恢复',
+    'Confirm unlink': '确认解除',
+    'Unlinking…': '解除中…',
+    'Unlink result': '解除结果',
+    'Unlinked successfully': '解除成功',
+    'Unlink failed': '解除失败',
+    'Unlink failed: {msg}': '解除失败: {msg}',
+    'Save or discard your unsaved changes before unlinking': '请先保存或撤销未保存的改动，再进行解除',
+    'Close': '关闭'
   }
 };
 function tr(s) { var d = MSG[LANG]; return (d && d[s]) || s; }
@@ -345,6 +448,9 @@ var STORE_API = '/api/config';
 var META_API = '/api/meta';
 var EVENT_API = '/api/events';
 var CHECK_API = '/api/check';
+var REPAIR_API = '/api/repair';
+var UNLINK_API = '/api/unlink';
+var LANGUAGE_API = '/api/language';
 
 /* 每种链接类型的字段定义 */
 var TYPE_FIELDS = {
@@ -367,11 +473,13 @@ var TYPE_NAMES = ['symlink', 'hardlink', 'copy'];
 /* ---------- DOM ---------- */
 var statusDot     = document.getElementById('statusDot');
 var statusText    = document.getElementById('statusText');
+var langSelect    = document.getElementById('langSelect');
 var errorDiv      = document.getElementById('error');
 var successDiv    = document.getElementById('success');
 var fileInfo      = document.getElementById('fileInfo');
 var checkInfoEl   = document.getElementById('checkInfo');
 var updateInfo    = document.getElementById('updateInfo');
+var versionInfo   = document.getElementById('versionInfo');
 var storePathEl   = document.getElementById('storePath');
 var recheckBtn    = document.getElementById('recheckBtn');
 var saveActions   = document.getElementById('saveActions');
@@ -389,6 +497,7 @@ var typeTabs      = document.getElementById('typeTabs');
 var tableHead     = document.getElementById('tableHead');
 var tableBody     = document.getElementById('tableBody');
 var migrateBtn    = document.getElementById('migrateBtn');
+var repairBtn     = document.getElementById('repairBtn');
 var emptyState    = document.getElementById('emptyState');
 var addEntryBtn   = document.getElementById('addEntryBtn');
 var addDeviceArea    = document.getElementById('addDeviceArea');
@@ -406,6 +515,26 @@ var migrateConfirmBtn  = document.getElementById('migrateConfirmBtn');
 var migrateCancelBtn   = document.getElementById('migrateCancelBtn');
 var migrateActionRadios = document.querySelectorAll('input[name="migrateAction"]');
 
+/* ---------- Repair DOM ---------- */
+var repairModal      = document.getElementById('repairModal');
+var repairTitle      = document.getElementById('repairTitle');
+var repairCount      = document.getElementById('repairCount');
+var repairList       = document.getElementById('repairList');
+var repairOutput     = document.getElementById('repairOutput');
+var repairConfirmBtn = document.getElementById('repairConfirmBtn');
+var repairCancelBtn  = document.getElementById('repairCancelBtn');
+var repairCloseBtn   = document.getElementById('repairCloseBtn');
+
+/* ---------- Unlink DOM ---------- */
+var unlinkModal      = document.getElementById('unlinkModal');
+var unlinkTitle      = document.getElementById('unlinkTitle');
+var unlinkList       = document.getElementById('unlinkList');
+var unlinkNoTrash    = document.getElementById('unlinkNoTrash');
+var unlinkOutput     = document.getElementById('unlinkOutput');
+var unlinkConfirmBtn = document.getElementById('unlinkConfirmBtn');
+var unlinkCancelBtn  = document.getElementById('unlinkCancelBtn');
+var unlinkCloseBtn   = document.getElementById('unlinkCloseBtn');
+
 /* ---------- State ---------- */
 var data       = null;    /* 完整配置数据，用户输入直接原地修改它，因此保存时无需整体替换；整份替换只出现在「加载」与「撤销改动」两条路径上 */
 var originData = null;    /* 最近一次「加载成功 / 保存成功」时的深拷贝，用于算脏值与撤销 */
@@ -422,7 +551,11 @@ var dragOriginInInput = false; /* 本次鼠标手势是否从输入框内按下�
 var selectedIndices = {}; /* 当前选中的行索引，用于批量迁移 */
 var checkPlatform = '';   /* 可用性检测结果所属平台（仅该平台页签下展示状态） */
 var checkMap      = {};   /* key: device|type|字段值… → {valid, error} */
+var checkResults  = [];   /* /api/check 的原始结果数组：修复需要 device/type 与字段值来定位记录，拼串后的 checkMap 反解不出来 */
 var checkLoaded   = false;/* 是否已成功完成过一次检测（区分「未检测」与「无匹配」） */
+var repairTargets = [];   /* 当前弹窗待修复的记录，直接来自 checkResults 的无效项 */
+var repairAll     = false;/* 本次修复是全量还是单条：决定 POST /api/repair 的请求体形态 */
+var unlinkTarget  = null; /* 当前解除弹窗的目标记录（来自 checkResults 的有效项）；单条端点，故只需一个 */
 var beforeUnloadAttached = false; /* beforeunload 是否已注册，避免重复挂载或漏摘 */
 
 /* ---------- UI Helpers ---------- */
@@ -775,7 +908,7 @@ function renderTable() {
         rowsHtml += '<td><input class="cell-input" data-key="' + attrEsc(f.key) + '" value="' + attrEsc(val) + '"></td>';
       });
       rowsHtml += '<td class="health-col">' + healthBadge(entry) + '</td>';
-      rowsHtml += '<td class="action-col"><button class="btn btn-sm btn-dell" data-idx="' + idx + '">' + tr('Delete') + '</button></td>';
+      rowsHtml += '<td class="action-col">' + rowRepairBtn(entry, idx) + rowUnlinkBtn(entry, idx) + '<button class="btn btn-sm btn-dell" data-idx="' + idx + '">' + tr('Delete') + '</button></td>';
       rowsHtml += '</tr>';
     });
     tableBody.innerHTML = rowsHtml;
@@ -800,6 +933,22 @@ function renderTable() {
     tableBody.querySelectorAll('.btn-dell').forEach(function (btn) {
       btn.addEventListener('click', function () { deleteRow(parseInt(btn.dataset.idx)); });
     });
+    /* 行内修复：按行索引回查检测结果，找不到就放弃（结果可能已被新一轮检测替换） */
+    tableBody.querySelectorAll('.btn-repair').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var entry = getEntries()[parseInt(btn.dataset.idx)];
+        var target = entry ? findCheckResult(entry) : null;
+        if (target) openRepairModal([target], false);
+      });
+    });
+    /* 行内解除：与修复同样的回查方式，找不到结果就放弃（目标可能已被新一轮检测替换） */
+    tableBody.querySelectorAll('.btn-unlink').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var entry = getEntries()[parseInt(btn.dataset.idx)];
+        var target = entry ? findCheckResult(entry) : null;
+        if (target) openUnlinkModal(target);
+      });
+    });
     /* 单元格输入：用 input 事件（而非 change/blur）做到即时同步，
        回调里只写回 data 并局部刷新脏值 UI，绝不重建表格 */
     tableBody.querySelectorAll('.cell-input').forEach(function (inp) {
@@ -808,6 +957,7 @@ function renderTable() {
   }
 
   updateMigrateBtn();
+  updateRepairBtn();
   restoreFocus(focus);
   refreshDirtyUI();
 }
@@ -863,16 +1013,245 @@ async function loadCheckStatus() {
     var payload = await resp.json();
     checkPlatform = payload.platform || '';
     checkMap = {};
-    (payload.results || []).forEach(function (r) {
+    checkResults = payload.results || [];
+    checkResults.forEach(function (r) {
       checkMap[buildCheckKey(r.device, r.type, r)] = { valid: r.valid, error: r.error || '' };
     });
     checkLoaded = true;
     checkInfoEl.textContent = trf('Checked at: {time}', {time: new Date().toLocaleTimeString()});
   } catch (err) {
     checkLoaded = false;
+    /* 检测失败时一并清空原始结果：留着上一次的旧结论会让「修复无效项」按钮继续可用，
+       而它列出的路径可能早已变化，属于用过期数据做破坏性操作 */
+    checkResults = [];
     checkInfoEl.textContent = trf('Availability check failed: {msg}', {msg: err.message});
   }
   renderTable();
+}
+
+/* ---------- 一键修复 ----------
+   把清单里「检查为无效」的记录真正变成磁盘上的链接，消除「网页加完记录还得回终端跑 flk fix」的断点。
+   数据源固定为 /api/check 的原始结果：修复需要 device/type 与字段值去定位 store 里的那条记录，
+   而 checkMap 的 key 是这些字段拼出来的字符串，反解既脆弱又没有必要 */
+
+/* 无效条目（即待修复项）。与徽标展示口径一致：只在检测结果所属平台上成立 */
+function invalidResults() {
+  return checkResults.filter(function (r) { return !r.valid; });
+}
+
+/* 一条结果的可读路径串，与后端 recordDisplayPaths 的「权威副本 → 派生位置」口径保持一致 */
+function resultPaths(r) {
+  if (r.type === 'symlink') return (r.real || '') + ' → ' + (r.fake || '');
+  if (r.type === 'hardlink') return (r.prim || '') + ' → ' + (r.seco || '');
+  if (r.type === 'copy') return (r.src || '') + ' → ' + (r.dst || '');
+  return '';
+}
+
+/* 单条修复的定位字段：直接取结果里与 store 同名的那几个字段，后端按逐字比对定位记录 */
+function resultFields(r) {
+  var out = {};
+  (TYPE_FIELDS[r.type] || []).forEach(function (f) { out[f.key] = r[f.key] || ''; });
+  return out;
+}
+
+/* 修复按钮的显隐与计数：存在无效项且当前正浏览检测结果所属平台时才可用
+   跨平台页签下不显示，是因为后端只检测、也只能修复它自己运行所在的平台 */
+function updateRepairBtn() {
+  if (!repairBtn) return;
+  var n = (checkLoaded && currentPlat === checkPlatform) ? invalidResults().length : 0;
+  repairBtn.classList.toggle('hidden', n === 0);
+  repairBtn.textContent = tr('Repair invalid entries') + (n > 0 ? ' (' + n + ')' : '');
+}
+
+/* 行内修复按钮：只给「本行确实无效」的行渲染，其余行保持原样，避免满屏无效按钮
+   点击时再按当前行索引回查原始结果（见 findCheckResult），不在 DOM 上缓存整份结果对象 */
+function rowRepairBtn(entry, idx) {
+  if (!checkLoaded || currentPlat !== checkPlatform) return '';
+  var st = checkMap[buildCheckKey(currentDev, currentType, entry)];
+  if (!st || st.valid) return '';
+  return '<button class="btn btn-sm btn-save btn-repair" data-idx="' + idx + '">' + tr('Repair') + '</button> ';
+}
+
+/* 行内解除按钮：只给「本行确实有效」的行渲染，方向与修复按钮互补
+   为什么限制在有效行：解除的对象是磁盘上真实存在的链接，无效记录在文件系统层面已无链接可解
+   （CLI 的语义也是「无效记录交给 fix 处理」），若照样渲染按钮，用户点下去只会得到
+   「找不到要解除的条目」——把必然失败的入口摆在眼前比不摆更糟
+   未完成检测或浏览的是其它平台时不渲染：那时页面根本不知道这行是否有效 */
+function rowUnlinkBtn(entry, idx) {
+  if (!checkLoaded || currentPlat !== checkPlatform) return '';
+  var st = checkMap[buildCheckKey(currentDev, currentType, entry)];
+  if (!st || !st.valid) return '';
+  return '<button class="btn btn-sm btn-unlink" data-idx="' + idx + '">' + tr('Unlink') + '</button> ';
+}
+
+/* 按「设备|类型|字段值」在当前检测结果里找回对应的原始结果，供行内单条修复使用
+   找不到时返回 null（例如检测结果已被新一轮检测替换），调用方据此放弃本次操作 */
+function findCheckResult(entry) {
+  var key = buildCheckKey(currentDev, currentType, entry);
+  for (var i = 0; i < checkResults.length; i++) {
+    var r = checkResults[i];
+    if (buildCheckKey(r.device, r.type, r) === key) return r;
+  }
+  return null;
+}
+
+/* 打开修复弹窗：targets 为待修复结果列表，isAll 决定 POST 的请求体形态
+   有未保存改动时直接拒绝：修复针对的是磁盘上的清单，而页面里未保存的改动会让
+   「列表里显示的路径」与「实际会被修的记录」对不上，属于最容易造成误解的场景 */
+function openRepairModal(targets, isAll) {
+  if (!targets || targets.length === 0) return;
+  if (computeDiff().count > 0) {
+    showError(tr('Save or discard your unsaved changes before repairing'));
+    return;
+  }
+  repairTargets = targets;
+  repairAll = isAll;
+
+  repairTitle.textContent = tr('Repair invalid entries');
+  repairCount.textContent = trf('{n} invalid entries will be repaired', {n: targets.length});
+  repairList.innerHTML = targets.map(function (r) {
+    return '<div class="repair-item"><span class="repair-type">' + escHtml(r.type) + '</span> ' +
+      escHtml(r.device) + '<br>' + escHtml(resultPaths(r)) + '</div>';
+  }).join('');
+
+  /* 每次打开都回到「确认」阶段：上一轮的输出与按钮状态不能残留 */
+  repairList.classList.remove('hidden');
+  repairOutput.classList.add('hidden');
+  repairOutput.classList.remove('failed');
+  repairOutput.textContent = '';
+  repairConfirmBtn.classList.remove('hidden');
+  repairConfirmBtn.disabled = false;
+  repairCancelBtn.classList.remove('hidden');
+  repairCloseBtn.classList.add('hidden');
+
+  repairModal.classList.remove('hidden');
+}
+
+/* 执行修复：POST /api/repair，然后把服务端返回的整段输出留在弹窗里直到用户关闭
+   输出里既有删除计划（pterm 在非终端 writer 下会退化成纯文本）也有逐条结果，
+   用 pre 原样展示比塞进 3 秒自动消失的成功提示更实用 */
+async function doRepair() {
+  var targets = repairTargets;
+  /* 单条模式下没有目标就什么都不做：目标只可能由 openRepairModal 写入，这里只是防御性兜底 */
+  if (!repairAll && (!targets || targets.length === 0)) return;
+  var body = repairAll
+    ? { all: true }
+    : { device: targets[0].device, type: targets[0].type, fields: resultFields(targets[0]) };
+
+  repairConfirmBtn.disabled = true;
+  repairCount.textContent = tr('Repairing…');
+
+  try {
+    var resp = await fetch(REPAIR_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!resp.ok) { var txt = await resp.text(); throw new Error(txt || 'HTTP ' + resp.status); }
+    var payload = await resp.json();
+
+    /* 服务端在写响应之前就广播了 repaired 事件，页面可能已经刷过一轮状态；
+       这里再刷一次，确保徽标反映的是「修复完成之后」的最终状态 */
+    await loadCheckStatus();
+
+    repairTitle.textContent = tr('Repair result');
+    repairCount.textContent = payload.success ? tr('Repaired successfully') : tr('Repair failed');
+    repairList.classList.add('hidden');
+    repairOutput.textContent = payload.output || '';
+    repairOutput.classList.toggle('failed', !payload.success);
+    repairOutput.classList.remove('hidden');
+    repairConfirmBtn.classList.add('hidden');
+    repairCancelBtn.classList.add('hidden');
+    repairCloseBtn.classList.remove('hidden');
+    if (payload.success) showSuccess(tr('Repaired successfully')); else showError(tr('Repair failed'));
+  } catch (err) {
+    repairCount.textContent = trf('Repair failed: {msg}', {msg: err.message});
+    repairConfirmBtn.disabled = false;
+  }
+}
+
+/* ---------- 解除链接 ----------
+   与修复相反的方向：把派生位置上的链接换成一份来自权威源的真实副本，再从清单里删掉这条记录。
+   前端只负责「确认 + 逐次选择删除策略」，真正的文件系统操作与清单维护都在服务端完成：
+   服务端把文件系统操作放在破坏性操作锁里、清单改动放在清单写锁里，顺序由它保证 */
+
+/* 打开解除弹窗：target 为待解除的那条检测结果（必定是有效项，见 rowUnlinkBtn）
+   有未保存改动时直接拒绝，理由与修复一致：解除针对的是磁盘上的清单，
+   而页面里未保存的改动会让「列表里显示的路径」与「实际会被解除的记录」对不上 */
+function openUnlinkModal(target) {
+  if (!target) return;
+  if (computeDiff().count > 0) {
+    showError(tr('Save or discard your unsaved changes before unlinking'));
+    return;
+  }
+  unlinkTarget = target;
+
+  unlinkTitle.textContent = tr('Unlink');
+  /* 逐字符列出要解除哪一条：设备、类型与「权威源 → 派生位置」的路径对，
+     用户据此核对自己点的是不是想解除的那条记录 */
+  unlinkList.innerHTML = '<div class="repair-item"><span class="repair-type">' + escHtml(target.type) + '</span> ' +
+    escHtml(target.device) + '<br>' + escHtml(resultPaths(target)) + '</div>';
+
+  /* 每次打开都必须把复选框复位成「不勾」：真实删除不可恢复，绝不能沿用上一次的勾选状态 */
+  unlinkNoTrash.checked = false;
+
+  /* 回到「确认」阶段：上一轮的结果输出与按钮状态不能残留 */
+  unlinkList.classList.remove('hidden');
+  unlinkOutput.classList.add('hidden');
+  unlinkOutput.classList.remove('failed');
+  unlinkOutput.textContent = '';
+  unlinkConfirmBtn.classList.remove('hidden');
+  unlinkConfirmBtn.disabled = false;
+  unlinkCancelBtn.classList.remove('hidden');
+  unlinkCloseBtn.classList.add('hidden');
+
+  unlinkModal.classList.remove('hidden');
+}
+
+/* 执行解除：POST /api/unlink，请求体带 noTrash（复选框取值），
+   然后把服务端返回的整段输出留在弹窗里直到用户关闭 */
+async function doUnlink() {
+  var target = unlinkTarget;
+  if (!target) return;
+  var body = {
+    device: target.device,
+    type: target.type,
+    fields: resultFields(target),
+    noTrash: unlinkNoTrash.checked
+  };
+
+  unlinkConfirmBtn.disabled = true;
+  unlinkTitle.textContent = tr('Unlinking…');
+
+  try {
+    var resp = await fetch(UNLINK_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!resp.ok) { var txt = await resp.text(); throw new Error(txt || 'HTTP ' + resp.status); }
+    var payload = await resp.json();
+
+    /* 解除会改清单：重新拉一次配置，让那条记录从表格里消失、fs 状态也跟着重检。
+       这一步不能省——服务端虽然广播了 updated，但那个事件在响应回来前就发出，
+       本页的 rev 比对可能把它当成「本页自己的保存」而忽略，页面上就会留着一条已经删掉的记录 */
+    await loadConfig();
+
+    unlinkTitle.textContent = tr('Unlink result');
+    unlinkList.classList.add('hidden');
+    unlinkOutput.textContent = payload.output || '';
+    unlinkOutput.classList.toggle('failed', !payload.success);
+    unlinkOutput.classList.remove('hidden');
+    unlinkConfirmBtn.classList.add('hidden');
+    unlinkCancelBtn.classList.add('hidden');
+    unlinkCloseBtn.classList.remove('hidden');
+    if (payload.success) showSuccess(tr('Unlinked successfully')); else showError(tr('Unlink failed'));
+  } catch (err) {
+    /* 失败时把标题恢复成可识别的名字并把按钮解锁，用户可以直接重试或取消 */
+    unlinkTitle.textContent = tr('Unlink');
+    showError(trf('Unlink failed: {msg}', {msg: err.message}));
+    unlinkConfirmBtn.disabled = false;
+  }
 }
 
 /* 输入即写回：data 原地修改，不复制整份数组，避免每敲一个键就产生一份垃圾 */
@@ -1118,6 +1497,10 @@ async function loadMeta() {
     if (meta.modTime) info += trf('Modified: {time}', {time: meta.modTime});
     if (meta.fileSize) info += trf(' | Size: {size}', {size: meta.fileSize});
     fileInfo.textContent = info;
+    /* 版本行不参与 i18n：品牌名与版本号没有可翻译的自然语言，缺字段时保持空白而不是显示半截文案 */
+    if (meta.version) {
+      versionInfo.textContent = 'flk ' + meta.version + (meta.platform ? ' · ' + meta.platform : '');
+    }
     if (meta.rev) knownRev = meta.rev;
   } catch (_) {
     /* 元信息读取失败不影响配置展示，静默忽略 */
@@ -1268,12 +1651,57 @@ function connectSSE() {
     knownRev = rev;
     loadConfig();
   });
+  /* 链接状态事件：服务端修完链接后广播，清单文件本身没有改动，因此不能走 updated 那条路
+     （它的 rev 比对会把同版本事件当成「本页自己保存」忽略掉）。
+     这里只需要重跑一次可用性检测把徽标刷新，不需要重载配置，也不会弹冲突提示条 */
+  es.addEventListener('repaired', function () {
+    if (!data) return;          /* 首次加载尚未完成，随后那次 loadConfig 会自带一次检测 */
+    loadCheckStatus();
+  });
+  /* 语言事件：服务端语言已切换（可能是另一个标签页触发的），整页重载以对齐
+     页面文案、注入的语言与命令树文案。本页自己发起的那次切换会先 reload，
+     这条事件多半到不了，重复触发也无害 */
+  es.addEventListener('language', function () { window.location.reload(); });
+}
+
+/* ---------- 语言切换 ----------
+   服务端在 /api/language 里一次完成三件事：换翻译器、重译命令树、写回设置文件，
+   然后广播 language 事件。前端这边最省事也最不易出错的收尾方式是**整页重载**：
+   页面文案（applyI18N）、注入的 window.__FLK_LANG__、命令树文案三者一次对齐，
+   不必自己判断"哪些 DOM 已经翻译过、哪些还是旧语言"——那正是最容易漏一处的地方 */
+async function switchLanguage(lang) {
+  langSelect.disabled = true;
+  try {
+    var resp = await fetch(LANGUAGE_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ language: lang })
+    });
+    if (!resp.ok) {
+      /* 服务端的错误体是纯文本（http.Error），带一个结尾换行，去掉它再展示 */
+      var txt = await resp.text();
+      throw new Error((txt || ('HTTP ' + resp.status)).trim());
+    }
+    /* 重载而不是本地改文案：服务端已经全量生效并落盘，页面重新拉一次即可全部对齐 */
+    window.location.reload();
+  } catch (err) {
+    showError(trf('Failed to switch language: {msg}', { msg: err.message }));
+    /* 失败时把下拉框拨回当前语言：服务端此时可能已经回滚，留着新选中的值会让用户
+       以为语言已经切过去了，而页面上的文案其实一点没变 */
+    langSelect.value = LANG;
+    langSelect.disabled = false;
+  }
 }
 
 /* ---------- Init ---------- */
 function init() {
   storePathEl.textContent = tr('Connecting to the server…');
   applyI18N();
+
+  /* 下拉框对齐服务端注入的语言。它必然是 l10n.Current() 的取值，
+     也就是与 options 里某一项逐字相同（见 pkg/l10n 的 Normalize） */
+  langSelect.value = LANG;
+  langSelect.addEventListener('change', function () { switchLanguage(langSelect.value); });
 
   recheckBtn.addEventListener('click', loadCheckStatus);
   saveBtn.addEventListener('click', saveConfig);
@@ -1285,6 +1713,13 @@ function init() {
   migrateConfirmBtn.addEventListener('click', doMigrate);
   migrateCancelBtn.addEventListener('click', function () { migrateModal.classList.add('hidden'); });
   addDeviceBtn.addEventListener('click', addDevice);
+  repairBtn.addEventListener('click', function () { openRepairModal(invalidResults(), true); });
+  repairConfirmBtn.addEventListener('click', doRepair);
+  repairCancelBtn.addEventListener('click', function () { repairModal.classList.add('hidden'); });
+  repairCloseBtn.addEventListener('click', function () { repairModal.classList.add('hidden'); });
+  unlinkConfirmBtn.addEventListener('click', doUnlink);
+  unlinkCancelBtn.addEventListener('click', function () { unlinkModal.classList.add('hidden'); });
+  unlinkCloseBtn.addEventListener('click', function () { unlinkModal.classList.add('hidden'); });
   cancelAddDeviceBtn.addEventListener('click', function () {
     addDeviceArea.classList.add('hidden');
     newDeviceInput.value = '';

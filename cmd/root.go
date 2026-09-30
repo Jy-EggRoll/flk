@@ -218,7 +218,8 @@ func Execute() int {
 	// 语言必须先于命令树的构造与执行确定：
 	//  1. flk 的命令以包级变量在包初始化阶段就构造完毕，其中的 Short/Long 与 flag 说明
 	//     在 l10n.Init 之前就被求值（当时只能拿到英文源串），因此 Init 之后要再走一遍
-	//     localizeTree 把静态文案重译成当前语言
+	//     relocalizeCommands 把静态文案重译成当前语言（它建立在英文快照之上，可重复调用，
+	//     详见 cmd/lang.go 的 treeTexts）
 	//  2. cobra 的 --help 路径不执行 PersistentPreRunE，语言只能自行预扫描命令行确定
 	// 语言文件是 //go:embed 进 locales 包的，加载失败属于构建期错误，必须显式暴露：
 	// 静默降级只会表现为"界面语言不对"，没有任何报错，极难排查
@@ -226,7 +227,7 @@ func Execute() int {
 		_, _ = fmt.Fprintln(rootCmd.ErrOrStderr(), err)
 		return 1
 	}
-	localizeTree(rootCmd)
+	relocalizeCommands()
 
 	// 提前把根命令的默认 --help/-h 注册进 flag 集，修的是「根命令上 --help 写在 --lang 之前直接失败」：
 	// cobra 的 Find → stripFlags 判断某个 flag 会不会吃掉下一个参数，依据是它有没有 NoOptDefVal；

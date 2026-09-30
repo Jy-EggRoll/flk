@@ -16,23 +16,27 @@ import (
 //   - removeTrackedRecord：store 判空、空匹配键保护、从内存移除
 //   - saveTrackedStore：store 判空、落盘
 // 约定：cmd 包的测试与被测代码同包，可直接访问未导出函数；
-// 任何会写全局状态（store.GlobalManager / store.StorePath）的用例都必须用 t.Cleanup 还原，
+// 任何会写全局状态（store 的全局实例 / store.StorePath）的用例都必须用 t.Cleanup 还原，
 // 否则会污染同包其它用例，而且绝不允许触碰真实的 ~/.config/flk/flk-store.json
 
 // withTempTrackedStore 为单个用例装配一份临时全局存储，并登记还原逻辑
 // 返回临时存储文件路径（位于 t.TempDir()，用例结束由 testing 框架自动清理）
-// 关键点：先备份旧的 GlobalManager / StorePath，再用 t.Cleanup 还原，
+// 关键点：先备份旧的全局实例 / StorePath，再用 t.Cleanup 还原，
 // 保证用例之间互不影响，也不会把测试数据写进用户真实配置
+// 全局实例的读写一律走 store.SetGlobal / store.Global：裸变量已被删除，这正是并发安全的落点
 func withTempTrackedStore(t *testing.T, data store.RootConfig) string {
 	t.Helper()
 
 	storePath := filepath.Join(t.TempDir(), "flk-store.json")
-	prevManager, prevStorePath := store.GlobalManager, store.StorePath
-	store.GlobalManager = &store.Manager{Data: data}
+	prevManager, prevStorePath := store.Global(), store.StorePath
+	// 把用例给定的清单装进新实例：Replace 语义等价于「整体替换」，且不必依赖 Manager 内部字段
+	tempManager := store.New()
+	tempManager.Replace(data)
+	store.SetGlobal(tempManager)
 	store.StorePath = storePath
 
 	t.Cleanup(func() {
-		store.GlobalManager = prevManager
+		store.SetGlobal(prevManager)
 		store.StorePath = prevStorePath
 	})
 
@@ -96,24 +100,24 @@ func TestBuildRecordEntry(t *testing.T) {
 	}
 }
 
-// TestRemoveTrackedRecordNilManager 校验 GlobalManager 为 nil 时安全跳过
+// TestRemoveTrackedRecordNilManager 校验全局实例为 nil 时安全跳过
 // 重构前 fix 的删除分支直接使用 mgr，这条路径会 panic；unlink 已有判空，本次抽取补齐了差异
 func TestRemoveTrackedRecordNilManager(t *testing.T) {
-	prevManager, prevStorePath := store.GlobalManager, store.StorePath
-	store.GlobalManager = nil
+	prevManager, prevStorePath := store.Global(), store.StorePath
+	store.SetGlobal(nil)
 	store.StorePath = filepath.Join(t.TempDir(), "flk-store.json")
 	t.Cleanup(func() {
-		store.GlobalManager = prevManager
+		store.SetGlobal(prevManager)
 		store.StorePath = prevStorePath
 	})
 
 	if got := removeTrackedRecord(symlinkResult("dev", "~/real.txt", "~/fake.txt")); got {
-		t.Fatalf("GlobalManager 为 nil 时 removeTrackedRecord() = true, 期望 false（安全跳过）")
+		t.Fatalf("全局实例为 nil 时 removeTrackedRecord() = true, 期望 false（安全跳过）")
 	}
 
 	// 落盘同样必须安全跳过：判空后返回 nil，命令不应因 store 不可用再报一次保存失败
 	if err := saveTrackedStore(); err != nil {
-		t.Fatalf("GlobalManager 为 nil 时 saveTrackedStore() 返回错误 %v, 期望 nil", err)
+		t.Fatalf("全局实例为 nil 时 saveTrackedStore() 返回错误 %v, 期望 nil", err)
 	}
 }
 
@@ -138,7 +142,7 @@ func TestRemoveTrackedRecordEmptyEntrySkips(t *testing.T) {
 		}
 	}
 
-	entries := store.GlobalManager.Data[platform]["dev"]["symlink"]
+	entries := store.Global().Snapshot()[platform]["dev"]["symlink"]
 	if len(entries) != 1 {
 		t.Fatalf("空匹配键不得改动存储, 现有 %d 条记录, 期望 1 条", len(entries))
 	}
@@ -168,7 +172,7 @@ func TestRemoveTrackedRecordRemovesAndPersists(t *testing.T) {
 		t.Fatalf("removeTrackedRecord 不应写盘, 但 %s 已存在 (err=%v)", storePath, err)
 	}
 
-	entries := store.GlobalManager.Data[platform]["dev"]["symlink"]
+	entries := store.Global().Snapshot()[platform]["dev"]["symlink"]
 	if len(entries) != 1 {
 		t.Fatalf("内存中剩余 %d 条记录, 期望 1 条", len(entries))
 	}
@@ -184,7 +188,7 @@ func TestRemoveTrackedRecordRemovesAndPersists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("重新加载临时存储失败: %v", err)
 	}
-	reloadedEntries := reloaded.Data[platform]["dev"]["symlink"]
+	reloadedEntries := reloaded.Snapshot()[platform]["dev"]["symlink"]
 	if len(reloadedEntries) != 1 {
 		t.Fatalf("落盘后读回 %d 条记录, 期望 1 条", len(reloadedEntries))
 	}
@@ -210,7 +214,7 @@ func TestRemoveTrackedRecordMissingRecord(t *testing.T) {
 	if got := removeTrackedRecord(symlinkResult("dev", "~/other-real.txt", "~/other-fake.txt")); !got {
 		t.Fatalf("匹配键非空时 removeTrackedRecord() = false, 期望 true")
 	}
-	if entries := store.GlobalManager.Data[platform]["dev"]["symlink"]; len(entries) != 1 {
+	if entries := store.Global().Snapshot()[platform]["dev"]["symlink"]; len(entries) != 1 {
 		t.Fatalf("未匹配到记录时不应改动存储, 现有 %d 条记录, 期望 1 条", len(entries))
 	}
 }

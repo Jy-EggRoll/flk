@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * flk serve config 的 WebUI（cmd/ui/config.html）真实浏览器 E2E 验证脚本
+ * flk serve 的 WebUI（cmd/ui/config.html）真实浏览器 E2E 验证脚本
  *
- * 契约来源：《flk serve config 一体化改造》规格第 4 节（B1–B13）；规格文档本身没有入库，
+ * 契约来源：《flk serve 一体化改造》规格第 4 节（B1–B13）；规格文档本身没有入库，
  * 断言编号与规格逐条对应，改断言时要连同下面的英文残留清单一起维护
  * 复用能力：vendor 自 browser-verify 技能的 lib/（Playwright + 本机 Chromium），
  * 来源与同步方式见同目录 README.md
@@ -39,6 +39,7 @@ import { createServer } from 'node:net'
 import {
   existsSync,
   linkSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   rmSync,
@@ -46,7 +47,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 // lib/ 是 browser-verify 技能的 vendor 副本（同目录 README.md 记了来源与同步方法），
 // 用相对路径 import：脚本跟着仓库走，不再依赖任何人机器上的技能目录
@@ -205,7 +206,11 @@ function buildFixture(dataDir) {
   }
   const makeSymlink = (target, name) => {
     rmSync(path(name), { force: true })
-    symlinkSync(target, path(name))
+    // 目标必须用绝对路径：符号链接的**相对**目标是相对「链接自身所在目录」解析的，
+    // 而这里的 target 是相对仓库根（--root 传相对路径时 dataDir 就是相对的）拼出来的，
+    // 直接用会让目标被拼接两次（<dataDir>/<dataDir>/a-real.txt）而指向不存在的路径——
+    // 于是夹具里那条「本应有效」的符号链接记录实际是无效的，与夹具自己的意图（有效/无效各一条）不符
+    symlinkSync(resolve(target), path(name))
     return path(name)
   }
   const makeHardlink = (target, name) => {
@@ -428,10 +433,10 @@ async function main() {
 
   const run = createRun({
     root: options.root,
-    title: `flk serve config 一体化 B1–B13（${options.label}）`,
+    title: `flk serve 一体化 B1–B13（${options.label}）`,
   })
   const report = createReport({
-    title: `flk serve config 一体化 B1–B13（${options.label}）`,
+    title: `flk serve 一体化 B1–B13（${options.label}）`,
     run,
   })
 
@@ -446,11 +451,11 @@ async function main() {
   const port = await pickFreePort()
   const child = spawn(
     options.binary,
-    ['--store-path', storeFile, 'serve', 'config', '--port', String(port), '--no-open', '--lang', 'zh-CN'],
+    ['--store-path', storeFile, 'serve', '--port', String(port), '--no-open', '--lang', 'zh-CN'],
     { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env } },
   )
   const pid = child.pid
-  report.note(`被测进程 pid=${pid}，命令行：${options.binary} --store-path ${storeFile} serve config --port ${port} --no-open --lang zh-CN`)
+  report.note(`被测进程 pid=${pid}，命令行：${options.binary} --store-path ${storeFile} serve --port ${port} --no-open --lang zh-CN`)
 
   const stdoutChunks = []
   const stderrChunks = []
@@ -1873,6 +1878,95 @@ async function main() {
         m.dirtyAfterSecondCount === 0,
         `期望：第二次保存后脏计数归零；实际=${m.dirtyAfterSecondCount}（文本=${JSON.stringify(m.dirtyAfterSecondText)}）`,
       )
+    })
+
+    /* ---- X13：WebUI 解除链接（行内「解除」→ 确认弹窗 → POST /api/unlink） ---- */
+
+    /**
+     * 覆盖的是「解除链接」这条网页链路里网页特有的部分：
+     *   - 解除按钮只长在「检查为有效」的行上（与只长在无效行上的修复按钮方向互补）
+     *   - 确认弹窗必须列出要解除的目标、且「真实删除」复选框默认不勾（危险选项不得默认选中）
+     *   - 提交后：清单里那条记录消失、派生位置从链接变成一份独立真实副本
+     * 服务端侧的删除策略（回收站 vs 真实删除）、并发串行化与 writer 注入由 curl 端到端覆盖，
+     * 这里只跑默认策略（不勾真实删除）这一条 UI 路径，避免把同一条结论测两遍
+     *
+     * 位置说明：本条会改变夹具的文件系统状态（a-link 变成真实副本），因此固定在全部断言末尾；
+     * 它自己开头会 resetStore，不受前面断言的影响
+     */
+    await check('X13', '附加：行内「解除」→ 弹窗默认不勾真实删除 → 提交后记录消失且派生位置变成真实副本', async () => {
+      await resetAndOpen()
+      // 解除按钮只在「本行检查为有效」且本轮检测已完成时渲染，它的出现本身就是检测完成的信号
+      await waitUntil(
+        async () => (await page.locator('tbody .btn-unlink').count()) === 1,
+        12000,
+        '有效行出现行内解除按钮',
+        200,
+      )
+      const repairCount = await page.locator('tbody .btn-repair').count()
+      expect(repairCount === 1, `期望：无效行恰有 1 个行内修复按钮（与解除方向互补）；实际：${repairCount} 个`)
+
+      const linkPath = join(dataDir, 'a-link')
+      const idx = await findRowIndexByField(page, 'fake', linkPath)
+      expect(
+        idx === 0,
+        `期望：a-link（有效行）位于第 1 行；实际：下标=${idx}，fake 取值=${JSON.stringify(await fieldValues(page, 'fake'))}`,
+      )
+
+      await page.locator('tbody .btn-unlink').first().click()
+      await requireVisible(page, '#unlinkModal', '解除确认弹窗')
+
+      const descText = ((await page.locator('#unlinkDesc').textContent()) ?? '').trim()
+      expect(
+        descText.includes('派生位置'),
+        `期望：后果说明显示中文译文（页面内嵌翻译表已覆盖新文案）；实际=${JSON.stringify(descText)}`,
+      )
+      const confirmText = ((await page.locator('#unlinkConfirmBtn').textContent()) ?? '').trim()
+      expect(confirmText === '确认解除', `期望：确认按钮文案「确认解除」；实际=${JSON.stringify(confirmText)}`)
+
+      const checked = await page.locator('#unlinkNoTrash').isChecked()
+      expect(checked === false, '期望：「真实删除」复选框默认不勾（不可恢复的危险操作不得默认选中）')
+      const listText = ((await page.locator('#unlinkList').textContent()) ?? '').trim()
+      report.note(`X13 弹窗列出的目标=${JSON.stringify(listText)}`)
+      for (const expectedText of ['symlink', DEV, linkPath]) {
+        expect(listText.includes(expectedText), `期望：弹窗里列出 ${expectedText}；实际=${JSON.stringify(listText)}`)
+      }
+
+      await page.locator('#unlinkConfirmBtn').click()
+      await waitUntil(async () => await page.locator('#unlinkOutput').isVisible(), 20000, '解除结果输出出现', 200)
+      const outText = ((await page.locator('#unlinkOutput').textContent()) ?? '').trim()
+      report.note(`X13 服务端输出=${JSON.stringify(outText.slice(0, 200))}`)
+      expect(
+        outText.includes('解除成功 #1'),
+        `期望：输出里出现「解除成功 #1」（被测进程以 zh-CN 运行）；实际=${JSON.stringify(outText.slice(0, 300))}`,
+      )
+
+      // 页面：那条记录从表格里消失，同一类型的另一条（无效的 b-link-missing）仍在
+      await waitUntil(async () => (await page.locator('tbody tr').count()) === 1, 12000, '待解除的那一行从表格消失', 200)
+      const fakes = await fieldValues(page, 'fake')
+      expect(!fakes.includes(linkPath), `期望：表格里不再有 a-link；实际=${JSON.stringify(fakes)}`)
+
+      // 磁盘清单：解除会改清单，因此这条记录必须真的从文件里消失
+      const disk = JSON.parse(readFileSync(storeFile, 'utf8'))
+      const symlinks = disk[PLAT][DEV][TYPE]
+      expect(
+        symlinks.length === 1 && symlinks.every((entry) => entry.fake !== linkPath),
+        `期望：磁盘清单里 symlink 只剩 1 条且不含 a-link；实际=${JSON.stringify(symlinks)}`,
+      )
+
+      // 文件系统：a-link 从符号链接变成一份内容与权威源一致、inode 独立的真实副本
+      expect(lstatSync(linkPath).isSymbolicLink() === false, '期望：a-link 不再是符号链接')
+      const linkContent = readFileSync(linkPath, 'utf8')
+      expect(
+        linkContent === 'a real file\n',
+        `期望：a-link 的内容等于权威源；实际=${JSON.stringify(linkContent)}`,
+      )
+      expect(
+        statSync(linkPath).ino !== statSync(join(dataDir, 'a-real.txt')).ino,
+        '期望：a-link 与权威源不再是同一 inode（已成为独立副本）',
+      )
+
+      await page.locator('#unlinkCloseBtn').click()
+      await waitUntil(async () => (await page.locator('#unlinkModal').isVisible()) === false, 6000, '点 Close 后解除弹窗隐藏')
     })
   } catch (error) {
     report.log(`\n！！现场准备阶段失败：${error.message}`)

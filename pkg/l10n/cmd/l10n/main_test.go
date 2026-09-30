@@ -1,11 +1,14 @@
 package main
 
 import (
+	"go/token"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jy-eggroll/flk/pkg/l10n/scan"
 )
 
 // 本文件只测 export 的报告职责，不测 check：check 才是语言文件的门禁
@@ -105,6 +108,109 @@ func TestExportReportsStaleTranslations(t *testing.T) {
 			}
 			if c.wantHint && !strings.Contains(string(got), "This message was removed") {
 				t.Errorf("export 不得擅自删除失效条目，实得文件内容:\n%s", got)
+			}
+		})
+	}
+}
+
+// TestHTMLTranslationProblems 覆盖页面内嵌翻译表的缺口判定。
+//
+// 这是本次把 WebUI 纳入门禁的核心：页面缺译文只会静默回退英文，不留任何痕迹，
+// 所以它必须被判为错误（与译文文件的"缺口只提示"刻意不同），否则门禁形同虚设
+func TestHTMLTranslationProblems(t *testing.T) {
+	cases := map[string]struct {
+		table    scan.HTMLTable
+		wantSubs []string // 期望问题里的关键片段，为空表示期望无问题
+	}{
+		"完整覆盖": {
+			table: scan.HTMLTable{
+				Langs: []string{"zh-CN"},
+				Msgs:  []scan.HTMLMessage{{Text: "Save", Langs: []string{"zh-CN"}}},
+			},
+		},
+		"某条缺译文": {
+			table: scan.HTMLTable{
+				Langs: []string{"zh-CN"},
+				Msgs:  []scan.HTMLMessage{{Text: "Save", Langs: []string{"zh-CN"}}, {Text: "Cancel"}},
+			},
+			wantSubs: []string{"Cancel", "静默回退英文"},
+		},
+		"整门语言缺语言段": {
+			table:    scan.HTMLTable{Msgs: []scan.HTMLMessage{{Text: "Save"}}},
+			wantSubs: []string{`缺少语言段 "zh-CN"`},
+		},
+	}
+	// 默认语言不需要语言段：查不到译文时回退的英文源串就是 key 本身
+	langs := []string{"en", "zh-CN"}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			tbl := c.table
+			tbl.Pos = token.Position{Filename: "cmd/ui/config.html", Line: 265}
+			res := &scan.Result{HTMLTables: []scan.HTMLTable{tbl}}
+			got := htmlTranslationProblems(res, langs, "en")
+			if len(c.wantSubs) == 0 {
+				if len(got) != 0 {
+					t.Fatalf("期望无问题，实得 %q", got)
+				}
+				return
+			}
+			joined := strings.Join(got, "\n")
+			for _, sub := range c.wantSubs {
+				if !strings.Contains(joined, sub) {
+					t.Errorf("问题里应含 %q，实得:\n%s", sub, joined)
+				}
+			}
+			if !strings.Contains(joined, "config.html:265") {
+				t.Errorf("问题应带页面位置，实得:\n%s", joined)
+			}
+		})
+	}
+}
+
+// TestExportReportsHTMLTableCoverage 覆盖 export 对页面翻译表的报告职责：
+//   - 页面已提供的译文不算缺口（否则报告里会一直挂着一批并不存在的缺口）
+//   - 页面缺语言段要提示
+func TestExportReportsHTMLTableCoverage(t *testing.T) {
+	const page = `<html><body><script>
+var MSG = { 'zh-CN': { 'Save': '保存' } };
+</script></body></html>
+`
+	cases := map[string]struct {
+		html       string
+		wantSubs   []string
+		rejectSubs []string
+	}{
+		"页面提供了译文就不算缺口": {
+			html:     page,
+			wantSubs: []string{"1 条译文由 WebUI 内嵌翻译表提供", "语言段 \"zh-CN\" 已覆盖全部消息"},
+			// 页面已提供译文，它就不该出现在待翻译清单里
+			rejectSubs: []string{"未翻译: Save"},
+		},
+		"页面缺语言段要提示": {
+			html:     `<html><body><script>var MSG = { 'en': { 'Save': 'Save' } };</script></body></html>`,
+			wantSubs: []string{"缺少语言段 \"zh-CN\""},
+		},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			// 默认语言里含 Save（来自页面）、Hello（来自 Go）；译文文件只翻了 Hello
+			o := setupRepo(t, `{"Hello": "Hello", "Save": "Save"}`, `{"Hello": "你好"}`)
+			writeFile(t, filepath.Join(o.root, "ui", "page.html"), c.html)
+			o.htmlSrc = []string{"ui"}
+
+			out, err := captureStdout(t, func() error { return cmdExport(o) })
+			if err != nil {
+				t.Fatalf("cmdExport 失败: %v", err)
+			}
+			for _, sub := range c.wantSubs {
+				if !strings.Contains(out, sub) {
+					t.Errorf("输出里应含 %q，实得:\n%s", sub, out)
+				}
+			}
+			for _, sub := range c.rejectSubs {
+				if strings.Contains(out, sub) {
+					t.Errorf("输出里不应含 %q，实得:\n%s", sub, out)
+				}
 			}
 		})
 	}

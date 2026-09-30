@@ -2,7 +2,7 @@
   "name": "flk-e2e",
   "version": "0.0.0",
   "private": true,
-  "description": "flk serve config 的 WebUI 真实浏览器端到端验收：真实 Chromium 跑 B1–B13 断言，逐条截图、整场录屏，收尾生成回看页 report.html。只依赖 playwright-core，复用本机已有的 Chromium，不进任何构建产物。",
+  "description": "flk serve 的 WebUI 真实浏览器端到端验收：真实 Chromium 跑 B1–B13 断言，逐条截图、整场录屏，收尾生成回看页 report.html。只依赖 playwright-core，复用本机已有的 Chromium，不进任何构建产物。",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || >=24.0.0"

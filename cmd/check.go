@@ -86,15 +86,15 @@ func performCheck(options CheckOptions) ([]output.CheckResult, error) {
 	platform := runtime.GOOS
 	var results []CheckResult
 
-	// 防御性判空：若 InitStore 失败，GlobalManager 可能为 nil，直接解引用 .Data 会 panic
-	if store.GlobalManager == nil {
+	// 防御性判空：若 InitStore 失败，全局实例可能为 nil，直接解引用会 panic
+	mgr := store.Global()
+	if mgr == nil {
 		return results, nil
 	}
 
-	data := store.GlobalManager.Data
-	if data == nil {
-		return results, nil
-	}
+	// Snapshot 返回的是深拷贝，遍历期间 serve 的写路径（POST 覆盖、轮询重载）可以安全地并发替换清单，
+	// 不会再出现 map 并发读写 panic；返回值已由 store 包保证非 nil（nil 归一成空表），无需再判空
+	data := mgr.Snapshot()
 
 	platformData, exists := data[platform]
 	if !exists {
@@ -367,7 +367,7 @@ func buildRecordEntry(result output.CheckResult) store.Entry {
 //
 // 收口的三件事：
 //  1. 构造匹配键：统一走 buildRecordEntry，fix 与 unlink 不再各写一份 switch
-//  2. store 判空：GlobalManager 为 nil（InitStore 失败等极端场景）时安全跳过而不解引用 panic，
+//  2. store 判空：全局实例为 nil（InitStore 失败等极端场景）时安全跳过而不解引用 panic，
 //     原先 fix 的删除分支直接使用 mgr 缺少这层保护，与 unlink 的处理不一致，此处顺手补齐
 //  3. 空匹配键保护：store.RemoveMatchingEntry 用「遍历匹配键、逐字段比对」的方式找目标，
 //     匹配键为空（nil 或零长度）时循环体不执行、match 恒为 true，于是会删掉该类型下的第一条记录——
@@ -386,8 +386,8 @@ func buildRecordEntry(result output.CheckResult) store.Entry {
 // 返回值：两处调用方都不消费它（重构前也没有消费等价的信号，输出决策取决于落盘是否成功），
 // 保留返回值是为了让「store 不可用」「空匹配键」这两种安全跳过在调用方与单测中可观测
 func removeTrackedRecord(result output.CheckResult) bool {
-	// 防御性判空：GlobalManager 可能因 InitStore 失败而为 nil
-	mgr := store.GlobalManager
+	// 防御性判空：全局实例可能因 InitStore 失败而为 nil（Global() 已加锁读取，不再有裸变量竞态）
+	mgr := store.Global()
 	if mgr == nil {
 		return false
 	}
@@ -412,7 +412,7 @@ func removeTrackedRecord(result output.CheckResult) bool {
 // 潜在影响点：本函数只负责写盘，不含任何用户可见输出；「Save failed」文案与 operationErrors 的收集
 // 仍由各调用方决定，以保持 fix 与 unlink 各自的既有文案与退出码语义
 func saveTrackedStore() error {
-	mgr := store.GlobalManager
+	mgr := store.Global()
 	if mgr == nil {
 		return nil
 	}

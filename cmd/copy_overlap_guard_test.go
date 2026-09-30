@@ -84,7 +84,7 @@ func TestReplaceWithRealRejectsSelfReference(t *testing.T) {
 			t.Fatalf("创建指向权威源的符号链接失败: %v", err)
 		}
 
-		err := replaceWithReal(repo, derived, "real", "fake", true, io.Discard)
+		err := replaceWithReal(repo, derived, "real", "fake", true, false, io.Discard)
 		if err == nil {
 			t.Fatal("派生位置位于权威源内部时必须拒绝")
 		}
@@ -118,7 +118,7 @@ func TestReplaceWithRealRejectsSelfReference(t *testing.T) {
 
 		// 目标连中间层都不存在：守卫必须在任何文件系统操作之前，连父目录都不能被创建
 		derived := filepath.Join(repo, "a", "b", "self")
-		err := replaceWithReal(repo, derived, "real", "fake", true, io.Discard)
+		err := replaceWithReal(repo, derived, "real", "fake", true, false, io.Discard)
 		if !errors.Is(err, pathutil.ErrCopyPathOverlap) {
 			t.Fatalf("错误 = %v，期望可被 errors.Is 判定为 %v", err, pathutil.ErrCopyPathOverlap)
 		}
@@ -136,7 +136,7 @@ func TestReplaceWithRealRejectsSelfReference(t *testing.T) {
 		copyGuardWriteFile(t, filepath.Join(repo, "probe.txt"), "keep-me")
 
 		// 同一路径是最危险的形态：修复前会先把 repo 整个删除再复制，源数据直接消失
-		err := replaceWithReal(repo, repo, "real", "fake", true, io.Discard)
+		err := replaceWithReal(repo, repo, "real", "fake", true, false, io.Discard)
 		if !errors.Is(err, pathutil.ErrCopyPathOverlap) {
 			t.Fatalf("错误 = %v，期望可被 errors.Is 判定为 %v", err, pathutil.ErrCopyPathOverlap)
 		}
@@ -218,7 +218,7 @@ func TestCopyOverlapGuardMessageDirection(t *testing.T) {
 			t.Fatalf("创建符号链接失败: %v", err)
 		}
 
-		err := replaceWithReal(repo, derived, "real", "fake", true, io.Discard)
+		err := replaceWithReal(repo, derived, "real", "fake", true, false, io.Discard)
 		if err == nil {
 			t.Fatal("派生位置位于权威源内部时必须拒绝")
 		}
@@ -262,7 +262,7 @@ func TestCopyOverlapGuardMessageDirection(t *testing.T) {
 		repo := filepath.Join(base, "repo")
 		copyGuardWriteFile(t, filepath.Join(repo, "probe.txt"), "keep-me")
 
-		err := replaceWithReal(repo, repo, "real", "fake", true, io.Discard)
+		err := replaceWithReal(repo, repo, "real", "fake", true, false, io.Discard)
 		if err == nil {
 			t.Fatal("同一路径时必须拒绝")
 		}

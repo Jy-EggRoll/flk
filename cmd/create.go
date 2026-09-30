@@ -99,10 +99,12 @@ func renderCreateCancellation(cmd *cobra.Command, format output.OutputFormat, re
 }
 
 // persistCreateRecord 只负责把已经完成的文件操作登记到根生命周期初始化好的全局 store
-// Manager.AddRecord 当前是纯内存操作且无 error 返回；nil manager/data 是其唯一可预先识别的失败，Save 错误则原样上抛
+// Manager.AddRecord 当前是纯内存操作且无 error 返回；nil manager 是其唯一可预先识别的失败
+// （Manager 内部的清单数据由 store 包统一保证非 nil，AddRecord 自己也会兜底归一，因此这里不再判 data）
+// Save 错误则原样上抛
 func persistCreateRecord(device, linkType string, fields map[string]string) error {
-	manager := store.GlobalManager
-	if manager == nil || manager.Data == nil {
+	manager := store.Global()
+	if manager == nil {
 		return errors.New(l10n.T("Failed to add the record: the store is not initialized", nil))
 	}
 	manager.AddRecord(device, linkType, fields)

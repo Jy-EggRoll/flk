@@ -1,6 +1,6 @@
-# flk serve config 的浏览器端 E2E
+# flk serve 的浏览器端 E2E
 
-用**真实 Chromium** 跑一遍 `flk serve config` 的 WebUI：逐条断言自动截图、整场录屏、收尾生成可以直接给人看的回看页 `report.html`。
+用**真实 Chromium** 跑一遍 `flk serve` 的 WebUI：逐条断言自动截图、整场录屏、收尾生成可以直接给人看的回看页 `report.html`。
 
 它与 `task verify`（Go 单测那套门禁）是两件事：单元测试证明不了「拖选文字会不会被当成整行拖拽」「保存时自己的 SSE 会不会被当成外部修改」这类接缝。本次改造就是靠这套脚本抓出 3 个真实缺陷：
 

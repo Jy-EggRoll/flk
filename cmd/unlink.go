@@ -30,7 +30,8 @@ import (
 //     （若 real 自身还是符号链接，则跟随到其最终指向的真实目录）复制到 fake 位置
 //   - hardlink：seco 与 prim 共享同一 inode。删除 seco 这个名字，再用 prim 的实际内容在
 //     seco 位置复制出一份独立文件，使其不再与 prim 共享 inode
-//   - copy：dst 本就是一份独立文件，不存在文件系统层面的链接，无需任何物理操作，仅移除追踪记录
+//   - copy：dst 本就是一份独立文件，不存在文件系统层面的链接，无需任何物理操作，
+//     仅需移除追踪记录（该动作发生在物理替换之后，不在 unlinkFilesystem 内）
 //
 // 仅处理「当前有效」的记录：无效记录（链接已损坏/缺失）应交由 fix 命令处理，本命令不触碰
 //
@@ -139,7 +140,7 @@ func RunUnlink(cmd *cobra.Command, args []string) error {
 		}
 	}
 	saveStore := func() {
-		// 落盘统一走共享的 saveTrackedStore（含 GlobalManager 判空），
+		// 落盘统一走共享的 saveTrackedStore（含全局实例判空），
 		// 「Save failed」文案与 operationErrors 的收集仍留在本命令内，保持既有输出与退出码语义
 		// --keep-record 模式下内存 store 未发生变化，此时落盘只是重写一份内容等价（仅排序）的文件，无害
 		if err := saveTrackedStore(); err != nil {
@@ -217,8 +218,51 @@ func RunUnlink(cmd *cobra.Command, args []string) error {
 // skipConfirm 为真时（来自 --all/--yes/--force）不再逐项确认，直接执行物理替换
 // 注意：本函数只更新内存中的 store（走共享的 removeTrackedRecord），
 // 落盘由调用方在一批操作后统一执行 saveTrackedStore，减少重复写盘
+//
+// 拆分说明（本次改造）：物理替换与清单记录删除被拆成两步，物理部分收在 unlinkFilesystem 里，
+// 本函数只负责「替换成功后再移除记录」这个顺序。拆分的唯一动机是 WebUI——
+// 网页端解除时这两件事必须落在不同的锁里：文件系统操作（可能复制整棵目录，耗时数秒）
+// 不能持清单写锁，否则保存请求要排队、轮询重载也得停摆；而清单改动又必须在清单写锁内完成。
+// 若两者仍耦合在同一个函数里，服务端就只能二选一，要么长时间持锁要么留下内存与磁盘的分叉
+//
+// noTrash 由本函数转交 unlinkFilesystem 并在那里生效，取值来自包级变量：
+// CLI 的删除策略是全局 --no-trash 的一次性取值，与 WebUI 的「逐次选择」不同源
 func unlinkResult(result output.CheckResult, skipConfirm bool, errorOutput ...io.Writer) error {
+	if err := unlinkFilesystem(result, skipConfirm, noTrash, errorOutput...); err != nil {
+		return err
+	}
+
+	// 物理替换完成后移除追踪记录（记录中的路径为折叠形式，result 字段直接来自存储，故可原样匹配）
+	// --keep-record 模式下跳过移除，让记录留在配置文件中供后续 fix 重建
+	//
+	// 这里仍读包级 unlinkKeepRecord 而不把它做成参数：--keep-record 是 CLI 独有的模式，
+	// 网页端不存在「解除后保留记录」的诉求（保留记录等于链接已被移除却仍宣称有链接，
+	// 那条记录会立刻变成待修复项，语义自相矛盾），因此不为它扩散一个没有调用方的参数
+	if !unlinkKeepRecord {
+		removeTrackedRecord(result)
+	}
+	return nil
+}
+
+// unlinkFilesystem 只做解除链接的物理部分：把派生位置上的符号链接 / 硬链接 / 副本
+// 替换成一份来自权威源的独立真实数据，全程不碰清单（store）
+//
+// 与 unlinkResult 的分工：本函数不读也不写 store，因此调用方可以在不持清单写锁的情况下调用它，
+// 「是否顺带移除追踪记录」以及何时落盘完全由调用方决定（CLI 由 unlinkResult 决定，
+// WebUI 由 /api/unlink 在文件系统操作完成后再进锁处理）
+//
+// noTrash 决定派生位置旧链接的删除策略，作为显式参数传入而不是读包级变量：
+//   - CLI：传包级 noTrash（全局 --no-trash 的一次性取值）
+//   - WebUI：传本次请求体里的 noTrash，用户可以逐次选择「本次是否真实删除」
+//
+// 三类记录的处理方式见文件头注释；仅处理「当前有效」的记录（无效记录应交由 fix 处理），
+// 调用方负责先用 filterCheckResults(results, true) 过滤出有效项再传进来
+//
+// skipConfirm 为真时跳过交互确认；WebUI 传 true——网页上已经用确认对话框列过要解除哪一条，
+// 服务端再确认一次会落到服务端 stdin（无人值守时直接报错），解除必然失败
+func unlinkFilesystem(result output.CheckResult, skipConfirm, noTrash bool, errorOutput ...io.Writer) error {
 	// 解除过程中的确认、警告和状态都属于交互诊断信息，默认写 stderr，并允许命令注入 Cobra 的错误输出 writer
+	// 网页调用必须显式传入非 nil writer：nil 会回退到服务端终端，用户既看不到输出、终端还被污染
 	errOut := io.Writer(os.Stderr)
 	if len(errorOutput) > 0 && errorOutput[0] != nil {
 		errOut = errorOutput[0]
@@ -234,7 +278,7 @@ func unlinkResult(result output.CheckResult, skipConfirm bool, errorOutput ...io
 		if err != nil {
 			return fmt.Errorf("%s: %w", l10n.T("Failed to expand the link path", nil), err)
 		}
-		if err := replaceWithReal(expandedReal, expandedFake, "real", "fake", skipConfirm, errOut); err != nil {
+		if err := replaceWithReal(expandedReal, expandedFake, "real", "fake", skipConfirm, noTrash, errOut); err != nil {
 			return err
 		}
 	case "hardlink":
@@ -246,11 +290,11 @@ func unlinkResult(result output.CheckResult, skipConfirm bool, errorOutput ...io
 		if err != nil {
 			return fmt.Errorf("%s: %w", l10n.T("Failed to expand the secondary file path", nil), err)
 		}
-		if err := replaceWithReal(expandedPrim, expandedSeco, "prim", "seco", skipConfirm, errOut); err != nil {
+		if err := replaceWithReal(expandedPrim, expandedSeco, "prim", "seco", skipConfirm, noTrash, errOut); err != nil {
 			return err
 		}
 	case "copy":
-		// dst 本就是独立文件，不存在文件系统层面的链接，无需任何物理操作，仅移除追踪记录
+		// dst 本就是独立文件，不存在文件系统层面的链接，无需任何物理操作，记录的处理交给调用方
 		// --keep-record 模式下连记录也保留，对 copy 而言没有任何可执行的动作，
 		// 明确提示后按成功返回，避免用户误以为「解除成功」是做了什么实际变更
 		if unlinkKeepRecord {
@@ -261,11 +305,7 @@ func unlinkResult(result output.CheckResult, skipConfirm bool, errorOutput ...io
 		return fmt.Errorf("%s", l10n.T("Unknown type {{.Type}}", map[string]any{"Type": result.Type}))
 	}
 
-	// 物理替换完成后移除追踪记录（记录中的路径为折叠形式，result 字段直接来自存储，故可原样匹配）
-	// --keep-record 模式下跳过移除，让记录留在配置文件中供后续 fix 重建
-	if !unlinkKeepRecord {
-		removeTrackedRecord(result)
-	}
+	// 物理替换到此结束，本函数不碰 store：记录的移除与落盘由调用方决定（见函数注释的分工说明）
 	return nil
 }
 
@@ -277,14 +317,17 @@ func unlinkResult(result output.CheckResult, skipConfirm bool, errorOutput ...io
 //     指向的真实文件/目录，满足需求「如果是符号链接，则是实际目录」，确保复制出的是真实数据而非又一个链接
 //   - source 不可用（缺失/无法解析）时立即报错并跳过，绝不删除派生位置，避免破坏数据（源缺失不破坏）
 //   - 将派生位置的旧链接删除（默认移入回收站而非真实删除，所有数据都可恢复；
-//     全局 --no-trash 生效时改为真实删除）
+//     noTrash 为真时改为真实删除）
 //   - 移动后用 pathutil.Copy 把真实数据复制到派生位置；Copy 会正确处理文件与目录（目录递归复制）
 //   - 自引用前置守卫（本次新增）：派生位置位于权威源内部、或两者是同一路径时直接报错并中止，
 //     保证在这次「先删后复制」的操作里不产生任何文件系统变更（详见函数体内的注释）
 //
 // skipConfirm 为真时跳过交互确认（来自 --all/--yes/--force）；为假且环境不可交互时，
 // prompt.Confirm 会返回错误而不是无限等待，保证不会在无人值守场景挂起
-func replaceWithReal(source, derived, sourceLabel, derivedLabel string, skipConfirm bool, errorOutput ...io.Writer) error {
+//
+// noTrash 决定旧链接的删除策略，由调用方显式传入（CLI 传包级 noTrash，WebUI 传请求体里的取值）：
+// 本函数刻意不再读包级变量，否则网页端「本次是否真实删除」的选择会被命令行开关覆盖
+func replaceWithReal(source, derived, sourceLabel, derivedLabel string, skipConfirm, noTrash bool, errorOutput ...io.Writer) error {
 	errOut := io.Writer(os.Stderr)
 	if len(errorOutput) > 0 && errorOutput[0] != nil {
 		errOut = errorOutput[0]
@@ -302,8 +345,8 @@ func replaceWithReal(source, derived, sourceLabel, derivedLabel string, skipConf
 	//
 	// 为什么必须放在这里（三个位置约束，缺一不可）：
 	//   1. 必须在 safeop.Delete(derived) 之前：本函数是「先删除派生位置、再复制」的顺序，
-	//      若只依赖 pathutil.Copy 的底层守卫，报错时派生位置上的链接/数据已经被删除（默认进回收站、
-	//      --no-trash 时是永久删除），状态已被改变，用户还得自己恢复
+	//      若只依赖 pathutil.Copy 的底层守卫，报错时派生位置上的链接/数据已经被删除（noTrash 为假时进回收站、
+	//      为真时是永久删除），状态已被改变，用户还得自己恢复
 	//   2. 必须在 prompt.Confirm 之前：不能让用户先确认「删除链接并替换为真实文件」、回答 y 之后
 	//      才被告知这组路径非法——那既误导用户，也让人怀疑围栏是否真的生效
 	//   3. 必须使用 EvalSymlinks 之后的 actualSource 而不是入参 source：source 自身可能是符号链接，
@@ -319,7 +362,7 @@ func replaceWithReal(source, derived, sourceLabel, derivedLabel string, skipConf
 	}
 
 	if !skipConfirm {
-		// 文案不能写死「删除链接」：--no-trash 时该链接是被永久删除的，
+		// 文案不能写死「删除链接」：noTrash 为真时该链接是被永久删除的，
 		// 而默认模式下它只是被移入回收站，用中性表述才能同时覆盖两种策略
 		pterm.Warning.WithWriter(errOut).Println(l10n.T("About to remove the link and replace it with a real file: {{.Path}}", map[string]any{"Path": derived}))
 		// 统一经 prompt.Confirm：--yes 直接同意，非终端且未 --yes 时返回错误而非阻塞
@@ -333,7 +376,7 @@ func replaceWithReal(source, derived, sourceLabel, derivedLabel string, skipConf
 	}
 
 	// 派生位置不存在时视为已就绪（safeop.Delete 对不存在的路径直接返回 nil）
-	// 删除策略统一交给 safeop：默认移入回收站，--no-trash 时为真实删除；
+	// 删除策略统一交给 safeop：noTrash 为假时移入回收站，为真时为真实删除；
 	// 因此错误文案保持中性（只说删除），不写死「移至回收站」以免与真实删除模式矛盾
 	if err := safeop.Delete(derived, noTrash); err != nil {
 		return fmt.Errorf("%s: %w", l10n.T("Failed to delete {{.Derived}}", map[string]any{"Derived": derivedLabel}), err)

@@ -352,7 +352,9 @@ func TestCLIHelpTranslatesPersistentFlags(t *testing.T) {
 	}{
 		{name: "根命令", arguments: []string{"--help"}},
 		{name: "check 叶子命令", arguments: []string{"check", "--help"}, wantGlobalFlags: true},
-		{name: "serve config 子命令", arguments: []string{"serve", "config", "--help"}, wantGlobalFlags: true},
+		// 改造前这里用的是 serve config 子命令；该子命令已并入 serve，
+		// 而 serve 的 flag 也从 PersistentFlags 改成普通 Flags，恰好让本条用例同时覆盖两种声明方式
+		{name: "serve 命令", arguments: []string{"serve", "--help"}, wantGlobalFlags: true},
 		{name: "create copy 子命令", arguments: []string{"create", "copy", "--help"}, wantGlobalFlags: true},
 	}
 

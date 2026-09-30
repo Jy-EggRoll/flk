@@ -8,13 +8,17 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 )
 
 // 本文件是 internal/store 的首个测试文件，负责钉住「链接清单持久化」这一核心数据层的契约
 // 所有用例都遵守两条隔离红线：
 //  1. 落盘一律走 t.TempDir，绝不读写真实 ~/.config/flk/flk-store.json 或家目录下的任何文件
-//  2. 需要触碰包级 GlobalManager 的用例（InitStore）必须先用 preserveGlobalManager 记录原值并 t.Cleanup 还原
+//  2. 需要触碰全局实例的用例（InitStore）必须先用 preserveGlobal 记录原值并 t.Cleanup 还原
+//
+// 读取约定：清单字段不再导出，测试一律经 Snapshot() 取深拷贝来断言，
+// 这样测试读到的形态与生产代码（check / serve）完全一致，顺带把深拷贝本身也覆盖了
 //
 // 路径折叠用例只做纯字符串运算（pathutil.NormalizePath / pathutil.FoldHome 不访问文件系统），
 // 因此「调用家目录下的绝对路径」不会产生任何家目录读写，属于安全断言
@@ -27,7 +31,7 @@ func storeTestPlatform() string {
 
 // newTestManager 构造一个空 Manager，等价于 InitStore 在存储文件不存在时的产物
 func newTestManager() *Manager {
-	return &Manager{Data: make(RootConfig)}
+	return New()
 }
 
 // writeStoreFile 在临时目录写入一份存储文件并返回其路径
@@ -53,8 +57,9 @@ func foldedJoin(parts ...string) string {
 }
 
 // entriesOf 取出当前平台下指定设备/类型的记录切片
+// 经 Snapshot 深拷贝读取：与生产调用方（cmd/check.go 的 performCheck）走同一条出口
 func entriesOf(m *Manager, device, linkType string) []Entry {
-	return m.Data[storeTestPlatform()][device][linkType]
+	return m.Snapshot()[storeTestPlatform()][device][linkType]
 }
 
 // foldRealPath 借 AddRecord 的 real 字段观察路径折叠结果
@@ -93,13 +98,14 @@ func findEntry(entries []Entry, key, value string) Entry {
 	return nil
 }
 
-// preserveGlobalManager 记录包级 GlobalManager 的原值并在用例结束时还原
-// InitStore 会直接改写 GlobalManager，若不还原会污染同包其它用例（Go 默认串行执行同一包的测试）
-func preserveGlobalManager(t *testing.T) {
+// preserveGlobal 记录包级全局实例的原值并在用例结束时还原
+// InitStore 会替换全局实例，若不还原会污染同包其它用例（Go 默认串行执行同一包的测试）；
+// 赋值与读取都走带锁的访问器，避免测试自己成为裸变量竞态的制造者
+func preserveGlobal(t *testing.T) {
 	t.Helper()
-	original := GlobalManager
+	original := Global()
 	t.Cleanup(func() {
-		GlobalManager = original
+		SetGlobal(original)
 	})
 }
 
@@ -126,12 +132,13 @@ func TestAddRecordWritesAtCorrectHierarchy(t *testing.T) {
 	})
 
 	platform := storeTestPlatform()
-	if len(m.Data) != 1 {
-		t.Fatalf("平台键数量 = %d，期望 1（只应写入 runtime.GOOS = %q）: %#v", len(m.Data), platform, m.Data)
+	snapshot := m.Snapshot()
+	if len(snapshot) != 1 {
+		t.Fatalf("平台键数量 = %d，期望 1（只应写入 runtime.GOOS = %q）: %#v", len(snapshot), platform, snapshot)
 	}
-	deviceGroup, ok := m.Data[platform]
+	deviceGroup, ok := snapshot[platform]
 	if !ok {
-		t.Fatalf("未在平台 %q 下写入数据: %#v", platform, m.Data)
+		t.Fatalf("未在平台 %q 下写入数据: %#v", platform, snapshot)
 	}
 	if len(deviceGroup) != 2 {
 		t.Fatalf("设备分组数量 = %d，期望 2: %#v", len(deviceGroup), deviceGroup)
@@ -406,7 +413,7 @@ func TestRemoveMatchingEntryRemovesOnlyOne(t *testing.T) {
 }
 
 // TestRemoveMatchingEntryUnknownScopeIsNoop 验证平台/设备/类型不存在时不 panic、不改动数据
-// 防的回归：对 nil map 或空切片做赋值/切片越界（cmd/serve_config.go 会在 GlobalManager 未初始化时走到这里）
+// 防的回归：对 nil map 或空切片做赋值/切片越界（cmd/serve_web.go 会在全局实例未初始化时走到这里）
 func TestRemoveMatchingEntryUnknownScopeIsNoop(t *testing.T) {
 	const device = "device-scope"
 	entry := Entry{"real": foldedJoin("flk", "real"), "fake": foldedJoin("flk", "fake")}
@@ -489,8 +496,8 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	if loaded == nil {
 		t.Fatal("LoadFromFile 返回 nil manager")
 	}
-	if !reflect.DeepEqual(loaded.Data, m.Data) {
-		t.Fatalf("往返数据不一致\n实际: %#v\n期望: %#v", loaded.Data, m.Data)
+	if !reflect.DeepEqual(loaded.Snapshot(), m.Snapshot()) {
+		t.Fatalf("往返数据不一致\n实际: %#v\n期望: %#v", loaded.Snapshot(), m.Snapshot())
 	}
 
 	// 落盘内容必须是新格式（3 层）且能被直接反序列化成 RootConfig
@@ -502,8 +509,8 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(raw, &decoded); err != nil {
 		t.Fatalf("落盘文件不是合法的新格式 JSON: %v，内容: %s", err, raw)
 	}
-	if !reflect.DeepEqual(decoded, m.Data) {
-		t.Fatalf("落盘文件内容与内存不一致\n文件: %#v\n内存: %#v", decoded, m.Data)
+	if !reflect.DeepEqual(decoded, m.Snapshot()) {
+		t.Fatalf("落盘文件内容与内存不一致\n文件: %#v\n内存: %#v", decoded, m.Snapshot())
 	}
 
 	// 往返后 ToJSON 输出稳定（排序 + json map 键排序都应是确定性的）
@@ -554,11 +561,12 @@ func TestLoadFromFileEmptyFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("空文件不应报错: %v", err)
 	}
-	if m == nil || m.Data == nil {
-		t.Fatalf("空文件应返回带非 nil Data 的空 manager，实际: %#v", m)
+	if m == nil {
+		t.Fatalf("空文件应返回空 manager，实际: %#v", m)
 	}
-	if len(m.Data) != 0 {
-		t.Fatalf("空文件的 Data 长度 = %d，期望 0: %#v", len(m.Data), m.Data)
+	// 空清单语义：Snapshot 保证返回非 nil 的空表，调用方 len/range 都安全
+	if snapshot := m.Snapshot(); len(snapshot) != 0 {
+		t.Fatalf("空文件的清单长度 = %d，期望 0: %#v", len(snapshot), snapshot)
 	}
 	if got := m.ToJSON(); got != "{}" {
 		t.Fatalf("空清单 ToJSON = %q，期望 %q", got, "{}")
@@ -575,8 +583,8 @@ func TestLoadFromFileEmptyObject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("{} 文件不应报错: %v", err)
 	}
-	if m == nil || m.Data == nil {
-		t.Fatalf("{} 文件应返回带非 nil Data 的 manager，实际: %#v", m)
+	if m == nil || m.Snapshot() == nil {
+		t.Fatalf("{} 文件应返回清单可用的 manager，实际: %#v", m)
 	}
 
 	// 关键差异：Data 非 nil，追加记录不应 panic
@@ -622,7 +630,7 @@ func TestLoadFromFileMigratesLegacyFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("迁移旧格式失败: %v", err)
 	}
-	if m == nil || m.Data == nil {
+	if m == nil {
 		t.Fatalf("迁移后 manager 异常: %#v", m)
 	}
 
@@ -681,8 +689,14 @@ func TestLoadFromFileMigratesLegacyFormat(t *testing.T) {
 	if err := json.Unmarshal(rewritten, &decoded); err != nil {
 		t.Fatalf("迁移后文件不是合法新格式: %v，内容: %s", err, rewritten)
 	}
-	if !reflect.DeepEqual(decoded, m.Data) {
-		t.Fatalf("迁移后落盘内容与内存不一致\n文件: %#v\n内存: %#v", decoded, m.Data)
+	// 落盘内容是排序过的（Save 只在 Snapshot 出的私有副本上排序，内存仍保持迁移时的插入顺序），
+	// 因此比较前用同一个 sortRootConfig 把两侧归一成同一顺序，只校验内容集合是否一致
+	// 顺序差异本身由 TestToJSONIsDeterministicAndSorted 单独钉住
+	sortRootConfig(decoded)
+	inMemory := m.Snapshot()
+	sortRootConfig(inMemory)
+	if !reflect.DeepEqual(decoded, inMemory) {
+		t.Fatalf("迁移后落盘内容与内存不一致\n文件: %#v\n内存: %#v", decoded, inMemory)
 	}
 }
 
@@ -751,7 +765,7 @@ func TestLoadFromFileRejectsUnparsableJSON(t *testing.T) {
 	}
 }
 
-// TestLoadFromFileNullContentYieldsUsableManager 验证内容为 null 的文件被归一成可用空清单，而不是 nil Data
+// TestLoadFromFileNullContentYieldsUsableManager 验证内容为 null 的文件被归一成可用空清单，而不是 nil 内部清单
 // 已修复的隐患：json.Unmarshal("null") 对 map 会成功并把 RootConfig 留成 nil map，
 // 旧实现于是返回 Manager{Data: nil} 且不报错，调用方一 AddRecord 就 panic（assignment to entry in nil map）
 // 现在 LoadFromFile 的成功路径统一经 newManagerFromData 收口，null 与 0 字节 / {} 得到同样的空清单
@@ -765,11 +779,10 @@ func TestLoadFromFileNullContentYieldsUsableManager(t *testing.T) {
 	if m == nil {
 		t.Fatal("LoadFromFile 不应返回 nil manager")
 	}
-	if m.Data == nil {
-		t.Fatalf("null 内容应归一成非 nil Data，实际 %#v", m.Data)
-	}
-	if len(m.Data) != 0 {
-		t.Fatalf("null 内容归一后应是空清单，实际 %#v", m.Data)
+	// 内部 data 已不导出，改用 Snapshot 观察：空清单必须是长度 0 的空表而不是会引发 panic 的 nil
+	// 写入可用性由 TestAddRecordAfterNullLoadDoesNotPanic 直接覆盖，这里只钉住只读形态
+	if snapshot := m.Snapshot(); len(snapshot) != 0 {
+		t.Fatalf("null 内容归一后应是空清单，实际 %#v", snapshot)
 	}
 	if got := m.ToJSON(); got != "{}" {
 		t.Fatalf("null 内容的 ToJSON = %q，期望 %q", got, "{}")
@@ -804,38 +817,37 @@ func TestAddRecordAfterNullLoadDoesNotPanic(t *testing.T) {
 	}
 }
 
-// TestNilDataManagerIsUsable 验证手工构造的 nil Data Manager（绕过 LoadFromFile）也能安全读序列化与写入
-// 构造入口不只有 LoadFromFile，调用方可能直接写 &Manager{}，所以 AddRecord 与 ToJSON 各自留了兜底
-// 兜底在防：nil map 赋值 panic，以及序列化出裸 null（前端 /api/config 按对象处理，null 取属性会出错）
+// TestNilDataManagerIsUsable 验证内部清单为 nil 的 Manager 也能安全读序列化与写入
+// 内部清单字段已不导出，包外再也构造不出这种状态；用例保留它是因为 AddRecord / ToJSON / Snapshot 三条出口
+// 各自都留了兜底，兜底在防：nil map 赋值 panic，以及序列化出裸 null（前端 /api/config 按对象处理，null 取属性会出错）
 func TestNilDataManagerIsUsable(t *testing.T) {
 	m := &Manager{}
 
 	if got := m.ToJSON(); got != "{}" {
-		t.Fatalf("nil Data 的 ToJSON = %q，期望 %q", got, "{}")
+		t.Fatalf("nil 清单的 ToJSON = %q，期望 %q", got, "{}")
 	}
-	if m.Data != nil {
-		t.Fatalf("ToJSON 不应就地改写 Data，实际被改成 %#v", m.Data)
+	// ToJSON 只允许在 Snapshot 出的私有副本上归一化与排序：一旦写回内部，就等于在只读锁内改写内部状态，
+	// 并发读到的条目顺序会随序列化时机漂移。这里直读内部字段（单协程用例，刻意不取锁）来钉住这一点
+	if m.data != nil {
+		t.Fatalf("ToJSON 不应就地改写内部清单，实际被改成 %#v", m.data)
 	}
 
 	const device = "device-nil-data"
 	m.AddRecord(device, "hardlink", Entry{"prim": foldedJoin("flk", "prim"), "seco": foldedJoin("flk", "seco")})
 
-	if m.Data == nil {
-		t.Fatal("AddRecord 应把 nil Data 兜底成空表")
-	}
 	if n := len(entriesOf(m, device, "hardlink")); n != 1 {
-		t.Fatalf("nil Data 追加后记录数 = %d，期望 1", n)
+		t.Fatalf("nil 清单追加后记录数 = %d，期望 1", n)
 	}
 }
 
-// TestNilDataManagerSaveWritesEmptyObject 验证 nil Data 的 Save 写出 {} 而不是裸 null
+// TestNilDataManagerSaveWritesEmptyObject 验证内部清单为 nil 的 Save 写出 {} 而不是裸 null
 // 否则缺陷会随着磁盘文件在「读入 → 写出」之间循环，每次启动都重新制造一份 null 清单
 func TestNilDataManagerSaveWritesEmptyObject(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "flk-store.json")
 
 	m := &Manager{}
 	if err := m.Save(path); err != nil {
-		t.Fatalf("nil Data 的 Save 失败: %v", err)
+		t.Fatalf("nil 清单的 Save 失败: %v", err)
 	}
 
 	raw, err := os.ReadFile(path)
@@ -843,7 +855,7 @@ func TestNilDataManagerSaveWritesEmptyObject(t *testing.T) {
 		t.Fatalf("读取 Save 产物失败: %v", err)
 	}
 	if got := string(raw); got != "{}" {
-		t.Fatalf("nil Data 的 Save 产物 = %q，期望 %q", got, "{}")
+		t.Fatalf("nil 清单的 Save 产物 = %q，期望 %q", got, "{}")
 	}
 }
 
@@ -862,8 +874,8 @@ func TestToJSONMatchesData(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &decoded); err != nil {
 		t.Fatalf("ToJSON 输出不是合法 JSON: %v，输出: %s", err, output)
 	}
-	if !reflect.DeepEqual(decoded, m.Data) {
-		t.Fatalf("ToJSON 反序列化结果与 Data 不一致\n实际: %#v\n期望: %#v", decoded, m.Data)
+	if !reflect.DeepEqual(decoded, m.Snapshot()) {
+		t.Fatalf("ToJSON 反序列化结果与清单数据不一致\n实际: %#v\n期望: %#v", decoded, m.Snapshot())
 	}
 }
 
@@ -877,6 +889,9 @@ func TestToJSONEmptyDataIsEmptyObject(t *testing.T) {
 
 // TestToJSONIsDeterministicAndSorted 验证排序稳定性：插入顺序不同、调用多次，输出都完全一致
 // toJSON/Save 共用 sortRootConfig，用户反复保存或前端轮询时不应出现无意义的 diff
+//
+// 排序的落点：sortRootConfig 会就地改写切片顺序，而 ToJSON/Save 都只对 Snapshot 出来的私有副本排序，
+// 因此「输出稳定」与「内存保持插入顺序」需要分别断言，本用例两段都在
 func TestToJSONIsDeterministicAndSorted(t *testing.T) {
 	const device = "device-sort"
 
@@ -899,15 +914,31 @@ func TestToJSONIsDeterministicAndSorted(t *testing.T) {
 		t.Fatalf("同一实例多次调用 ToJSON 输出应一致\n第一次: %s\n第二次: %s", forwardJSON, got)
 	}
 
-	// 条目本身按字段值升序排列
+	// 第一段：序列化结果里的条目按字段值升序排列（排序作用在私有副本上，所以只能从输出里观察）
+	var decoded RootConfig
+	if err := json.Unmarshal([]byte(forwardJSON), &decoded); err != nil {
+		t.Fatalf("ToJSON 输出不是合法 JSON: %v，输出: %s", err, forwardJSON)
+	}
 	wantOrder := []string{foldedJoin("flk", "a"), foldedJoin("flk", "m"), foldedJoin("flk", "z")}
-	got := entriesOf(forward, device, "copy")
+	got := decoded[storeTestPlatform()][device]["copy"]
 	if len(got) != len(wantOrder) {
-		t.Fatalf("记录数 = %d，期望 %d: %#v", len(got), len(wantOrder), got)
+		t.Fatalf("序列化后记录数 = %d，期望 %d: %#v", len(got), len(wantOrder), got)
 	}
 	for i, want := range wantOrder {
 		if got[i]["dst"] != want {
-			t.Fatalf("排序后第 %d 条 dst = %q，期望 %q；实际顺序: %#v", i, got[i]["dst"], want, got)
+			t.Fatalf("序列化结果第 %d 条 dst = %q，期望 %q；实际顺序: %#v", i, got[i]["dst"], want, got)
+		}
+	}
+
+	// 第二段：内存顺序保持插入顺序，不受 ToJSON / Save 的排序影响
+	inMemory := entriesOf(forward, device, "copy")
+	insertionOrder := []string{foldedJoin("flk", "z"), foldedJoin("flk", "a"), foldedJoin("flk", "m")}
+	if len(inMemory) != len(insertionOrder) {
+		t.Fatalf("内存记录数 = %d，期望 %d: %#v", len(inMemory), len(insertionOrder), inMemory)
+	}
+	for i, want := range insertionOrder {
+		if inMemory[i]["dst"] != want {
+			t.Fatalf("内存中第 %d 条 dst = %q，期望 %q（内存应保持插入顺序）；实际: %#v", i, inMemory[i]["dst"], want, inMemory)
 		}
 	}
 }
@@ -915,20 +946,19 @@ func TestToJSONIsDeterministicAndSorted(t *testing.T) {
 // TestInitStoreMissingFileStartsEmpty 验证存储文件不存在时 InitStore 建立空清单且不报错
 // 同时钉住当前契约：初始化阶段不会预先创建文件（首次真正写入时才由 Save 落盘）
 func TestInitStoreMissingFileStartsEmpty(t *testing.T) {
-	preserveGlobalManager(t)
+	preserveGlobal(t)
 
 	path := filepath.Join(t.TempDir(), "nested", "missing.json")
 	if err := InitStore(path); err != nil {
 		t.Fatalf("存储文件不存在时 InitStore 不应报错: %v", err)
 	}
-	if GlobalManager == nil {
-		t.Fatal("InitStore 后 GlobalManager 不应为 nil")
+	mgr := Global()
+	if mgr == nil {
+		t.Fatal("InitStore 后全局实例不应为 nil")
 	}
-	if GlobalManager.Data == nil {
-		t.Fatal("InitStore 后 Data 不应为 nil（否则 AddRecord 会 panic）")
-	}
-	if len(GlobalManager.Data) != 0 {
-		t.Fatalf("新建清单应为空，实际: %#v", GlobalManager.Data)
+	// 新建清单必须是可用的空表：内部为 nil map 时后续 AddRecord 会 panic
+	if snapshot := mgr.Snapshot(); len(snapshot) != 0 {
+		t.Fatalf("新建清单应为空，实际: %#v", snapshot)
 	}
 
 	// 当前契约：初始化不落盘
@@ -937,9 +967,9 @@ func TestInitStoreMissingFileStartsEmpty(t *testing.T) {
 	}
 }
 
-// TestInitStoreLoadsExistingFile 验证 InitStore 读取已有清单并发布到 GlobalManager
+// TestInitStoreLoadsExistingFile 验证 InitStore 读取已有清单并发布到全局实例
 func TestInitStoreLoadsExistingFile(t *testing.T) {
-	preserveGlobalManager(t)
+	preserveGlobal(t)
 
 	const device = "device-init"
 	source := newTestManager()
@@ -954,33 +984,34 @@ func TestInitStoreLoadsExistingFile(t *testing.T) {
 	if err := InitStore(path); err != nil {
 		t.Fatalf("InitStore 失败: %v", err)
 	}
-	if GlobalManager == nil {
-		t.Fatal("InitStore 后 GlobalManager 不应为 nil")
+	mgr := Global()
+	if mgr == nil {
+		t.Fatal("InitStore 后全局实例不应为 nil")
 	}
-	if !reflect.DeepEqual(GlobalManager.Data, source.Data) {
-		t.Fatalf("GlobalManager.Data 与文件内容不一致\n实际: %#v\n期望: %#v", GlobalManager.Data, source.Data)
+	if !reflect.DeepEqual(mgr.Snapshot(), source.Snapshot()) {
+		t.Fatalf("全局清单与文件内容不一致\n实际: %#v\n期望: %#v", mgr.Snapshot(), source.Snapshot())
 	}
 }
 
-// TestInitStoreBrokenFileKeepsGlobalManager 验证解析失败时 InitStore 返回错误且不覆盖已有的 GlobalManager
-// 防的回归：初始化失败后 GlobalManager 被换成半成品或 nil，后续 Save 会把用户清单覆盖成空
-func TestInitStoreBrokenFileKeepsGlobalManager(t *testing.T) {
-	preserveGlobalManager(t)
+// TestInitStoreBrokenFileKeepsGlobalStore 验证解析失败时 InitStore 返回错误且不覆盖已有的全局实例
+// 防的回归：初始化失败后全局实例被换成半成品或 nil，后续 Save 会把用户清单覆盖成空
+func TestInitStoreBrokenFileKeepsGlobalStore(t *testing.T) {
+	preserveGlobal(t)
 
 	// 预先放一个可识别的「旧值」作为哨兵
 	sentinel := newTestManager()
 	sentinel.AddRecord("device-sentinel", "symlink", Entry{"real": foldedJoin("flk", "real"), "fake": foldedJoin("flk", "fake")})
-	GlobalManager = sentinel
+	SetGlobal(sentinel)
 
 	path := writeStoreFile(t, "{not json")
 	err := InitStore(path)
 	if err == nil {
 		t.Fatal("损坏的存储文件应让 InitStore 报错")
 	}
-	if GlobalManager != sentinel {
-		t.Fatalf("解析失败时 GlobalManager 应保持原值，实际被替换为: %#v", GlobalManager)
+	if Global() != sentinel {
+		t.Fatalf("解析失败时全局实例应保持原值，实际被替换为: %#v", Global())
 	}
-	if n := len(entriesOf(GlobalManager, "device-sentinel", "symlink")); n != 1 {
+	if n := len(entriesOf(sentinel, "device-sentinel", "symlink")); n != 1 {
 		t.Fatalf("哨兵数据被破坏，记录数 = %d，期望 1", n)
 	}
 }
@@ -988,7 +1019,7 @@ func TestInitStoreBrokenFileKeepsGlobalManager(t *testing.T) {
 // TestInitStoreMigratesLegacyFile 验证 InitStore 对旧格式文件完成迁移并落盘为新格式
 // 这是用户升级路径的关键回归防线：迁移只发生在读入时，必须同时改写文件，否则每次启动都要重算
 func TestInitStoreMigratesLegacyFile(t *testing.T) {
-	preserveGlobalManager(t)
+	preserveGlobal(t)
 
 	const device = "device-init-legacy"
 	platform := storeTestPlatform()
@@ -1007,11 +1038,12 @@ func TestInitStoreMigratesLegacyFile(t *testing.T) {
 	if err := InitStore(path); err != nil {
 		t.Fatalf("InitStore 迁移旧格式失败: %v", err)
 	}
-	if GlobalManager == nil || GlobalManager.Data == nil {
-		t.Fatalf("迁移后 GlobalManager 异常: %#v", GlobalManager)
+	mgr := Global()
+	if mgr == nil {
+		t.Fatalf("迁移后全局实例异常: %#v", mgr)
 	}
 
-	copies := entriesOf(GlobalManager, device, "copy")
+	copies := entriesOf(mgr, device, "copy")
 	if len(copies) != 1 {
 		t.Fatalf("迁移后 copy 记录数 = %d，期望 1: %#v", len(copies), copies)
 	}
@@ -1028,7 +1060,158 @@ func TestInitStoreMigratesLegacyFile(t *testing.T) {
 	if err := json.Unmarshal(rewritten, &decoded); err != nil {
 		t.Fatalf("迁移后文件不是合法新格式: %v，内容: %s", err, rewritten)
 	}
-	if !reflect.DeepEqual(decoded, GlobalManager.Data) {
-		t.Fatalf("迁移后落盘内容与内存不一致\n文件: %#v\n内存: %#v", decoded, GlobalManager.Data)
+	if !reflect.DeepEqual(decoded, mgr.Snapshot()) {
+		t.Fatalf("迁移后落盘内容与内存不一致\n文件: %#v\n内存: %#v", decoded, mgr.Snapshot())
+	}
+}
+
+// TestSnapshotIsDeepCopy 逐层破坏 Snapshot 的返回值，验证内部清单毫发无损
+// 防的回归：只复制最外层（或者干脆把内部引用交出去）时，调用方遍历期间一旦有并发写入就是
+// map 并发读写 panic；本用例是结构性防线（比对内容），不依赖时序，因此不会偶发通过或失败
+func TestSnapshotIsDeepCopy(t *testing.T) {
+	const device = "device-snapshot"
+	m := newTestManager()
+	m.AddRecord(device, "symlink", Entry{"real": foldedJoin("flk", "real"), "fake": foldedJoin("flk", "fake")})
+
+	snapshot := m.Snapshot()
+	// 逐层破坏副本：加平台、加类型、改字段、追加条目
+	snapshot["injected-platform"] = DeviceGroup{"dev": TypeGroup{"symlink": []Entry{{"fake": "~/injected"}}}}
+	snapshot[storeTestPlatform()][device]["copy"] = []Entry{{"src": "~/s", "dst": "~/d"}}
+	existing := snapshot[storeTestPlatform()][device]["symlink"]
+	existing[0]["fake"] = "~/tampered"
+	snapshot[storeTestPlatform()][device]["symlink"] = append(existing, Entry{"real": "~/extra", "fake": "~/extra"})
+
+	internal := m.Snapshot()
+	if len(internal) != 1 {
+		t.Fatalf("内部平台数 = %d，期望 1（副本加平台不得影响内部）: %#v", len(internal), internal)
+	}
+	typeGroup := internal[storeTestPlatform()][device]
+	if len(typeGroup) != 1 {
+		t.Fatalf("内部类型数 = %d，期望 1（副本加类型不得影响内部）: %#v", len(typeGroup), typeGroup)
+	}
+	entries := typeGroup["symlink"]
+	if len(entries) != 1 {
+		t.Fatalf("内部条目数 = %d，期望 1（副本追加不得影响内部）: %#v", len(entries), entries)
+	}
+	if got := entries[0]["fake"]; got != foldedJoin("flk", "fake") {
+		t.Fatalf("内部条目 fake = %q，期望 %q（副本改字段不得影响内部）", got, foldedJoin("flk", "fake"))
+	}
+
+	// 两次 Snapshot 之间同样互不影响，否则调用方之间会互相污染
+	other := m.Snapshot()
+	other[storeTestPlatform()][device]["symlink"][0]["real"] = "~/tampered-again"
+	if got := m.Snapshot()[storeTestPlatform()][device]["symlink"][0]["real"]; got != foldedJoin("flk", "real") {
+		t.Fatalf("内部条目 real = %q，期望 %q", got, foldedJoin("flk", "real"))
+	}
+}
+
+// TestManagerConcurrentUseIsRaceFree 并发压测 Manager 的三类操作，配合 -race 检测数据竞争
+// 复刻 serve 服务的真实形态：写（AddRecord / Replace）、读（Snapshot 遍历 / ToJSON）、落盘（Save）同时发生
+// 断言的是「并发结束后仍自洽」而不是精确条目数（交错顺序不确定）：
+// 同一去重键最多留一条、落盘内容与内存内容一致，这两条足以发现丢更新与半写状态
+func TestManagerConcurrentUseIsRaceFree(t *testing.T) {
+	const device = "device-concurrent"
+	const workers = 8
+	const iterations = 40
+
+	m := newTestManager()
+	path := filepath.Join(t.TempDir(), "flk-store.json")
+
+	var wg sync.WaitGroup
+	for worker := 0; worker < workers; worker++ {
+		wg.Add(1)
+		go func(worker int) {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				unique := fmt.Sprintf("%d-%d", worker, i)
+				switch i % 4 {
+				case 0:
+					m.AddRecord(device, "symlink", map[string]string{
+						"real": foldedJoin("flk", "real", unique),
+						"fake": foldedJoin("flk", "fake", unique),
+					})
+				case 1:
+					// 像 performCheck 那样长遍历快照：遍历过程中必须能读完整条目
+					for _, deviceGroup := range m.Snapshot() {
+						for _, typeGroup := range deviceGroup {
+							for linkType, entries := range typeGroup {
+								for _, e := range entries {
+									if e["fake"] == "" {
+										t.Errorf("快照中 %s 条目的 fake 为空: %#v", linkType, e)
+									}
+								}
+							}
+						}
+					}
+				case 2:
+					if got := m.ToJSON(); !json.Valid([]byte(got)) {
+						t.Errorf("ToJSON 输出不是合法 JSON: %s", got)
+					}
+					if err := m.Save(path); err != nil {
+						t.Errorf("Save 失败: %v", err)
+					}
+				case 3:
+					m.RemoveMatchingEntry(storeTestPlatform(), device, "symlink", Entry{
+						"real": foldedJoin("flk", "real", unique),
+						"fake": foldedJoin("flk", "fake", unique),
+					})
+				}
+			}
+		}(worker)
+	}
+	wg.Wait()
+
+	// 并发结束后的收尾断言：落盘一次再读回，内容集合必须与内存一致（顺序用 sortRootConfig 归一）
+	if err := m.Save(path); err != nil {
+		t.Fatalf("并发结束后的 Save 失败: %v", err)
+	}
+	rewritten, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("读取落盘文件失败: %v", err)
+	}
+	var decoded RootConfig
+	if err := json.Unmarshal(rewritten, &decoded); err != nil {
+		t.Fatalf("落盘文件不是合法新格式: %v，内容: %s", err, rewritten)
+	}
+	sortRootConfig(decoded)
+	inMemory := m.Snapshot()
+	sortRootConfig(inMemory)
+	if !reflect.DeepEqual(decoded, inMemory) {
+		t.Fatalf("并发结束后落盘内容与内存不一致\n文件: %#v\n内存: %#v", decoded, inMemory)
+	}
+
+	// 去重键唯一性：每个 fake 路径最多出现一次，重复说明 AddRecord 的「读当前条目 → 去重 → 追加」被并发穿插了
+	seen := make(map[string]bool)
+	for _, e := range inMemory[storeTestPlatform()][device]["symlink"] {
+		if seen[e["fake"]] {
+			t.Fatalf("并发写入后 fake = %q 出现重复条目: %#v", e["fake"], inMemory)
+		}
+		seen[e["fake"]] = true
+	}
+}
+
+// TestEnsureGlobalPublishesInstance 校验全局实例访问器的语义：为 nil 时创建空实例并发布，非 nil 时原样返回
+// 使用场景：serve 的 POST /api/config 在 InitStore 失败时仍要有个落点承接写入
+func TestEnsureGlobalPublishesInstance(t *testing.T) {
+	preserveGlobal(t)
+	SetGlobal(nil)
+
+	created := EnsureGlobal()
+	if created == nil {
+		t.Fatal("全局实例为 nil 时 EnsureGlobal 应创建空实例")
+	}
+	if snapshot := created.Snapshot(); len(snapshot) != 0 {
+		t.Fatalf("新建的空实例清单应为空，实际: %#v", snapshot)
+	}
+	// 发布语义：创建出来的实例必须立即可被 Global() 看到，否则调用方会各自拿到不同实例
+	if Global() != created {
+		t.Fatalf("EnsureGlobal 创建后应发布到全局，实际 Global() = %#v", Global())
+	}
+
+	existing := newTestManager()
+	existing.AddRecord("device-ensure", "symlink", Entry{"real": foldedJoin("flk", "real"), "fake": foldedJoin("flk", "fake")})
+	SetGlobal(existing)
+	if got := EnsureGlobal(); got != existing {
+		t.Fatalf("已有全局实例时 EnsureGlobal 不应替换它，实际 %#v", got)
 	}
 }
