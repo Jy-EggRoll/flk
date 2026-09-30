@@ -2,7 +2,7 @@
 title: 项目介绍-flk
 description: 跨平台文件链接管理器，让配置同步更简单
 date: 2025-11-28
-lastmod: 2026-04-01
+lastmod: 2026-09-30
 image: 
 categories:
     - 项目
@@ -28,7 +28,7 @@ weight:
 - 0.2：开发完 server 功能，实现完整的 WebUI 管理（已实现：可在网页上查看与编辑清单、检测并修复失效链接、解除链接、切换语言；自升级与回收站查看刻意未纳入，仍走命令行）
 - 0.3：开发国际化功能，为软件内所有字符串添加抽象 i18n 层（已实现：CLI 与 WebUI 均支持中英切换，并可在网页上运行时切换。覆盖范围是 flk 自身的文案，第三方框架的内置文案仍是英文，边界见下文「界面语言」一节）
 
-0.1 版本的近期开发重点是：
+近期开发重点是：
 
 1. 将参数配置化，支持通过配置文件来设置默认参数值，减少命令行输入的复杂度（已实现：`flk config` 命令子树，见下文「设置（flk config）」一节。刻意不引入 Viper——本项目的设置只需要单键读写与键序保持，`encoding/json` 已经够用；也刻意不提供配置类环境变量）。
 2. 简化命令行参数，约定优于配置，提供更智能的默认值和参数推断，减少用户需要输入的参数数量（低优先级，穿插开发）
@@ -50,7 +50,7 @@ flk（FileLinK）是一款跨平台命令行工具，基于符号链接与硬链
 有用户提出，这种方式和写一个脚本来管理配置文件的方式有什么区别？确实，理论上任何功能都可以通过脚本来实现，但 flk 的优势在于：
 
 - 跨平台。flk 设计之初就考虑了 Windows、Linux、macOS 等不同平台的兼容性，提供了统一的命令行接口，用户无需关心底层实现细节。
-- 安全性。flk 内置了安全检查机制，防止用户误操作导致数据丢失，例如禁止使用 `--force` 删除根目录或家目录。
+- 安全性。flk 内置了安全检查机制，防止用户误操作导致数据丢失，例如禁止把根目录或家目录本身作为删除或备份目标。
 - 交互性。flk 提供了交互式的检查和修复功能，用户可以在命令行中直观地查看链接状态，并选择修复方案，而不需要编写复杂的脚本逻辑来处理各种边界情况。
 - 可维护性。flk 通过记录链接信息形成配置清单，便于用户后续检查和维护，而脚本可能需要额外的日志记录和错误处理来实现类似功能。
 
@@ -82,78 +82,281 @@ go build -o flk .
 
 ### 自动升级
 
-flk 内置自动升级功能：
+flk 内置自动升级功能，直接执行 `flk upgrade`（别名 `update`、`up`）即可；加 `--check` 只检查版本不升级，`--dev` 检查开发版本，`--force` 强制升级。参数细节见下文「命令参考」。
+
+## 快速开始
+
+下面是从零到「一条链接跑起来」的最短路径。假定你已经把配置集中放在 `~/dotfiles` 这个 Git 仓库里，现在要让某个软件读取仓库中的那份配置。
 
 ```sh
-flk up
+# 1. 建链接：real 是仓库里的权威副本，fake 是软件实际读取的位置
+#    --smart 会在 fake 已存在时先把它的内容搬回 real，避免覆盖掉你现有的配置
+flk create symlink -r ~/dotfiles/myapp/config.json -f ~/.config/myapp/config.json -d laptop
 
-# 检查并升级 flk 到最新版本
+# 2. 检查链接是否生效（不加参数即检查全部记录）
+flk check
 
-Usage:
-  flk upgrade [flags]
-
-Aliases:
-  upgrade, update, up
-
-Flags:
-      --check   仅检查版本，不升级
-      --dev     检查开发版本
-      --force   强制升级
-  -h, --help    help for upgrade
+# 3. 想用网页查看和编辑清单时，启动 WebUI 管理面板
+flk serve
 ```
 
-## 核心功能
+执行完第 1 步后：
 
-### 界面语言
+- `~/.config/myapp/config.json` 变成一个指向 `~/dotfiles/myapp/config.json` 的符号链接
+- 清单文件 `~/.config/flk/flk-store.json` 里新增一条记录
+- `-d laptop` 把这条记录归到名为 `laptop` 的设备下，之后可以按设备过滤
 
-flk 内置中英文两套界面，默认英文，可通过以下任一方式切换（优先级由高到低）：
+之后仓库里改了配置，各设备拉取仓库即可生效，不需要再复制文件。如果某台设备上的链接因为路径变动而失效，用 `flk check` 查看、用 `flk fix` 重建即可。
+
+需要提醒的是：Windows 下创建符号链接必须使用管理员权限，详见下文「常见问题」。
+
+## 核心概念
+
+### 清单文件 `flk-store.json`
+
+flk 把每条创建过的链接都记在一份 JSON 清单里，默认位于 `~/.config/flk/flk-store.json`，可用全局参数 `--store-path` 指向别处。这份文件是纯文本，可以直接纳入 Git 管理，也是 WebUI 编辑的同一份文件。
+
+清单是「平台 → 设备 → 链接类型 → 条目」四层结构。下面是实际生成的内容：
+
+```json
+{
+    "linux": {
+        "laptop": {
+            "symlink": [
+                {
+                    "fake": "~/.config/myapp/config.json",
+                    "real": "~/dotfiles/myapp/config.json"
+                }
+            ]
+        }
+    }
+}
+```
+
+各层含义：
+
+- **平台**：写入时取运行 flk 的操作系统（`linux`、`darwin`、`windows` 等），不需要手工填写。这也意味着同一条配置可以按平台分别记录，互不干扰
+- **设备**：由 `-d/--device` 指定，默认 `all`。设备名不能包含逗号或空格，它用于 `check`、`fix`、`unlink` 的 `-d` 过滤，逗号分隔可以一次指定多个设备
+- **链接类型**：`symlink`（符号链接）、`hardlink`（硬链接）、`copy`（副本）
+- **条目**：一条链接记录，保存该类型对应的两个路径
+
+### `real`/`fake`、`prim`/`seco`、`src`/`dst` 的语义
+
+三种链接类型各有自己的一对路径字段，但语义是同构的：一个是权威源，一个是派生位置。
+
+| 链接类型 | 权威源（真实文件） | 派生位置（链接/副本所在处） |
+| --- | --- | --- |
+| `symlink` | `real` | `fake` |
+| `hardlink` | `prim`（主要文件） | `seco`（次要文件） |
+| `copy` | `src`（源文件） | `dst`（目标文件） |
+
+两条约定贯穿所有命令：
+
+- 链接或副本都建在**派生位置**，指向或复制自**权威源**。创建时 `fake`/`seco`/`dst` 是软件实际读取的路径，`real`/`prim`/`src` 是仓库里的那份
+- `unlink` 解除关系时，方向相反：把权威源的实际内容填回派生位置，恢复成普通文件
+
+`fix` 与 `unlink` 只处理清单里已有的记录，不会去猜你没记录过的路径。
+
+### 为什么用「主要 / 次要」而不是「源 / 目标」
+
+符号链接的「源」和「目标」在不同语境下指向完全相反的两个路径，容易读反。flk 因此改用「主要 / 次要」这类语义化表述，并在创建时明确区分「真实文件路径」与「链接文件路径」——对符号链接来说是 `real` 与 `fake`，对硬链接来说是 `prim` 与 `seco`。看参数名就知道文件在哪一侧，不必回忆方向约定。
+
+### 同一个派生位置只有一条记录
+
+在同一个平台、同一个设备、同一种链接类型下，flk 按派生位置去重：`symlink` 以 `fake` 去重、`hardlink` 以 `seco` 去重、`copy` 以 `dst` 去重。也就是说，对同一个路径重复创建链接不会堆出两条记录，新记录会替换旧的。
+
+## 命令参考
+
+所有命令都带别名，例如 `flk cr sm` 等价于 `flk create symlink`。下文每条命令都标注了别名。
+
+### check
+
+检查清单中记录的链接是否仍然生效——符号链接是否还在、是否指向预期目标；硬链接是否与主要文件指向同一份数据；副本的源与目标是否都存在且内容一致。
 
 ```sh
-# 1. 命令行参数（仅本次运行有效）
-flk --lang zh-CN check
-flk check -l zh-CN
-
-# 2. 设置文件 language 字段（持久生效）
-flk config set language zh-CN
+flk check                                # 检查全部记录
+flk check -d laptop,desktop              # 只检查这些设备下的记录
+flk check --dir ~/.config                # 只检查路径包含该目录的记录
+flk check --symlink                      # 只看符号链接，可选 --hardlink / --copy
 ```
 
-取值来源只有上面两处。环境变量 `FLK_LANG`（以及日志级别用的 `FLK_LOG_LEVEL`）已在本版本中**移除**：持久化设置统一由 `flk config` 承担，临时切换由命令行参数承担，多一层"改了文件却不生效、又想不起什么时候 export 过变量"的来源只会让人困惑。
+| 参数 | 说明 |
+| --- | --- |
+| `-d, --device` | 设备名过滤，逗号分隔多个设备 |
+| `--dir` | 仅检查包含该路径的记录 |
+| `--symlink` / `--hardlink` / `--copy` | 限定链接类型，可组合；都不传则三类全查 |
 
-`flk serve` 打开的 WebUI 同样会跟随当前语言，并且可以在**页头直接切换**：切换不只是改页面文案，后端输出也一起变，同时写入设置文件的 `language` 字段，下次打开仍是这个语言。翻译缺失时自动回退到英文原文，不会出现空白或乱码。
+别名：`check`、`ck`。检查结果默认以表格输出，也支持 `--output json`（见下文「全局参数」）。
 
-需要说清覆盖范围：被翻译的是 **flk 自身的文案**——命令说明、参数说明、运行输出与错误信息、页面文案。命令行框架（cobra）与终端 UI 库（pterm）**内置**的文案不在此列，所以在中文模式下，帮助里 `Usage:`、`Flags:`、`Available Commands:`、`Aliases:`、`help for <命令>` 这些段落标题与自动生成命令的说明仍然是英文，交互确认时的 `Yes`/`No` 也是英文。这是当前的已知边界，不是某处漏翻。
+### create symlink
 
-### 设置（flk config）
-
-flk 的持久化设置都在一个 JSON 文件里（默认 `~/.config/flk/flk-config.json`，用 `flk config path` 查看实际路径），日常读写不必手工编辑这个文件：
+创建符号链接，支持文件和文件夹。
 
 ```sh
-flk config                             # 查看当前设置（等价于 flk config show）
-flk config path                        # 打印设置文件的路径
-flk config get language                # 打印某一项设置的生效值
-flk config set language zh-CN          # 写入一项设置（先校验取值，再落盘）
-flk config reset language              # 移除该项，回到内置默认值
-flk config reset language --defaults   # 改为显式写入默认值
-flk config reset --defaults --yes      # 整份设置改写为只含默认值
-flk config reset --all --yes           # 删除整份设置文件
-flk config validate                    # 体检设置文件，逐条指出会被静默忽略的问题
+flk create symlink -r ~/dotfiles/myapp/config.json -f ~/.config/myapp/config.json -d laptop
+flk cr sm -r ~/dotfiles/myapp/config.json -f ~/.config/myapp/config.json -d laptop   # 别名与短参数
 ```
 
-可以设置的项：
+| 参数 | 说明 |
+| --- | --- |
+| `-r, --real` | 真实文件路径（权威源） |
+| `-f, --fake` | 链接文件路径（链接建在这里） |
+| `-d, --device` | 设备名，用于后续设备过滤，默认 `all` |
+| `--force` | 强制覆盖已存在的文件或文件夹 |
+| `--smart` | 智能模式：当 `fake` 存在时，自动将 `fake` 备份到 `real` 再创建链接 |
 
-- `language`：界面语言，取值为 `en` 或 `zh-CN`，默认 `en`。命令行 `--lang/-l` 优先级更高
-- `allowHosts`：WebUI 的长期访问白名单，逗号分隔（如 `flk config set allowHosts 192.168.1.5,my.dev.lan`），默认空。与 `--allow-host` 取并集，详见下文「访问控制」
-- `logLevel`：日志级别，取值为 `debug`、`info`、`warn`、`error`，默认 `warn`。命令行 `-v`（Info）/`-vv`（Debug）优先级更高
+`--smart` 适用于「软件里已经有一份现成配置、还没搬进仓库」的场景：它把 `fake` 的现有内容搬进 `real`，再把 `fake` 替换成链接，因此不会丢掉你当前的配置。
 
-几点约定：
+别名：`create` 的别名是 `cr`，`symlink` 的别名是 `sm`。Windows 下需要管理员权限。
 
-- `set` 只改动目标键，文件里其它键（包括 flk 不认识的键）与键的顺序都保持不动；写入是"同目录临时文件 + 改名"的原子替换，设置文件是符号链接时也会落在链接指向的真实文件上
-- 取值不合法会被拒绝，并提示该键期望的形式；键名拼错也会被拒绝，不会往文件里塞一个永远读不到的死键
-- `show`、`get`、`validate` 的输出不含颜色，可以直接管道消费（例如 `flk config show | jq`），给人看的状态提示一律走 stderr
-- 设置文件损坏时：`flk config validate` 会指出问题所在，`flk config reset --all --yes` 能直接把它修回默认状态（这条修复路径不依赖设置文件本身可读）
-- 刻意**没有**设置类的环境变量：取值只来自命令行与设置文件两处
+### create hardlink
 
-### WebUI 管理面板（serve）
+创建硬链接，仅支持同一分区内的文件。
+
+```sh
+flk create hardlink -p ~/dotfiles/app/settings.ini -s ~/app/settings.ini -d desktop
+flk cr hd -p ~/dotfiles/app/settings.ini -s ~/app/settings.ini -d desktop
+```
+
+| 参数 | 说明 |
+| --- | --- |
+| `-p, --prim` | 主要文件路径 |
+| `-s, --seco` | 次要文件路径 |
+| `-d, --device` | 设备名，默认 `all` |
+| `--force` | 强制覆盖已存在的文件或文件夹 |
+| `--smart` | 智能模式：当 `seco` 存在时，自动将 `seco` 备份到 `prim` 再创建链接 |
+
+别名：`hd`。
+
+### create copy
+
+把源文件复制到目标位置，是不支持符号链接或硬链接时的回退方案（例如跨分区、某些不支持链接的文件系统）。
+
+```sh
+flk create copy --src ~/dotfiles/app/settings.ini --dst ~/app/settings.ini -d desktop
+flk cr cp --src ~/dotfiles/app/settings.ini --dst ~/app/settings.ini -d desktop
+```
+
+| 参数 | 说明 |
+| --- | --- |
+| `--src` | 源文件路径 |
+| `--dst` | 目标文件路径 |
+| `-d, --device` | 设备名，默认 `all` |
+| `--force` | 强制覆盖已存在的文件或文件夹 |
+| `--smart` | 智能模式：当 `dst` 存在时，自动将 `dst` 备份到 `src` 再复制 |
+
+注意副本不会自动同步：源文件改动后需要重新执行一次 `create copy`，`flk check` 会把内容不一致的副本报告为无效。
+
+别名：`cp`。
+
+### fix
+
+检查链接状态，然后进入交互模式，允许你按编号选择要修复的无效链接。
+
+```sh
+flk fix                     # 交互式修复
+flk fix --all               # 不进入交互，直接修复全部无效链接
+flk fix -d laptop,desktop   # 只处理这些设备
+```
+
+| 参数 | 说明 |
+| --- | --- |
+| `--all` | 自动修复所有无效链接，跳过交互模式 |
+| `--force` | 修复时跳过删除确认，直接执行 |
+| `-d, --device` / `--dir` | 过滤要处理的记录 |
+| `--symlink` / `--hardlink` / `--copy` | 限定链接类型 |
+
+别名：`fx`。
+
+### unlink
+
+用 `real`/`prim`/`src` 的实际文件替换已创建的符号链接、硬链接、副本，解除对应关系并从清单中移除追踪记录。只处理当前有效的记录。
+
+```sh
+flk unlink                  # 交互式选择要解除的记录
+flk unlink --all            # 解除全部有效链接
+flk unlink --keep-record    # 解除链接，但保留清单里的记录
+```
+
+| 参数 | 说明 |
+| --- | --- |
+| `--all` | 自动解除所有有效链接，跳过交互模式 |
+| `--keep-record` | 仅解除链接关系，保留配置文件中的追踪记录（解除后记录变为无效，可用 `fix` 重建链接） |
+| `--force` | 解除时跳过删除确认，直接执行 |
+| `-d, --device` / `--dir` | 过滤要处理的记录 |
+| `--symlink` / `--hardlink` / `--copy` | 限定链接类型 |
+
+别名：`ul`。
+
+### serve
+
+在本机启动 HTTP 服务并打开 WebUI 管理面板。
+
+```sh
+flk serve                            # 默认监听 127.0.0.1:8999
+flk serve --no-open                  # 不自动打开浏览器
+flk serve --port 9000                # 指定端口
+flk serve --allow-host my.dev.lan    # 额外放行一个访问来源
+```
+
+| 参数 | 说明 |
+| --- | --- |
+| `-p, --port` | 监听端口，默认 `8999`；端口被占用时自动向后顺延 |
+| `--host` | 绑定的 Host，默认 `127.0.0.1` |
+| `--allow-host` | 额外允许访问 WebUI 的主机，可重复或逗号分隔 |
+| `--no-open` | 不自动打开浏览器 |
+
+别名：`server`。页面能力与访问控制见下文「WebUI 管理面板（serve）」。
+
+### config
+
+查看与编辑 flk 的设置，裸执行 `flk config` 等价于 `flk config show`。
+
+```sh
+flk config                    # 查看当前设置
+flk config get language       # 打印某一项设置的生效值
+flk config set language zh-CN # 写入一项取值
+flk config reset language     # 移除该项，回到内置默认值
+flk config validate           # 体检设置文件
+```
+
+子命令共六个：`show`、`path`、`get`、`set`、`reset`、`validate`。键的取值、约定与输出通道见下文「设置（flk config）」。
+
+### upgrade
+
+检查并升级 flk 到最新版本。
+
+```sh
+flk upgrade           # 检查并升级
+flk upgrade --check   # 仅检查版本，不升级
+```
+
+| 参数 | 说明 |
+| --- | --- |
+| `--check` | 仅检查版本，不升级 |
+| `--dev` | 检查开发版本 |
+| `--force` | 强制升级 |
+
+别名：`update`、`up`。
+
+### version
+
+显示版本、构建时间与平台。
+
+```sh
+flk version
+flk ver
+```
+
+别名：`ver`。
+
+### 其他
+
+查看帮助有三种等价写法：`flk --help`、`flk -h`、`flk help`；要看某个具体命令的帮助，用 `flk help <命令>` 或 `flk <命令> --help`。
+
+`help` 与 `completion` 由命令行框架自带，不在上面的业务命令清单里：前者提供上面这套帮助入口，后者用于生成对应 shell 的补全脚本（`flk completion <shell>`）。
+
+## WebUI 管理面板（serve）
 
 `flk serve` 会在本机启动一个网页，用来查看和修改配置清单文件 `flk-store.json`：
 
@@ -182,7 +385,7 @@ flk serve --no-open
 
 页脚显示 flk 的版本与当前平台、配置文件的路径、大小和修改时间，页头的状态圆点反映页面与本地服务的连接是否正常。
 
-#### 访问控制
+### 访问控制
 
 服务默认只允许本机（回环地址）访问。要从局域网或自定义域名访问，有两种方式，两者是并集（任意一处列出的主机都会放行）：
 
@@ -203,7 +406,80 @@ flk config set allowHosts 192.168.1.5,my.dev.lan
 
 WebUI 能直接读写你的文件与清单，属于高危入口，因此白名单不做自动推断，只放行你显式列出的主机；绑定 `--host 0.0.0.0` 这类通配地址时启动会打印警告。此外服务还会校验写请求的来源（同源校验）并限制请求体大小，用于挡住借用你浏览器发起的跨站请求。
 
-### 非交互模式（--yes）
+## 设置（flk config）
+
+flk 的持久化设置都在一个 JSON 文件里（默认 `~/.config/flk/flk-config.json`，用 `flk config path` 查看实际路径），日常读写不必手工编辑这个文件：
+
+```sh
+flk config                             # 查看当前设置（等价于 flk config show）
+flk config path                        # 打印设置文件的路径
+flk config get language                # 打印某一项设置的生效值
+flk config set language zh-CN          # 写入一项设置（先校验取值，再落盘）
+flk config reset language              # 移除该项，回到内置默认值
+flk config reset language --defaults   # 改为显式写入默认值
+flk config reset --defaults --yes      # 整份设置改写为只含默认值
+flk config reset --all --yes           # 删除整份设置文件
+flk config validate                    # 体检设置文件，逐条指出会被静默忽略的问题
+```
+
+可以设置的项：
+
+- `language`：界面语言，取值为 `en` 或 `zh-CN`，默认 `en`。命令行 `--lang/-l` 优先级更高
+- `allowHosts`：WebUI 的长期访问白名单，逗号分隔（如 `flk config set allowHosts 192.168.1.5,my.dev.lan`），默认空。与 `--allow-host` 取并集，详见上文「访问控制」
+- `logLevel`：日志级别，取值为 `debug`、`info`、`warn`、`error`，默认 `warn`。命令行 `-v`（Info）/`-vv`（Debug）优先级更高
+
+几点约定：
+
+- `set` 只改动目标键，文件里其它键（包括 flk 不认识的键）与键的顺序都保持不动；写入是"同目录临时文件 + 改名"的原子替换，设置文件是符号链接时也会落在链接指向的真实文件上
+- 取值不合法会被拒绝，并提示该键期望的形式；键名拼错也会被拒绝，不会往文件里塞一个永远读不到的死键
+- `show`、`get`、`validate` 的输出不含颜色，可以直接管道消费（例如 `flk config show | jq`），给人看的状态提示一律走 stderr
+- `validate` 发现至少一个问题时退出码为 1，可直接用在脚本的条件判断里
+- 设置文件损坏时：`flk config validate` 会指出问题所在，`flk config reset --all --yes` 能直接把它修回默认状态（这条修复路径不依赖设置文件本身可读）
+- 刻意**没有**设置类的环境变量：取值只来自命令行与设置文件两处
+
+## 全局参数
+
+下面这些参数在根命令上声明，对所有子命令可用；写在命令前后效果相同，例如 `flk -y check` 与 `flk check -y` 等价。
+
+| 参数 | 说明 |
+| --- | --- |
+| `-l, --lang <en\|zh-CN>` | 输出语言，默认取 `language` 设置。只对本次运行有效，详见下文「界面语言」 |
+| `--output <json\|table>` | 输出格式，默认 `table`。`json` 只在 `check`、`fix`、`unlink` 与 `create` 的三个子命令上支持；对其它命令请求 `json` 会直接报错拒绝执行，而不是把普通文本伪装成 JSON |
+| `--store-path <路径>` | 清单文件 `flk-store.json` 的路径，默认 `~/.config/flk/flk-store.json` |
+| `-w, --work-dir <路径>` | 工作目录，作为存储与路径计算的基准，默认当前目录。命令里的相对路径按它解析 |
+| `-v, --verbose` | 增加日志详细程度：`-v` 为 Info，`-vv` 为 Debug |
+| `-y, --yes` | 非交互模式：所有确认一律同意且不再读取终端，详见下文「非交互模式」 |
+| `--no-trash` | 删除时不移入回收站而是真实删除，详见下文「真实删除」 |
+| `--version` | 打印版本信息，等价于 `flk version` |
+
+`flk config` 子树自成一套生命周期（它刻意不依赖清单与工作目录，好在设置文件损坏时仍能工作），因此 `--store-path`、`--work-dir`、`--output`、`-v` 对它不起作用；`--lang` 与 `--yes` 仍然有效。
+
+`--output json` 只承诺 stdout 上是结构化的业务结果，日志与状态提示照常走 stderr，因此可以直接管道消费：
+
+```sh
+flk check --output json | jq '.[] | select(.valid == false)'
+```
+
+## 界面语言
+
+flk 内置中英文两套界面，默认英文，可通过以下任一方式切换（优先级由高到低）：
+
+```sh
+# 1. 命令行参数（仅本次运行有效）
+flk --lang zh-CN check
+flk check -l zh-CN
+
+# 2. 设置文件 language 字段（持久生效）
+flk config set language zh-CN
+```
+
+取值来源只有上面两处。环境变量 `FLK_LANG`（以及日志级别用的 `FLK_LOG_LEVEL`）已在本版本中**移除**：持久化设置统一由 `flk config` 承担，临时切换由命令行参数承担，多一层"改了文件却不生效、又想不起什么时候 export 过变量"的来源只会让人困惑。
+
+`flk serve` 打开的 WebUI 同样会跟随当前语言，并且可以在**页头直接切换**：切换不只是改页面文案，后端输出也一起变，同时写入设置文件的 `language` 字段，下次打开仍是这个语言。翻译缺失时自动回退到英文原文，不会出现空白或乱码。
+
+需要说清覆盖范围：被翻译的是 **flk 自身的文案**——命令说明、参数说明、运行输出与错误信息、页面文案。命令行框架（cobra）与终端 UI 库（pterm）**内置**的文案不在此列，所以在中文模式下，帮助里 `Usage:`、`Flags:`、`Available Commands:`、`Aliases:`、`help for <命令>` 这些段落标题与自动生成命令的说明仍然是英文，交互确认时的 `Yes`/`No` 也是英文。这是当前的已知边界，不是某处漏翻。
+
+## 非交互模式（--yes）
 
 flk 的确认默认需要真实终端。为便于脚本、CI 等无人值守场景，所有需要确认的命令都支持全局 `--yes`（简写 `-y`）：
 
@@ -213,14 +489,14 @@ flk 的确认默认需要真实终端。为便于脚本、CI 等无人值守场�
 
 ```sh
 # 非交互创建（自动完成备份等确认）
-flk create symlink -r ~/.config/myapp/config.json -f "/path/to/config.json" --yes
+flk create symlink -r ~/dotfiles/myapp/config.json -f ~/.config/myapp/config.json --yes
 
 # 非交互修复 / 解除全部记录
 flk fix --yes
 flk unlink -y
 ```
 
-### 真实删除（--no-trash）
+## 真实删除（--no-trash）
 
 flk 覆盖或解除链接时，默认只做“假删除”：把旧文件移入自己的回收站（`~/.local/share/flk/trash`，按时间戳与原路径结构存放），数据不会被真正销毁，需要时可以按原有目录结构从回收站手工搬回。
 
@@ -230,7 +506,7 @@ flk 覆盖或解除链接时，默认只做“假删除”：把旧文件移入�
 
 ```sh
 # 覆盖 fake 时直接真实删除旧文件，不进入回收站
-flk create symlink -r ~/.config/myapp/config.json -f "/path/to/config.json" --no-trash
+flk create symlink -r ~/dotfiles/myapp/config.json -f ~/.config/myapp/config.json --no-trash
 
 # 解除链接时直接真实删除旧的符号链接
 flk unlink --no-trash
@@ -240,90 +516,6 @@ flk unlink --no-trash
 - 删除计划文案会相应变化：默认显示“will be moved to the trash”，启用后显示“will be permanently deleted”
 - **真实删除不可恢复**，且删除符号链接时只删除链接本身，不会牵动它指向的真实数据
 - 默认行为（不传该开关）保持原样，仍然进回收站
-
-### 链接创建与管理
-
-- 语义化的链接创建，舍弃了传统的“源”“目标”链接这样的表述方式，使用“主要”“次要”这样的语义化参数来指定文件，创建文件链接时更直观。
-- 支持符号链接（软链接）和硬链接两种类型创建，通过命令行指定真实配置路径与软件读取的虚拟路径，一键完成链接替换。
-- 自动记录所有创建的链接信息，形成配置清单，便于后续检查与维护，支持强制覆盖已有配置文件（`--force`参数）。
-
-### 多设备配置同步
-
-- 配置集中存储于 Git 仓库，多设备间通过拉取仓库即可同步配置资源。
-- 适配跨平台场景：对于 `.gitconfig` 等通用配置文件，可实现 Windows、Linux 等不同系统间的无缝同步；对于 MyKeymap 等系统专属软件配置，仅支持同系统内同步。
-- 支持按设备过滤检查/修复链接，便于管理多设备配置。
-
-### 灵活适配与扩展
-
-- 支持任意以文件形式存储配置的软件（如 PixPin、Sandboxie Plus 等），无需软件本身支持导出/导入功能，通过链接机制直接接管配置。
-- 可实现“奇技淫巧”级用法：例如将微信文件目录、软件缓存目录等通过链接转移至指定位置，优化存储管理。
-
-## 使用示例
-
-### 用前必读
-
-- 查看软件帮助：`flk --help` `flk -h` `flk help`
-- 查看特定命令的帮助：`flk help <命令>` `flk <命令> --help` `flk <命令> -h`
-
-软件中的子命令通常有各种别名，可以简化输入，您可以自行用 help 来查看。例如，`upgrade` `update` `up` 命令三者完全等价。
-
-### 创建符号链接
-
-```sh
-# 创建符号链接，将真实配置文件链接到软件读取位置
-flk create symlink --real ~/.config/myapp/config.json --fake ~/Library/Application Support/MyApp/config.json --device laptop
-
-# 采用别名和短参数
-flk cr sm -r ~/.config/myapp/config.json -f ~/Library/Application Support/MyApp/config.json -d laptop
-```
-
-对于 Windows 用户，需要使用管理员权限运行。建议启用 Windows 平台的 sudo，此处不再赘述。
-
-### 创建硬链接
-
-```sh
-# 创建硬链接，要求文件在同一分区
-flk create hardlink --prim /path/to/source --seco /path/to/target --device desktop
-
-# 采用别名和短参数
-flk cr hd -p /path/to/source -s /path/to/target -d desktop
-```
-
-### 检查链接状态
-
-```sh
-# 检查所有链接
-flk check
-
-# 采用别名
-flk ck
-
-# 检查特定设备的链接
-flk check -d laptop,desktop
-
-# 检查特定目录的链接
-flk check --dir ~/.config
-```
-
-### 修复无效链接
-
-```sh
-# 交互式修复
-flk fix
-
-# 采用别名
-flk fx
-
-# 修复特定设备的链接
-flk fix -d laptop,desktop
-```
-
-### 查看版本
-
-```sh
-flk version
-flk ver
-```
 
 ## 最佳实践
 
@@ -340,7 +532,7 @@ flk ver
 ### 3. 安全使用 `--force`
 
 - `--force` 会删除目标路径的现有文件，确保路径不指向重要目录。
-- flk 已内置安全检查，禁止删除根目录或家目录。
+- flk 已内置安全检查，禁止把根目录或家目录本身作为删除目标。
 
 ### 4. 定期检查与维护
 
@@ -363,6 +555,14 @@ flk ver
 - 多设备办公/开发人群：需在台式机、笔记本等设备间保持一致的软件配置（如编辑器设置、Git 配置、各种软件配置等）。
 - 技术爱好者：追求配置管理的标准化与高效化，希望通过轻量化工具实现配置的集中管控。
 - 跨平台使用者：需要在 Windows、Linux 等不同系统间同步通用配置，减少重复设置成本。
+
+在具体做法上，flk 适配的典型场景包括：
+
+- **多设备同步**：配置集中存储于 Git 仓库，多设备间通过拉取仓库即可同步配置资源
+- **跨平台与系统专属配置**：对于 `.gitconfig` 等通用配置文件，可实现 Windows、Linux 等不同系统间的无缝同步；对于 MyKeymap 等系统专属软件配置，仅支持同系统内同步
+- **按设备过滤**：`check`、`fix`、`unlink` 都支持按设备过滤，便于在单台设备上只处理与自己相关的记录
+- **接管任意文件型配置**：支持任意以文件形式存储配置的软件（如 PixPin、Sandboxie Plus 等），无需软件本身支持导出/导入功能
+- **转移目录位置**：可实现"奇技淫巧"级用法，例如将微信文件目录、软件缓存目录等通过链接转移至指定位置，优化存储管理
 
 flk 以“本地链接中转+云端同步”为核心设计理念，用极简的技术方案解决了配置管理的核心痛点。随着后续可视化界面与适配库的完善，将进一步降低使用门槛，成为多设备配置同步的高效工具。
 
