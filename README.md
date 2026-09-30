@@ -17,10 +17,6 @@ weight:
 
 <img src="https://raw.githubusercontent.com/Jy-EggRoll/flk/refs/heads/main/image/flk.png" width="128" alt="flk logo">
 
-## 介绍
-
-本项目接入了 DeepWiki，欢迎在 DeepWiki 上与之对话，以获取最精准的信息和解答：[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Jy-EggRoll/flk)
-
 ## 开发路线
 
 当前软件正在积极地开发，采用了多个阶段的开发路线，计划逐步完善功能和用户体验：
