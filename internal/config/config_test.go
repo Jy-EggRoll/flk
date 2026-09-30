@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jy-eggroll/flk/internal/locales"
@@ -369,5 +370,66 @@ func TestSetLanguageWritesDefaultPath(t *testing.T) {
 	}
 	if got != "zh-CN" {
 		t.Errorf("LoadLanguage = %q，期望 zh-CN", got)
+	}
+}
+
+// TestSetLanguageAtFollowsSymlink 守住「设置文件是符号链接时，写入必须落在链接指向的真实文件上」
+//
+// 回归背景：写入走「同目录临时文件 + rename」实现原子落盘，而 rename 替换的是**路径上的那个名字**。
+// 用户若把设置文件链进自己的配置仓库（与 flk-store.json 同一种用法），直接按链接路径写入
+// 会把链接本身换成普通文件，仓库侧与 ~/.config 下的入口从此脱钩——这个破坏是静默的，
+// 直到下次同步才会发现两边各写各的，因此用测试把契约钉死
+func TestSetLanguageAtFollowsSymlink(t *testing.T) {
+	repoDir := t.TempDir()
+	realPath := filepath.Join(repoDir, "flk-config.json")
+	if err := os.WriteFile(realPath, []byte(`{"language": "en"}`), 0o644); err != nil {
+		t.Fatalf("写入仓库侧文件失败: %v", err)
+	}
+
+	// 链接与真实文件刻意放在不同目录：写入要落到真实文件所在目录，
+	// 临时文件也必须建在那里（rename 只在同一文件系统内原子）
+	linkPath := filepath.Join(t.TempDir(), "flk-config.json")
+	if err := os.Symlink(realPath, linkPath); err != nil {
+		t.Fatalf("创建符号链接失败: %v", err)
+	}
+
+	if err := SetLanguageAt(linkPath, "zh-CN"); err != nil {
+		t.Fatalf("经符号链接写入失败: %v", err)
+	}
+
+	// 契约一：链接必须仍是链接
+	fi, err := os.Lstat(linkPath)
+	if err != nil {
+		t.Fatalf("Lstat 失败: %v", err)
+	}
+	if fi.Mode()&os.ModeSymlink == 0 {
+		t.Error("写入后符号链接被替换成了普通文件：配置仓库与 ~/.config 的入口已脱钩")
+	}
+
+	// 契约二：内容落在真实文件上，且经链接能读回
+	data, err := os.ReadFile(realPath)
+	if err != nil {
+		t.Fatalf("读取真实文件失败: %v", err)
+	}
+	if !strings.Contains(string(data), "zh-CN") {
+		t.Errorf("真实文件内容未更新: %s", data)
+	}
+	back, err := LoadLanguageAt(linkPath)
+	if err != nil {
+		t.Fatalf("经链接读回失败: %v", err)
+	}
+	if back != "zh-CN" {
+		t.Errorf("经链接读回 = %q，期望 zh-CN", back)
+	}
+
+	// 契约三：临时文件不能落在链接所在目录（那里不该出现任何新文件）
+	entries, err := os.ReadDir(filepath.Dir(linkPath))
+	if err != nil {
+		t.Fatalf("读取链接所在目录失败: %v", err)
+	}
+	for _, e := range entries {
+		if e.Name() != filepath.Base(linkPath) {
+			t.Errorf("链接所在目录出现了额外文件: %s", e.Name())
+		}
 	}
 }

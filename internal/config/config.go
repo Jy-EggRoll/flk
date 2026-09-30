@@ -375,6 +375,17 @@ func writeEntriesAt(path string, entries []settingEntry) error {
 // 顺序是 Write → Sync → Close → Chmod → Rename：rename 只保证"文件名替换"这一步原子，
 // 不保证数据已落盘；缺了 Sync，断电后可能出现"新文件名 + 空内容"，效果等同于清空设置
 func writeFileAtomic(path string, data []byte) (err error) {
+	// 目标可能是符号链接：用户可以把设置文件链进自己的配置仓库，与 flk-store.json 是同一种用法。
+	// 必须让写入落到链接指向的真实文件上——本函数最终用 rename 落位，而 rename 替换的是
+	// 「路径上的那个名字」，直接写链接路径会把链接本身换成普通文件，用户的仓库与
+	// ~/.config 下的入口从此脱钩，直到下次同步才发现两边各写各的
+	//
+	// 链接不存在（首次创建）或指向不存在的目标（断链）时 EvalSymlinks 会报错，此时沿用原路径：
+	// rename 会在该位置建出真实文件，至少不会写坏别处
+	if resolved, resolveErr := filepath.EvalSymlinks(path); resolveErr == nil {
+		path = resolved
+	}
+
 	dir := filepath.Dir(path)
 
 	// 目录可能不存在（首次运行，或用户把配置放到一个新位置），先按需创建
