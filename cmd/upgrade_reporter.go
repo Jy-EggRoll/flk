@@ -114,7 +114,17 @@ func (p *ptermProgress) Update(done, total int64) {
 		percent = 99.9
 	}
 
-	line := fmt.Sprintf("\r%s: %.1f%% (%s/%s)", p.label, percent, updater.FormatSize(done), updater.FormatSize(total))
+	// 每帧以「回车 + 清到行尾」开头，而不是只回车（ANSI 的 EL 序列 \x1b[K）
+	//
+	// 为什么必须清行：下载完成的那一帧不再输出速率与剩余时间（见下面的 done < total 判断），
+	// 整帧会明显短于上一帧；只回车的覆盖写把上一帧多出来的尾巴留在行尾，
+	// 用户看到的就是「剩余 3s2s」这种由两帧叠加出来的伪内容——看似是剩余时间被算重了，
+	// 实际是上一帧的残留。帧长变化不止发生在收尾：速率、剩余时间与百分比的字符数都会随进度变化
+	//
+	// 潜在影响点：不支持 ANSI 的终端会把 \x1b[K 当普通字符显示。这类终端连进度条本身也渲染不对
+	// （\r 就地覆盖的表现同样不可靠），而项目已依赖 pterm，它本身就在用 ANSI 序列，
+	// 因此这里不额外做终端能力探测
+	line := "\r\x1b[K" + fmt.Sprintf("%s: %.1f%% (%s/%s)", p.label, percent, updater.FormatSize(done), updater.FormatSize(total))
 
 	// 仅在未完成时给出速率与剩余时间，完成时这两项已无意义
 	if done < total {
