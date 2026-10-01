@@ -315,14 +315,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{"success": true, "rev": rev})
 		default:
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w)
 		}
 	})
 
 	// API：返回文件元信息
 	mux.HandleFunc("/api/meta", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w)
 			return
 		}
 		normalizedPath, _ := pathutil.NormalizePath(store.StorePath)
@@ -348,7 +348,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// 响应 platform 字段告知前端结果属于哪个平台，前端仅在浏览该平台页签时展示状态徽标
 	mux.HandleFunc("/api/check", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w)
 			return
 		}
 		results, err := performCheck(CheckOptions{})
@@ -379,7 +379,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// 因此 store 依然只有一个写入者，不会出现内存与磁盘分叉
 	mux.HandleFunc("/api/repair", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w)
 			return
 		}
 		var req repairRequest
@@ -475,7 +475,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	//     所以除 repairMu 之外还要求前端必须先弹确认对话框（noTrash 也由用户在对话框里决定）
 	mux.HandleFunc("/api/unlink", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w)
 			return
 		}
 		var req unlinkRequest
@@ -598,7 +598,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// GET 会被浏览器预取、被链接爬虫乱触发，属于典型的"用错方法制造幽灵 bug"
 	mux.HandleFunc("/api/language", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w)
 			return
 		}
 		var req languageRequest
@@ -652,9 +652,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// API：SSE 事件推送，客户端连接后持续接收文件变更通知
 	mux.HandleFunc("/api/events", func(w http.ResponseWriter, r *http.Request) {
+		// 与其它端点一致地只接受 GET：EventSource 固定用 GET 建连，
+		// 不校验方法会让 POST / OPTIONS 也进入下面的长连接循环，白白占住一个连接
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowed(w)
+			return
+		}
 		flusher, ok := w.(http.Flusher)
 		if !ok {
-			http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+			http.Error(w, l10n.T("Streaming is not supported by this connection", nil), http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -892,6 +898,15 @@ type repairOutcome struct {
 // "改 A 成功、改 B 失败"的半成品，而调用方没有任何办法表达"要么全成功要么全失败"
 type languageRequest struct {
 	Language string `json:"language"`
+}
+
+// writeMethodNotAllowed 统一回写「请求方法不被允许」的 405 响应
+//
+// 收成一处的理由：六个端点此前各自硬编码了同一串英文，中文界面下这几条会漏译
+// （本项目的界面语言覆盖所有面向用户的文案，包括服务端错误），
+// 而且日后要改这串文案时，很容易只改到其中几处、剩下的继续以旧文案示人
+func writeMethodNotAllowed(w http.ResponseWriter) {
+	http.Error(w, l10n.T("Method not allowed", nil), http.StatusMethodNotAllowed)
 }
 
 // writeActionResponse 输出破坏性操作端点（/api/repair、/api/unlink）的 JSON 响应
