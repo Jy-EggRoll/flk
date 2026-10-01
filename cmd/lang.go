@@ -20,8 +20,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/jy-eggroll/eggokit/l10n"
 	"github.com/jy-eggroll/flk/internal/config"
-	"github.com/jy-eggroll/flk/pkg/l10n"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )

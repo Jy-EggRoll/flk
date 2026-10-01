@@ -7,9 +7,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jy-eggroll/eggokit/l10n"
+	"github.com/jy-eggroll/eggokit/updater"
 	"github.com/jy-eggroll/flk/internal/prompt"
-	"github.com/jy-eggroll/flk/internal/updater"
-	"github.com/jy-eggroll/flk/pkg/l10n"
 	"github.com/pterm/pterm"
 )
 

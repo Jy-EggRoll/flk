@@ -22,9 +22,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jy-eggroll/flk/internal/atomicfile"
+	"github.com/jy-eggroll/eggokit/atomicfile"
+	"github.com/jy-eggroll/eggokit/l10n"
 	"github.com/jy-eggroll/flk/internal/pathutil"
-	"github.com/jy-eggroll/flk/pkg/l10n"
 )
 
 // ErrUnknownKey 表示请求了一个未注册的设置项。

@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/jy-eggroll/flk/pkg/l10n"
+	"github.com/jy-eggroll/eggokit/l10n"
 	"io"
 	"os"
 	"path/filepath"

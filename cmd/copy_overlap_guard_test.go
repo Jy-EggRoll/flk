@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jy-eggroll/eggokit/l10n"
 	"github.com/jy-eggroll/flk/internal/locales"
 	"github.com/jy-eggroll/flk/internal/pathutil"
-	"github.com/jy-eggroll/flk/pkg/l10n"
 )
 
 // 本文件覆盖组4 之外的两处命令层「自引用复制」前置判断：

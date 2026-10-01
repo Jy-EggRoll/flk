@@ -5,10 +5,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/jy-eggroll/flk/internal/logger"
+	"github.com/jy-eggroll/eggokit/l10n"
+	"github.com/jy-eggroll/eggokit/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/safeop"
-	"github.com/jy-eggroll/flk/pkg/l10n"
 )
 
 // 该函数只处理创建逻辑，需要保证传入的路径一定是最正确、最简洁的，函数被调用时，应该优先处理字符串

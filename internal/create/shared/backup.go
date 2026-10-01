@@ -5,11 +5,11 @@ import (
 	"io"
 	"os"
 
-	"github.com/jy-eggroll/flk/internal/logger"
+	"github.com/jy-eggroll/eggokit/l10n"
+	"github.com/jy-eggroll/eggokit/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/prompt"
 	"github.com/jy-eggroll/flk/internal/safeop"
-	"github.com/jy-eggroll/flk/pkg/l10n"
 	"github.com/pterm/pterm"
 )
 

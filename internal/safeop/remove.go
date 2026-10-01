@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/jy-eggroll/eggokit/l10n"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/prompt"
 	"github.com/jy-eggroll/flk/internal/trash"
-	"github.com/jy-eggroll/flk/pkg/l10n"
 	"github.com/pterm/pterm"
 )
 

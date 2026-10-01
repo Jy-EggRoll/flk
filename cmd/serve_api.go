@@ -23,12 +23,12 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/jy-eggroll/eggokit/l10n"
+	"github.com/jy-eggroll/eggokit/logger"
 	"github.com/jy-eggroll/flk/internal/config"
-	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/store"
-	"github.com/jy-eggroll/flk/pkg/l10n"
 )
 
 // serveServer 持有 WebUI 各端点共享的状态，由 runServe 在每次启动服务时构造一个实例

@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jy-eggroll/eggokit/l10n"
+	"github.com/jy-eggroll/eggokit/logger"
 	createcopy "github.com/jy-eggroll/flk/internal/create/copy"
 	"github.com/jy-eggroll/flk/internal/create/shared"
-	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/safeop"
-	"github.com/jy-eggroll/flk/pkg/l10n"
 	"github.com/spf13/cobra"
 )
 

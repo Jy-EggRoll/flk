@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jy-eggroll/flk/pkg/l10n"
+	"github.com/jy-eggroll/eggokit/l10n"
 )
 
 // 本文件为「本机 WebUI 服务」提供统一的访问护栏

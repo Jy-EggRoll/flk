@@ -15,9 +15,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jy-eggroll/eggokit/l10n"
+	"github.com/jy-eggroll/eggokit/logger"
 	"github.com/jy-eggroll/flk/internal/locales"
-	"github.com/jy-eggroll/flk/internal/logger"
-	"github.com/jy-eggroll/flk/pkg/l10n"
 )
 
 // ErrInvalidValue 表示用户输入的值不合法。

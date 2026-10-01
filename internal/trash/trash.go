@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jy-eggroll/flk/internal/logger"
+	"github.com/jy-eggroll/eggokit/l10n"
+	"github.com/jy-eggroll/eggokit/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
-	"github.com/jy-eggroll/flk/pkg/l10n"
 )
 
 // trashRoot 是 FLK 回收站的根目录，遵循 XDG 数据目录规范

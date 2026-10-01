@@ -10,10 +10,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/jy-eggroll/flk/internal/atomicfile"
-	"github.com/jy-eggroll/flk/internal/logger"
+	"github.com/jy-eggroll/eggokit/atomicfile"
+	"github.com/jy-eggroll/eggokit/l10n"
+	"github.com/jy-eggroll/eggokit/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
-	"github.com/jy-eggroll/flk/pkg/l10n"
 )
 
 // Entry 链接记录，底层为键值对映射

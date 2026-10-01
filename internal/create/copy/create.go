@@ -6,10 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/jy-eggroll/flk/internal/logger"
+	"github.com/jy-eggroll/eggokit/l10n"
+	"github.com/jy-eggroll/eggokit/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/safeop"
-	"github.com/jy-eggroll/flk/pkg/l10n"
 )
 
 // Create 复制单个普通文件，并把删除计划写入可选的 outputs[0]

@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/jy-eggroll/flk/pkg/l10n"
+	"github.com/jy-eggroll/eggokit/l10n"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 
-	"github.com/jy-eggroll/flk/internal/logger"
+	"github.com/jy-eggroll/eggokit/logger"
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/store"

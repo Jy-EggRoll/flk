@@ -13,8 +13,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jy-eggroll/eggokit/l10n"
 	"github.com/jy-eggroll/flk/internal/pathutil"
-	"github.com/jy-eggroll/flk/pkg/l10n"
 )
 
 // Level 是体检问题的严重级别。

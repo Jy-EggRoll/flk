@@ -10,10 +10,13 @@ vars:
     sh: printf '%s' "${TYPE:-release}"
   LDFLAGS: '-s -w -X github.com/jy-eggroll/flk/cmd.Version={{.VERSION}} -X github.com/jy-eggroll/flk/cmd.BuildTime={{.BUILDTIME}}'
   # l10n 工具的四个位置参数：消息函数所在包、扫描目录、内嵌翻译表所在的 HTML 源、语言文件目录
+  # --pkg 指向共享库 eggokit 的 l10n 包：本项目的 L10N 机制已抽到那里，源码仍写同一个 T(...)
+  # 扫描范围只含 flk 自己的 cmd 与 internal，因此 internal/locales 里只保留 flk 自己的文案；
+  # 升级与日志那两块文案随 eggokit 发布（eggokit/locales），运行时由 internal/locales 叠加进来
   # --html 覆盖 cmd/ui 下的页面：WebUI 的译文内嵌在页面里，只有把它交给提取器，
   # 页面文案的漏译与失效译文才会被 l10n:check 拦住（否则只会静默回退英文）
   # 与 internal/locales/locales.go 里的语言列表是一对，改动时要一起看
-  L10N_ARGS: '--pkg github.com/jy-eggroll/flk/pkg/l10n --src cmd,internal --html cmd/ui --dir internal/locales'
+  L10N_ARGS: '--pkg github.com/jy-eggroll/eggokit/l10n --src cmd,internal --html cmd/ui --dir internal/locales'
   # E2E 现场（截图、录屏、回看页、临时 store）的落点，只在这里声明一次
   # 刻意放在 .task/ 下面，并且核实过 .task/ 确实被 .gitignore 忽略（第 2 行的 .task/），
   # 现场再大也不会污染 git status
@@ -42,13 +45,25 @@ tasks:
     cmds:
       - go mod tidy -diff
 
+  # 只把磁盘上确实存在的文件交给 gofmt：git ls-files 读的是索引，会把「已删除但尚未暂存」
+  # 的文件一并列出，重构中途直接喂给 gofmt 会以 lstat 失败收场，报出来的却是「格式检查不过」——
+  # 一个与格式毫无关系的假失败（实测踩过：抽包删掉 34 个文件后 verify 就卡在这里）
   fmt:check:
     desc: Check Go source formatting
     cmds:
       - |
-        unformatted="$(gofmt -l $(git ls-files --cached --others --exclude-standard '*.go'))"
+        unformatted=""
+        for file in $(git ls-files --cached --others --exclude-standard '*.go'); do
+          if [ -f "$file" ]; then
+            result="$(gofmt -l "$file")"
+            if [ -n "$result" ]; then
+              unformatted="$unformatted$result
+        "
+            fi
+          fi
+        done
         if [ -n "$unformatted" ]; then
-          printf '以下 Go 文件未通过 gofmt 检查：\n%s\n' "$unformatted" >&2
+          printf '以下 Go 文件未通过 gofmt 检查：\n%s' "$unformatted" >&2
           exit 1
         fi
 
@@ -57,7 +72,12 @@ tasks:
   fmt:
     desc: 格式化 Go 代码 (gofmt)
     cmds:
-      - gofmt -w $(git ls-files --cached --others --exclude-standard '*.go')
+      - |
+        for file in $(git ls-files --cached --others --exclude-standard '*.go'); do
+          if [ -f "$file" ]; then
+            gofmt -w "$file"
+          fi
+        done
 
   # l10n:check 是语言文件的只读门禁：校验默认语言文件与源码**及页面**一致、语言文件均已按
   # 字典序排列且能被 go-i18n 正常解析、译文没有失效条目、页面内嵌翻译表没有缺口。
@@ -66,7 +86,7 @@ tasks:
   l10n:check:
     desc: 校验语言文件（与源码/页面一致、已排序、可被 go-i18n 解析、页面文案无缺口）
     cmds:
-      - go run ./pkg/l10n/cmd/l10n check {{.L10N_ARGS}}
+      - go run github.com/jy-eggroll/eggokit/l10n/cmd/l10n check {{.L10N_ARGS}}
 
   # l10n:export 是 l10n:check 的修复动作：重新生成默认语言文件、重排译文文件，并打印
   # 待翻译清单、失效译文清单（源码中已删除但译文里还留着的条目，需人工删除）、页面内嵌
@@ -74,7 +94,7 @@ tasks:
   l10n:export:
     desc: 重新生成语言文件（覆盖 en.json、重排译文、打印待翻译/失效译文/页面缺口与待迁移清单）
     cmds:
-      - go run ./pkg/l10n/cmd/l10n export {{.L10N_ARGS}}
+      - go run github.com/jy-eggroll/eggokit/l10n/cmd/l10n export {{.L10N_ARGS}}
 
   vet:
     desc: Run go vet
