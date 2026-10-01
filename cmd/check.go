@@ -341,6 +341,38 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
+// recordFields 定义每种链接类型在 store 中的字段名，按「权威副本 → 派生位置」的顺序排列
+//
+// 这份表是**字段名的唯一真源**：定位记录（buildRecordEntry）与展示路径（recordDisplayPaths）
+// 都从它取值。此前字段名在两处各写一遍（本文件按类型取的 switch，加上 serve_web.go 里为排序
+// 另建的一份），且注释写明「两者必须同步修改」——那正是熵增的信号：新增一种链接类型时漏改一处，
+// 表现是界面上拼不出路径、或定位不到记录，这类偏差不报错，只会静默地少做一件事
+//
+// 顺序固定为「权威副本在前」而不是交给调用方遍历 map：map 遍历顺序随机，拼不出稳定的可读路径串
+var recordFields = map[string][2]string{
+	"symlink":  {"real", "fake"},
+	"hardlink": {"prim", "seco"},
+	"copy":     {"src", "dst"},
+}
+
+// recordValues 按「权威副本、派生位置」的顺序取出检查结果里的两个路径值
+//
+// 为什么不能直接从 recordFields 取值：output.CheckResult 是结构体而不是映射，
+// 「字段名 → 字段值」这一步只能靠显式对应。这里刻意不出现任何字段名字符串，
+// 名称统一由 recordFields 提供，两处不会再各自演化
+// 未知类型返回两个空串：调用方已先用 recordFields 过滤过类型，走到这里说明结构体与表脱节
+func recordValues(result output.CheckResult) (string, string) {
+	switch result.Type {
+	case "symlink":
+		return result.Real, result.Fake
+	case "hardlink":
+		return result.Prim, result.Seco
+	case "copy":
+		return result.Src, result.Dst
+	}
+	return "", ""
+}
+
 // buildRecordEntry 依据检查结果构造在 store 中定位同一条记录的匹配键
 //
 // 字段映射必须与 performCheck 从存储里读取字段的方式严格对应：symlink→real/fake、hardlink→prim/seco、copy→src/dst
@@ -352,15 +384,12 @@ func contains(slice []string, item string) bool {
 // 潜在影响点：本函数是纯映射，不读全局状态、不落盘；result 必须来自 performCheck（字段是存储中的原值），
 // 否则折叠路径形式不一致会导致 RemoveMatchingEntry 匹配失败而静默无操作
 func buildRecordEntry(result output.CheckResult) store.Entry {
-	switch result.Type {
-	case "symlink":
-		return store.Entry{"real": result.Real, "fake": result.Fake}
-	case "hardlink":
-		return store.Entry{"prim": result.Prim, "seco": result.Seco}
-	case "copy":
-		return store.Entry{"src": result.Src, "dst": result.Dst}
+	fields, ok := recordFields[result.Type]
+	if !ok {
+		return nil
 	}
-	return nil
+	first, second := recordValues(result)
+	return store.Entry{fields[0]: first, fields[1]: second}
 }
 
 // removeTrackedRecord 从全局存储中移除一条追踪记录，返回值表示「是否真的执行了一次移除」

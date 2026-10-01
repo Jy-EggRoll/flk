@@ -971,24 +971,17 @@ func filterRecordTargets(targets []output.CheckResult, loc recordLocator) []outp
 	return matched
 }
 
-// recordEntryFields 按「权威副本 → 派生位置」的顺序列出每种链接类型在 store 中的字段名
-//
-// 它存在的唯一理由是本文件需要稳定的字段顺序：buildRecordEntry 返回的是 map，遍历顺序随机，
-// 拼不出可读的路径对。字段名本身仍以 buildRecordEntry 的映射为准，两者必须同步修改，
-// 一旦新增链接类型，这里的缺失只会让路径串为空（不影响修复本身），不会造成文件系统层面的错误动作
-var recordEntryFields = map[string][2]string{
-	"symlink":  {"real", "fake"},
-	"hardlink": {"prim", "seco"},
-	"copy":     {"src", "dst"},
-}
-
 // recordDisplayPaths 把一条检查结果渲染成「权威副本 → 派生位置」的可读路径串，供 /api/repair 的输出与逐条结果展示
+//
+// 字段名与顺序都取自 recordFields（字段名的唯一真源，见 cmd/check.go），本函数只做拼接：
+// 此前它自带一份同样内容的映射表，新增链接类型时要改两处，因此那一份已被删除
 // 未知类型返回空串：修复本身会以「Unknown type」失败，展示层不必再造一个错误分支
 func recordDisplayPaths(result output.CheckResult) string {
 	entry := buildRecordEntry(result)
-	pair, ok := recordEntryFields[result.Type]
-	if !ok || len(entry) == 0 {
+	if len(entry) == 0 {
 		return ""
 	}
-	return entry[pair[0]] + " → " + entry[pair[1]]
+	// 走到这里说明类型已在 recordFields 中，取表里的字段名即可与 buildRecordEntry 的键一一对应
+	fields := recordFields[result.Type]
+	return entry[fields[0]] + " → " + entry[fields[1]]
 }
