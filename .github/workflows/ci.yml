@@ -9,82 +9,31 @@ on:
         branches:
             - "**"
 
+# 权限刻意保留在此处而不再写进可复用工作流：可复用工作流拿到的令牌权限以调用方为上限，
+# 这里维持只读，与其下的两个任务所需完全一致（校验与上传产物都不需要写权限）
 permissions:
     contents: read
 
 jobs:
     # PR 只做验证不构建，反馈更快；跨平台编译问题由推送触发的 build 任务负责发现
+    # 具体工作（checkout / setup / verify）全部委托给可复用工作流，本文件只保留触发条件与权限
     verify:
         if: github.event_name == 'pull_request'
-        runs-on: ubuntu-latest
-
-        steps:
-            - name: Checkout code
-              uses: actions/checkout@v4
-
-            - name: Setup Go
-              uses: actions/setup-go@v5
-              with:
-                  # 始终以 go.mod 为 Go 版本的唯一来源，避免工作流与项目配置漂移
-                  go-version-file: go.mod
-
-            - name: Setup Task
-              uses: go-task/setup-task@v2
-              with:
-                  version: 3.x
-
-            - name: Verify source
-              run: task verify
+        uses: ./.github/workflows/build.yml
+        with:
+            mode: verify-only
 
     # 推送时验证并构建全部平台，产物保留下来，使任意分支都能直接下载二进制做实测
     build:
         if: github.event_name == 'push'
-        runs-on: ubuntu-latest
-
-        steps:
-            - name: Checkout code
-              uses: actions/checkout@v4
-
-            - name: Setup Go
-              uses: actions/setup-go@v5
-              with:
-                  # 始终以 go.mod 为 Go 版本的唯一来源，避免工作流与项目配置漂移
-                  go-version-file: go.mod
-
-            - name: Setup Task
-              uses: go-task/setup-task@v2
-              with:
-                  version: 3.x
-
+        uses: ./.github/workflows/build.yml
+        with:
+            mode: artifact
             # 推送构建使用时间戳版本号，与发布构建的语义化版本号清楚区分，
             # 也避免本地开发构建被误认为某个正式版本
-            - name: Get version
-              id: get_version
-              run: |
-                  VERSION=$(date '+%Y-%m-%d-%H-%M-%S')
-                  echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-            - name: Get build time
-              id: get_build_time
-              run: |
-                  BUILDTIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-                  echo "buildtime=$BUILDTIME" >> $GITHUB_OUTPUT
-
-            # 先验证再构建：验证失败时不会产出任何可执行文件，避免把有问题的二进制交到手上
-            - name: Verify source
-              run: task verify
-
-            - name: Build binaries for all platforms
-              run: task build-all
-              env:
-                  VERSION: ${{ steps.get_version.outputs.version }}
-                  BUILDTIME: ${{ steps.get_build_time.outputs.buildtime }}
-
-            - name: Upload build artifacts
-              uses: actions/upload-artifact@v4
-              with:
-                  name: flk-${{ steps.get_version.outputs.version }}
-                  path: build/*
-                  # 单次构建 11 个平台约 90MB，保留 3 天足够验证使用，
-                  # 时间过长会在频繁推送时占满免费存储配额并导致后续上传失败
-                  retention-days: 3
+            version_source: timestamp
+            # 分支构建沿用 flk- 前缀，与发布流程的 binaries- 保持既有差异
+            artifact_prefix: flk-
+            # 单次构建 11 个平台约 90MB，保留 3 天足够验证使用，
+            # 时间过长会在频繁推送时占满免费存储配额并导致后续上传失败
+            retention_days: 3

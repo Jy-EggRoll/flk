@@ -6,81 +6,20 @@ on:
             - "[0-9]+.[0-9]+.[0-9]+.dev.[0-9]+" # 匹配 x.y.z.dev.n 格式的开发版本标签
     workflow_dispatch: # 支持手动运行
 
+# 权限刻意保留在此处而不再写进可复用工作流：创建 Release 需要写权限，该权限以调用方为上限
 permissions:
     contents: write
 
 jobs:
+    # 具体工作全部委托给可复用工作流，本文件只保留触发条件与权限
     package:
-        runs-on: ubuntu-latest
-
-        steps:
-            - name: Checkout code
-              uses: actions/checkout@v4
-              with:
-                  fetch-depth: 0
-
-            - name: Setup Go
-              uses: actions/setup-go@v5
-              with:
-                  # 始终以 go.mod 为 Go 版本的唯一来源，避免工作流与项目配置漂移
-                  go-version-file: go.mod
-
-            - name: Get version info
-              id: get_version
-              run: |
-                  if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-                    # 手动运行时，使用当前日期作为版本标识
-                    VERSION="dev-$(date +%Y%m%d-%H%M%S)"
-                    echo "Manual run - using timestamp version: $VERSION"
-                  else
-                    # Tag 触发时，从 tag 获取版本
-                    VERSION=${GITHUB_REF#refs/tags/}
-                    echo "Tag triggered - using tag version: $VERSION"
-                  fi
-                  echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-            - name: Setup Task
-              uses: go-task/setup-task@v2
-              with:
-                  version: 3.x
-
-            - name: Get build time
-              id: get_build_time
-              run: |
-                  BUILDTIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-                  echo "buildtime=$BUILDTIME" >> $GITHUB_OUTPUT
-
-            # 发布构建必须先通过完整验证，失败时不会生成或上传产物
-            - name: Verify source
-              run: task verify
-
-            - name: Build binaries for all platforms
-              run: task build-all
-              env:
-                  VERSION: ${{ steps.get_version.outputs.version }}
-                  BUILDTIME: ${{ steps.get_build_time.outputs.buildtime }}
-
-            - name: Generate release notes
-              if: github.event_name != 'workflow_dispatch'
-              run: task changelog VERSION=${{ steps.get_version.outputs.version }} TYPE=dev > release_notes.md
-
-            - name: Create development release (for tag runs only)
-              if: github.event_name != 'workflow_dispatch'
-              uses: softprops/action-gh-release@v2
-              with:
-                  tag_name: ${{ steps.get_version.outputs.version }}
-                  name: "flk v${{ steps.get_version.outputs.version }} (开发版)"
-                  body_path: release_notes.md
-                  files: |
-                      build/*
-                  draft: false
-                  prerelease: true
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-            - name: Upload build artifacts
-              uses: actions/upload-artifact@v4
-              with:
-                  name: binaries-${{ steps.get_version.outputs.version }}
-                  path: build/*
-                  retention-days: 30
+        uses: ./.github/workflows/build.yml
+        with:
+            # tag 触发：构建后创建开发预发布；手动 dispatch：只上传产物、不建 Release
+            # 这道差异改造前由步骤上的 if: github.event_name != 'workflow_dispatch' 实现，
+            # 现在改为按事件在 artifact / prerelease 两种投递方式之间切换，语义完全等价
+            mode: ${{ github.event_name == 'workflow_dispatch' && 'artifact' || 'prerelease' }}
+            # tag 触发取标签版本号；手动运行取带 dev- 前缀的时间戳版本号（与改造前逐字一致）
+            version_source: ${{ github.event_name == 'workflow_dispatch' && 'dev-timestamp' || 'tag' }}
+            artifact_prefix: binaries-
+            retention_days: 30

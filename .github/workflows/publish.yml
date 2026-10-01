@@ -7,72 +7,17 @@ on:
         tags:
             - "[0-9]+.[0-9]+.[0-9]+" # 匹配 x.y.z 格式的正式版本标签
 
+# 权限刻意保留在此处而不再写进可复用工作流：创建 Release 需要写权限，该权限以调用方为上限
 permissions:
     contents: write
 
 jobs:
+    # 具体工作全部委托给可复用工作流，本文件只保留触发条件与权限
     publish:
-        runs-on: ubuntu-latest
-
-        steps:
-            - name: Checkout code
-              uses: actions/checkout@v4
-              with:
-                  fetch-depth: 0
-
-            - name: Setup Go
-              uses: actions/setup-go@v5
-              with:
-                  # 始终以 go.mod 为 Go 版本的唯一来源，避免工作流与项目配置漂移
-                  go-version-file: go.mod
-
-            - name: Get tag version
-              id: get_version
-              run: |
-                  VERSION=${GITHUB_REF#refs/tags/}
-                  echo "version=$VERSION" >> $GITHUB_OUTPUT
-                  echo "Publishing version: $VERSION"
-
-            - name: Setup Task
-              uses: go-task/setup-task@v2
-              with:
-                  version: 3.x
-
-            - name: Get build time
-              id: get_build_time
-              run: |
-                  BUILDTIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-                  echo "buildtime=$BUILDTIME" >> $GITHUB_OUTPUT
-
-            # 发布构建必须先通过完整验证，失败时不会生成或上传产物
-            - name: Verify source
-              run: task verify
-
-            - name: Build binaries for all platforms
-              run: task build-all
-              env:
-                  VERSION: ${{ steps.get_version.outputs.version }}
-                  BUILDTIME: ${{ steps.get_build_time.outputs.buildtime }}
-
-            - name: Generate release notes
-              run: task changelog VERSION=${{ steps.get_version.outputs.version }} > release_notes.md
-
-            - name: Create GitHub Release
-              uses: softprops/action-gh-release@v2
-              with:
-                  tag_name: ${{ steps.get_version.outputs.version }}
-                  name: "flk v${{ steps.get_version.outputs.version }}"
-                  body_path: release_notes.md
-                  files: |
-                      build/*
-                  draft: false
-                  prerelease: false
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-            - name: Upload build artifacts
-              uses: actions/upload-artifact@v4
-              with:
-                  name: binaries-${{ steps.get_version.outputs.version }}
-                  path: build/*
-                  retention-days: 90
+        uses: ./.github/workflows/build.yml
+        with:
+            mode: release
+            # 正式发布取触发标签作为版本号
+            version_source: tag
+            artifact_prefix: binaries-
+            retention_days: 90
