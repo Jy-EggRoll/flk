@@ -8,6 +8,11 @@ vars:
     sh: printf '%s' "${BUILDTIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
   TYPE:
     sh: printf '%s' "${TYPE:-release}"
+  # NOTES_LANG 是发布说明语言的临时覆盖项，留空表示用清单里的 releaseNotesLang(zh-CN)
+  # 用 shell 变量回填是为了让 `NOTES_LANG=en task changelog ...` 这种写法也能生效；
+  # 可复用工作流是以 CLI 变量（task changelog NOTES_LANG=...）传入的，CLI 变量优先级更高
+  NOTES_LANG:
+    sh: printf '%s' "${NOTES_LANG:-}"
   LDFLAGS: '-s -w -X github.com/jy-eggroll/flk/cmd.Version={{.VERSION}} -X github.com/jy-eggroll/flk/cmd.BuildTime={{.BUILDTIME}}'
   # l10n 工具的四个位置参数：消息函数所在包、扫描目录、内嵌翻译表所在的 HTML 源、语言文件目录
   # --pkg 指向共享库 eggokit 的 l10n 包：本项目的 L10N 机制已抽到那里，源码仍写同一个 T(...)
@@ -123,6 +128,23 @@ tasks:
       - task: test
       - task: test:race
 
+  # verify:actions 是工作流层的按需验收：actionlint 能拦住 YAML 语法错误、未定义的
+  # inputs/secrets、非法的事件与权限写法等——这些错在 CI 上要等到工作流被真正触发才暴露，
+  # 本地先跑一遍能省一轮「推送 → 等红灯 → 再改」
+  # 刻意不挂进 verify：actionlint 不是每个贡献者都装了的工具，把它做成硬依赖会让
+  # 只改 Go 代码的人也无从通过校验；缺工具时给出安装指引而不是直接 command not found
+  # 用法：task verify:actions
+  verify:actions:
+    desc: '校验 GitHub Actions 工作流（按需，需 actionlint，用法: task verify:actions）'
+    cmds:
+      - |
+        set -eu
+        if ! command -v actionlint >/dev/null 2>&1; then
+          printf '缺少 actionlint：本任务用它校验 .github/workflows/*.yml\n  安装（brew）：brew install actionlint\n  安装（go）：go install github.com/rhysd/actionlint/cmd/actionlint@latest\n' >&2
+          exit 1
+        fi
+        actionlint .github/workflows/*.yml
+
   # verify:browser 是浏览器层的按需验收，刻意不挂进 verify/default：它要构建二进制、要起真实服务、
   # 要开真实 Chromium，代价比其它检查高一个量级，只在改 WebUI 或交付前跑
   # 二进制构建到系统临时目录而不是 build/：build/ 是 build-all 的地盘，两边同时跑会互相踩
@@ -197,20 +219,15 @@ tasks:
 
         bash tools/api-e2e/unlink.sh "$@"
 
+  # build-all 现在由共享库 eggokit 的 buildall 驱动：平台清单、产物命名与 -ldflags 注入
+  # 全部来自仓库根目录的 release.json，因此「有哪些平台有产物」只有一处真源，
+  # 增删平台只改清单，不再需要人肉同步十几个 build:* 任务（那份同步漏一处就漏一个产物）
+  # --package 走默认值 "."：flk 的 main 包就在仓库根目录，无需显式指定
+  # --version/--build-time 仍由本仓库的 VERSION/BUILDTIME 变量注入，与原实现逐字一致
   build-all:
     desc: Build all platform binaries in parallel
-    deps:
-      - build:windows:386
-      - build:windows:amd64
-      - build:windows:arm64
-      - build:linux:386
-      - build:linux:amd64
-      - build:linux:arm
-      - build:linux:arm64
-      - build:darwin:amd64
-      - build:darwin:arm64
-      - build:freebsd:amd64
-      - build:freebsd:arm64
+    cmds:
+      - go run github.com/jy-eggroll/eggokit/release/cmd/buildall --manifest release.json --version "{{.VERSION}}" --build-time "{{.BUILDTIME}}" --out-dir build --root .
 
   # 构建任务不声明 sources/generates，因为 VERSION 和 BUILDTIME 不参与文件时间戳判断
   # 这样每次显式调用都会真正执行 go build，避免复用嵌入旧版本信息的二进制文件
@@ -220,169 +237,29 @@ tasks:
       - mkdir -p build
       - go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}{{exeExt}} .
 
-  build:windows:386:
-    desc: Cross-compile windows/386
-    cmds:
-      - mkdir -p build
-      - CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-windows-386.exe .
-
-  build:windows:amd64:
-    desc: Cross-compile windows/amd64
-    cmds:
-      - mkdir -p build
-      - CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-windows-amd64.exe .
-
-  build:windows:arm64:
-    desc: Cross-compile windows/arm64
-    cmds:
-      - mkdir -p build
-      - CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-windows-arm64.exe .
-
-  build:linux:386:
-    desc: Cross-compile linux/386
-    cmds:
-      - mkdir -p build
-      - CGO_ENABLED=0 GOOS=linux GOARCH=386 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-linux-386 .
-
-  build:linux:amd64:
-    desc: Cross-compile linux/amd64
-    cmds:
-      - mkdir -p build
-      - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-linux-amd64 .
-
-  build:linux:arm:
-    desc: Cross-compile linux/arm (armv7)
-    cmds:
-      - mkdir -p build
-      - CGO_ENABLED=0 GOOS=linux GOARCH=arm go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-linux-arm .
-
-  build:linux:arm64:
-    desc: Cross-compile linux/arm64
-    cmds:
-      - mkdir -p build
-      - CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-linux-arm64 .
-
-  build:darwin:amd64:
-    desc: Cross-compile darwin/amd64
-    cmds:
-      - mkdir -p build
-      - CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-darwin-amd64 .
-
-  build:darwin:arm64:
-    desc: Cross-compile darwin/arm64 (Apple Silicon)
-    cmds:
-      - mkdir -p build
-      - CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-darwin-arm64 .
-
-  build:freebsd:amd64:
-    desc: Cross-compile freebsd/amd64
-    cmds:
-      - mkdir -p build
-      - CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-freebsd-amd64 .
-
-  build:freebsd:arm64:
-    desc: Cross-compile freebsd/arm64
-    cmds:
-      - mkdir -p build
-      - CGO_ENABLED=0 GOOS=freebsd GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -trimpath -o build/{{.APP}}-freebsd-arm64 .
-
+  # changelog 现在只是一层薄封装：真正的生成逻辑在共享库 eggokit 的 changelog 命令里，
+  # 与 buildall 共用同一份 release.json，因此下载表格里的平台与构建产物不会再各说各话
+  # 语言优先级由命令自己决定（--lang > 清单 releaseNotesLang > 内置默认 en）：
+  # NOTES_LANG 为空时**刻意不传 --lang**，让清单里的 releaseNotesLang(zh-CN) 生效，
+  # 这样默认发布说明仍是中文，与迁移前的输出保持一致
+  # 原始 shell 版本已删除：那版在 CHANGELOG 里找不到当前版本小节时会输出一片空白
+  # （首个正式版 Release 正文为空的根因），共享库版本改为输出点名文件的兜底提示
   changelog:
-    desc: '生成发布更新日志并输出到 stdout（用法: task changelog VERSION=x.y.z [TYPE=release|dev]）'
+    desc: '生成发布更新日志并输出到 stdout（用法: task changelog VERSION=x.y.z [TYPE=release|dev] [NOTES_LANG=zh-CN|en]）'
     cmds:
       - |
         set -e
-        TYPE="{{.TYPE}}"
-        CURRENT_TAG="{{.VERSION}}"
-
-        if [ -z "$CURRENT_TAG" ]; then
+        if [ -z "{{.VERSION}}" ]; then
           echo "Error: VERSION is required. Usage: task changelog VERSION=x.y.z" >&2
           exit 1
         fi
 
-        # 根据类型决定 tag 匹配模式：dev 版匹配任意标签，正式版只匹配 semver
-        if [ "$TYPE" = "dev" ]; then
-          TAG_PATTERN='.'
-        else
-          TAG_PATTERN='^[0-9]+\.[0-9]+\.[0-9]+$'
-        fi
-        PREVIOUS_TAG=$(git tag -l --sort=-version:refname | grep -E "$TAG_PATTERN" | grep -v "^$CURRENT_TAG$" | head -n1 || true)
+        # 用位置参数拼命令行而不是拼字符串：NOTES_LANG 为空时不会多出一个空参数 --lang，
+        # 也不会为了「能不能加引号」纠结
+        set -- --manifest release.json --version "{{.VERSION}}" --type "{{.TYPE}}" --root .
+        if [ -n "{{.NOTES_LANG}}" ]; then set -- "$@" --lang "{{.NOTES_LANG}}"; fi
 
-        # Dev 版本警告头部
-        if [ "$TYPE" = "dev" ]; then
-          echo "## 开发版本 - 仅供测试"
-          echo ""
-          echo "这是一个开发版本，仅供测试使用。请谨慎使用，可能包含不稳定或实验性功能。"
-          echo ""
-        fi
-
-        # 快速下载表格
-        echo "## 快速下载"
-        echo ""
-        echo "| 架构 | Windows | Linux | macOS | FreeBSD |"
-        echo "|------|---------|-------|-------|---------|"
-        echo "| **x86 (32位)** | [x86](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-windows-386.exe) | [x86](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-linux-386) | 不支持 | 不支持 |"
-        echo "| **x64 (64位)** | [x64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-windows-amd64.exe) | [x64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-linux-amd64) | [x64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-darwin-amd64) | [x64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-freebsd-amd64) |"
-        echo "| **ARM64** | [ARM64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-windows-arm64.exe) | [ARM64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-linux-arm64) | [ARM64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-darwin-arm64) | [ARM64](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-freebsd-arm64) |"
-        echo "| **ARM (armv7)** | 不支持 | [ARM](https://github.com/Jy-EggRoll/flk/releases/download/$CURRENT_TAG/flk-linux-arm) | 不支持 | 不支持 |"
-        echo ""
-        echo "> **提示**：Windows 用户下载 .exe 文件，其他系统下载后需要添加执行权限 chmod +x flk-*"
-        echo ""
-        echo "---"
-        echo ""
-
-        # Dev 版本输出版本信息
-        if [ "$TYPE" = "dev" ]; then
-          echo "## 版本信息"
-          echo ""
-          echo "- 版本号: $CURRENT_TAG"
-          echo "- 提交: $(git rev-parse HEAD)"
-          echo ""
-        fi
-
-        # 从 CHANGELOG.md 提取当前版本的更新内容（仅正式版）
-        if [ "$TYPE" != "dev" ] && [ -f "CHANGELOG.md" ]; then
-          echo "## 主要更新内容"
-          awk -v version="$CURRENT_TAG" '
-            /^##/ {
-              if (found) exit
-              if ($0 ~ version) found=1
-              next
-            }
-            found && /^##/ { exit }
-            found { print }
-          ' CHANGELOG.md
-          echo ""
-        fi
-
-        echo "## 详细提交记录"
-        echo ""
-
-        # 用 GitHub compare 链接替代冗长的提交列表
-        if [ -z "$PREVIOUS_TAG" ]; then
-          echo "首次发布"
-        else
-          echo "[查看 $PREVIOUS_TAG 到 $CURRENT_TAG 的完整变更](https://github.com/Jy-EggRoll/flk/compare/$PREVIOUS_TAG...$CURRENT_TAG)"
-          echo ""
-        fi
-
-        echo "---"
-        echo ""
-
-        # 底部信息
-        if [ "$TYPE" = "dev" ]; then
-          echo "## 注意事项"
-          echo ""
-          echo "仅通过 GitHub Release 提供下载"
-          echo "可能包含未经充分测试的功能"
-        else
-          echo "**安装说明：**"
-          echo ""
-          echo "1. 从上方表格中选择并下载对应平台和架构的二进制文件"
-          echo "2. Linux/macOS/BSD 用户需要赋予执行权限：\`chmod +x flk-*\`（建议直接将文件改名为 flk 方便调用和后续的升级）"
-          echo "3. 运行程序（建议直接将文件改名为 flk 方便调用）\`flk help\`"
-          echo ""
-          echo "详细使用说明请参考 [README.md](https://github.com/Jy-EggRoll/flk/blob/main/README.md)"
-        fi
+        go run github.com/jy-eggroll/eggokit/release/cmd/changelog "$@"
 
   clean:
     desc: Remove all build artifacts

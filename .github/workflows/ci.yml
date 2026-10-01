@@ -16,18 +16,21 @@ permissions:
 
 jobs:
     # PR 只做验证不构建，反馈更快；跨平台编译问题由推送触发的 build 任务负责发现
-    # 具体工作（checkout / setup / verify）全部委托给可复用工作流，本文件只保留触发条件与权限
+    # 具体工作（checkout / setup / verify）全部委托给 eggokit 的可复用工作流，本文件只保留触发条件与权限
     verify:
         if: github.event_name == 'pull_request'
-        uses: ./.github/workflows/build.yml
+        uses: Jy-EggRoll/eggokit/.github/workflows/go-release.yml@main
         with:
+            # app 用于拼装 Release 标题，必须与 release.json 里的 app 一致
+            app: flk
             mode: verify-only
 
     # 推送时验证并构建全部平台，产物保留下来，使任意分支都能直接下载二进制做实测
     build:
         if: github.event_name == 'push'
-        uses: ./.github/workflows/build.yml
+        uses: Jy-EggRoll/eggokit/.github/workflows/go-release.yml@main
         with:
+            app: flk
             mode: artifact
             # 推送构建使用时间戳版本号，与发布构建的语义化版本号清楚区分，
             # 也避免本地开发构建被误认为某个正式版本
@@ -37,3 +40,4 @@ jobs:
             # 单次构建 11 个平台约 90MB，保留 3 天足够验证使用，
             # 时间过长会在频繁推送时占满免费存储配额并导致后续上传失败
             retention_days: 3
+            # changelog_lang 不传：留空即用 release.json 里的 releaseNotesLang(zh-CN)

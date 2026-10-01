@@ -1,0 +1,23 @@
+{
+  "app": "flk",
+  "owner": "Jy-EggRoll",
+  "repo": "flk",
+  "assetPrefix": "flk",
+  "ldflagsPackage": "github.com/jy-eggroll/flk/cmd",
+  "proxyPrefix": "https://gh-proxy.org/",
+  "changelogFile": "CHANGELOG.md",
+  "releaseNotesLang": "zh-CN",
+  "platforms": [
+    { "os": "windows", "arch": "386" },
+    { "os": "windows", "arch": "amd64" },
+    { "os": "windows", "arch": "arm64" },
+    { "os": "linux", "arch": "386" },
+    { "os": "linux", "arch": "amd64" },
+    { "os": "linux", "arch": "arm", "arm": "7" },
+    { "os": "linux", "arch": "arm64" },
+    { "os": "darwin", "arch": "amd64" },
+    { "os": "darwin", "arch": "arm64" },
+    { "os": "freebsd", "arch": "amd64" },
+    { "os": "freebsd", "arch": "arm64" }
+  ]
+}

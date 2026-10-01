@@ -11,10 +11,12 @@ permissions:
     contents: write
 
 jobs:
-    # 具体工作全部委托给可复用工作流，本文件只保留触发条件与权限
+    # 具体工作全部委托给 eggokit 的可复用工作流，本文件只保留触发条件与权限
     package:
-        uses: ./.github/workflows/build.yml
+        uses: Jy-EggRoll/eggokit/.github/workflows/go-release.yml@main
         with:
+            # app 用于拼装 Release 标题，必须与 release.json 里的 app 一致
+            app: flk
             # tag 触发：构建后创建开发预发布；手动 dispatch：只上传产物、不建 Release
             # 这道差异改造前由步骤上的 if: github.event_name != 'workflow_dispatch' 实现，
             # 现在改为按事件在 artifact / prerelease 两种投递方式之间切换，语义完全等价
@@ -23,3 +25,4 @@ jobs:
             version_source: ${{ github.event_name == 'workflow_dispatch' && 'dev-timestamp' || 'tag' }}
             artifact_prefix: binaries-
             retention_days: 30
+            # changelog_lang 不传：留空即用 release.json 里的 releaseNotesLang(zh-CN)

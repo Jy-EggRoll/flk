@@ -12,12 +12,15 @@ permissions:
     contents: write
 
 jobs:
-    # 具体工作全部委托给可复用工作流，本文件只保留触发条件与权限
+    # 具体工作全部委托给 eggokit 的可复用工作流，本文件只保留触发条件与权限
     publish:
-        uses: ./.github/workflows/build.yml
+        uses: Jy-EggRoll/eggokit/.github/workflows/go-release.yml@main
         with:
+            # app 用于拼装 Release 标题，必须与 release.json 里的 app 一致
+            app: flk
             mode: release
             # 正式发布取触发标签作为版本号
             version_source: tag
             artifact_prefix: binaries-
             retention_days: 90
+            # changelog_lang 不传：留空即用 release.json 里的 releaseNotesLang(zh-CN)
