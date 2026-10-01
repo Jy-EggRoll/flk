@@ -62,7 +62,7 @@ func guard(h http.Handler, allowedHosts []string) http.Handler {
 		// 读请求不改状态，不参与 CSRF 模型，因此 Origin/Referer 与 body 限制都只作用于写请求
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			// 第 2 道防线：Origin / Referer 同源校验
-			if !sameOriginRequest(r, requestHost) {
+			if !sameOriginRequest(r) {
 				http.Error(w, l10n.T("Forbidden: the request does not come from the same origin", nil), http.StatusForbidden)
 				return
 			}
@@ -159,27 +159,52 @@ func isLoopbackHost(host string) bool {
 //  3. 两者都没有则放行：非浏览器客户端（curl / 脚本 / 自动化）不适用 CSRF 模型，
 //     且它们本就不携带任何浏览器凭据，挡下来只会误伤本地工具
 //
-// 只比较主机名（含 IPv6 归一），不比较 scheme 与端口：本服务只监听一个端口，
-// 且非回环访问已在 Host 校验中被拦下，比较主机足以挡住 DNS rebinding + CSRF 这一目标威胁；
-// 若日后要防「本机另一个端口上的页面发起的请求」，需要在这里补端口比较
+// 比较的是「主机 + 端口」（含 IPv6 归一），不含 scheme：
+//   - 必须比端口：同源的定义是 scheme + host + port 三者相等。只比主机名会放行
+//     http://127.0.0.1:1234 这类页面发起的写请求——本机上任意一个别的服务，
+//     甚至一个临时打开的本地页面，都能借此操作 flk 的文件与清单。本服务没有鉴权，
+//     这条比较是「WebUI 具备文件操作能力」之后唯一挡住 CSRF 的东西
+//   - 不必比 scheme：本服务只提供明文 HTTP，不存在「同主机同端口的 https 页面」，
+//     补上只会多出一处需要随 TLS 状态维护的判断
+//
 // 潜在影响点：Origin 为 "null"（沙箱 iframe、file:// 页面）时 url.Parse 得到空 Host，
-// 与任何合法请求 Host 都不相等，因此会被判为跨站而拒绝——这正是期望行为
-func sameOriginRequest(r *http.Request, requestHost string) bool {
+// 与任何合法请求的 authority 都不相等，因此会被判为跨站而拒绝——这正是期望行为
+func sameOriginRequest(r *http.Request) bool {
+	requestAuthority := normalizeAuthority(r.Host)
 	if origin := r.Header.Get("Origin"); origin != "" {
-		return hostOfURL(origin) == requestHost
+		return authorityOfURL(origin) == requestAuthority
 	}
 	if referer := r.Header.Get("Referer"); referer != "" {
-		return hostOfURL(referer) == requestHost
+		return authorityOfURL(referer) == requestAuthority
 	}
 	return true
 }
 
-// hostOfURL 取出 URL 字符串里的主机名（已归一化），解析失败时返回空串
-// 返回空串而不是原值：任何无法解析的输入都不应该碰巧等于某个合法 Host 而被放行
-func hostOfURL(raw string) string {
+// normalizeAuthority 把 Host 头或 URL 的主机部分归一成「小写主机 + 端口」，供同源比较使用
+//
+// 与 normalizeHost 的唯一区别是端口：normalizeHost 刻意丢掉端口，因为白名单是按主机名授权的
+// （用户不会因为换了个端口就重新授权一次）；而同源比较必须保留端口，否则本机另一个端口上的页面
+// 会被判成与自己同源。两者不能合并成一份实现，这一点是刻意的
+// 不带端口时退回 normalizeHost：裸 IPv6 写法（[::1]）会走这条路径，方括号在那里被去掉
+func normalizeAuthority(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	host, port, err := net.SplitHostPort(trimmed)
+	if err != nil {
+		return normalizeHost(trimmed)
+	}
+	// JoinHostPort 会为 IPv6 补回方括号，因此两端（请求头与 URL）归一后的形态一致
+	return net.JoinHostPort(normalizeHost(host), port)
+}
+
+// authorityOfURL 取出 URL 字符串里的「主机 + 端口」（已归一化），解析失败时返回空串
+// 返回空串而不是原值：任何无法解析的输入都不应该碰巧等于某个合法请求的 authority 而被放行
+func authorityOfURL(raw string) string {
 	parsed, err := url.Parse(raw)
 	if err != nil {
 		return ""
 	}
-	return normalizeHost(parsed.Host)
+	return normalizeAuthority(parsed.Host)
 }

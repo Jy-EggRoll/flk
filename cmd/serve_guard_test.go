@@ -98,8 +98,21 @@ func TestGuardOriginValidation(t *testing.T) {
 			origin: "http://127.0.0.1:8999", wantStatus: http.StatusOK, wantReached: true,
 		},
 		{
-			name: "同 host 不同端口放行（只比较主机名）", method: http.MethodPost, host: "127.0.0.1:8999",
-			origin: "http://127.0.0.1:1234", wantStatus: http.StatusOK, wantReached: true,
+			// 防的回归：本机另一个端口上的页面发起的写请求必须被拒绝。
+			// 早期实现只比较主机名，这一条曾被写成「放行」——那个缺口等于让本机任意
+			// 一个别的服务（甚至临时打开的本地页面）都能操作 flk 的文件与清单，因此改判为拒绝
+			name: "同 host 不同端口拒绝", method: http.MethodPost, host: "127.0.0.1:8999",
+			origin: "http://127.0.0.1:1234", wantStatus: http.StatusForbidden,
+		},
+		{
+			// IPv6 走 net.JoinHostPort 归一（补方括号），与 IPv4 的字符串拼接不是同一条代码路径，
+			// 单独守一条以免只剩 IPv4 用例覆盖时被改坏
+			name: "IPv6 同源带端口放行", method: http.MethodPost, host: "[::1]:8999",
+			origin: "http://[::1]:8999", wantStatus: http.StatusOK, wantReached: true,
+		},
+		{
+			name: "同源 Referer 不同端口拒绝", method: http.MethodPost, host: "127.0.0.1:8999",
+			referer: "http://127.0.0.1:1234/index.html", wantStatus: http.StatusForbidden,
 		},
 		{
 			name: "无 Origin 有同源 Referer 放行", method: http.MethodPost, host: "localhost:8999",
