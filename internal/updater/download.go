@@ -187,7 +187,8 @@ func (u *Updater) download(ctx context.Context, url, dir string, client *http.Cl
 
 	// 暂存文件名由 CreateTemp 随机生成而不采用上游返回的资产名：
 	// 资产名来自外部响应，直接当作文件名会把路径穿越风险引入安装目录
-	staged, err := os.CreateTemp(dir, ".upgrade-*")
+	// 前缀取自 cleanup.go 的 stagingPrefix：残留清理按同一个前缀识别中断下载留下的文件
+	staged, err := os.CreateTemp(dir, stagingPrefix+"*")
 	if err != nil {
 		return transferResult{}, fmt.Errorf("%s: %w", l10n.T("Failed to create a staging file in the install directory (write permission on {{.Dir}} may be required)", map[string]any{"Dir": dir}), err)
 	}

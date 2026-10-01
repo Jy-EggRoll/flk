@@ -13,6 +13,7 @@ package updater
 // 因此改名交接就足以在本进程尚未退出时完成替换
 func replaceExecutable(staged, execPath string) error {
 	// 固定用同一个后辍名而不是每次生成新名：本进程仍在占用这个文件，此刻删不掉，
-	// 固定名字让残留至多一份、并被下一次升级自然覆盖，而不是随升级次数累积
-	return swapExecutable(staged, execPath, execPath+".old")
+	// 固定名字让残留至多一份、并被下一次升级自然覆盖，而不是随升级次数累积；
+	// 真正清掉它的是下一次正常运行开头的 CleanupLeftovers（见 cleanup.go）
+	return swapExecutable(staged, execPath, execPath+oldSuffix)
 }

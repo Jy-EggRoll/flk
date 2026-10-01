@@ -11,6 +11,7 @@ import (
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/prompt"
 	"github.com/jy-eggroll/flk/internal/store"
+	"github.com/jy-eggroll/flk/internal/updater"
 	"github.com/jy-eggroll/flk/pkg/l10n"
 
 	"github.com/pterm/pterm"
@@ -242,6 +243,16 @@ func isBusinessLeaf(command *cobra.Command) bool {
 // Execute 是 CLI 的唯一 Cobra 执行边界，返回进程退出码但绝不自行终止进程
 // Cobra 自身错误和未渲染业务错误在此恰好打印一次；结构化输出已经呈现的错误只返回非零码，避免重复污染 stdout/stderr
 func Execute() int {
+	// 清理上一次升级留下的文件，放在最前面：它与语言、命令树都无关，也不该被后面的提前返回跳过。
+	// 为什么只能等到「下一次运行」才清：升级成功的那一刻，旧版本正是当前进程自己的映像，
+	// 正在运行的进程删不掉自己的映像，只能由下一次运行（旧进程已退出）来收拾
+	//
+	// 失败一律忽略，也不打印任何东西：清理受阻（文件仍被占用、安装目录只读）不该影响这次正常使用，
+	// 用户也不需要看到一条与自己无关的启动提示；清不掉的文件会在下次运行再试
+	if execPath, err := os.Executable(); err == nil {
+		updater.CleanupLeftovers(execPath)
+	}
+
 	// 语言必须先于命令树的构造与执行确定：
 	//  1. flk 的命令以包级变量在包初始化阶段就构造完毕，其中的 Short/Long 与 flag 说明
 	//     在 l10n.Init 之前就被求值（当时只能拿到英文源串），因此 Init 之后要再走一遍
