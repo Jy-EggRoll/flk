@@ -20,6 +20,7 @@ import (
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/store"
 	"github.com/jy-eggroll/flk/pkg/l10n"
+	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 )
 
@@ -189,9 +190,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// 设置文件里的白名单属于可选的长期授权，读取失败只警告不中止：
 	// 一个损坏的设置文件不该让整个 WebUI 起不来，那样用户连「改回配置文件」的界面都打不开；
 	// 降级后仍可用 --allow-host 完成本次授权，且 language 等其它字段的读取路径（LoadLanguage）本就各自容错
+	//
+	// 走 pterm 而不是 logger：这条是启动时面向用户的提示，与紧随其后的服务地址、白名单同属一屏正常输出；
+	// 走 logger 会渲染成 logfmt 行，与 pterm 的信息行混成两种风格（约定见 internal/logger 的包注释）
 	cfg, cfgErr := config.Load()
 	if cfgErr != nil {
-		logger.Warn(l10n.T("Failed to read the settings file; its allowHosts list will be ignored", nil), "error", cfgErr)
+		pterm.Warning.WithWriter(cmd.ErrOrStderr()).Println(l10n.T("Failed to read the settings file; its allowHosts list will be ignored: {{.Err}}", map[string]any{"Err": cfgErr.Error()}))
 	}
 	var fileAllowHosts []string
 	if cfg != nil {
@@ -245,8 +249,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// 非回环绑定意味着同网段任何人都能打开这个 WebUI，而 WebUI 可以直接改写清单文件，
 	// 因此启动时必须明确警告；绑定回环地址（默认）时保持安静，不打扰用户
+	// 与上面两条同理走 pterm：它是启动摘要的一部分，用户必须在同一屏里看到它，而不是一条 logfmt 行
 	if !isLoopbackHost(host) {
-		logger.Warn(l10n.T("The WebUI is bound to a non-loopback address; anyone who can reach this port can read and edit your store file", nil), "host", host)
+		pterm.Warning.WithWriter(cmd.ErrOrStderr()).Println(l10n.T("The WebUI is bound to {{.Host}}, a non-loopback address; anyone who can reach this port can read and edit your store file", map[string]any{"Host": host}))
 	}
 
 	// 把「当前生效的完整白名单」与地址一起打印出来：

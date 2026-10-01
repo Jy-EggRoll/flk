@@ -162,9 +162,16 @@ func prepareCommand(command *cobra.Command) error {
 	logger.Init(logConfig)
 
 	// 级别非法这件事必须说出来：静默降级会让用户以为设置生效了，而"日志怎么变少了"极难自查。
-	// 打印放在 Init 之后，确保这条警告本身就服从刚定下的级别并写入同一个 writer
+	//
+	// 走 pterm 而不是 logger：它与同一屏里的信息行同属「命令的正常输出」，
+	// 走 logger 会被渲染成 level=WARN msg=... 的 logfmt 行，一屏上并存两种风格。
+	// 因此这类面向用户的提示统一由 pterm 承载，logger 只装诊断与审计
+	// （约定见 internal/logger 的包注释）
+	//
+	// 潜在影响点：这条提示不再受 logLevel 约束。实际观感不变——levelErr 非空时级别已回退成默认的
+	// warn，Warn 级日志本来也会输出；而拿一个非法的取值去决定这条提示要不要显示，只会更难理解
 	if levelErr != nil {
-		logger.Warn(l10n.T("Ignoring an invalid logLevel in the settings file", nil), "error", levelErr)
+		pterm.Warning.WithWriter(errWriter).Println(l10n.T("Ignoring an invalid logLevel in the settings file: {{.Err}}", map[string]any{"Err": levelErr.Error()}))
 	}
 
 	// pterm 的交互确认、文本输入和选择器通过包级默认 writer 绘制；统一切到 stderr，避免提示符污染 stdout 业务数据
@@ -175,9 +182,11 @@ func prepareCommand(command *cobra.Command) error {
 	//   - 与 pterm 输出 writer 一样属于进程级配置，集中在本生命周期初始化
 	prompt.Configure(assumeYes)
 
-	// 保留历史容错语义：非法 output 不终止命令，而是警告后回退 table
+	// 保留历史容错语义：非法 output 不终止命令，而是提示后回退 table。
+	// 「用户给的取值不对」属于必须告知且无其它渠道的信息，因此走 pterm 面向用户输出
+	// （为什么不用 logger：见上面 logLevel 那条约定的说明）
 	if outputFormat != "json" && outputFormat != "table" {
-		logger.Warn(l10n.T("Unknown output format, falling back to table", nil), "output", outputFormat)
+		pterm.Warning.WithWriter(errWriter).Println(l10n.T("Unknown output format {{.Format}}, falling back to table", map[string]any{"Format": outputFormat}))
 		outputFormat = "table"
 	}
 
@@ -195,18 +204,22 @@ func prepareCommand(command *cobra.Command) error {
 		}
 	}
 
-	// 平台回调不直接输出，确保权限提示服从日志级别并始终写入当前命令的 stderr
-	if windowsAdminChecker != nil {
-		if windowsAdminChecker() {
-			logger.Info(l10n.T("Running with administrator privileges", nil))
-		} else {
-			logger.Warn(l10n.T("Not running with administrator privileges", nil))
-		}
-	}
-
 	// 欢迎语仅属于真实执行的 table 业务叶子命令；help/completion/version、root 与仅展示帮助的父命令均不会触发
 	if outputFormat == "table" && isBusinessLeaf(command) {
 		_, _ = fmt.Fprintln(errWriter, l10n.T("Welcome to flk!", nil))
+	}
+
+	// 平台回调只返回状态、不自己输出，由这里决定怎么呈现：
+	// 走 pterm 与欢迎语、后续的信息行保持同一种风格（为什么不用 logger 见上面 logLevel 那条）。
+	// 文案要说清后果而不是只报状态——「未以管理员权限运行」本身不构成问题，
+	// 问题在于它会让创建链接失败，只报状态会让人以为该去修点什么
+	//
+	// 已提升权限时刻意什么都不打印：「有管理员权限」不需要用户做任何事，说它只是白占一行
+	//
+	// 顺序放在欢迎语之后：提示是「命令开始执行时的环境说明」，先标题后说明才读得顺；
+	// 反过来会让人以为这条提示属于某段还没结束的输出
+	if windowsAdminChecker != nil && !windowsAdminChecker() {
+		pterm.Warning.WithWriter(errWriter).Println(l10n.T("Not running with administrator privileges; creating symbolic links will fail", nil))
 	}
 	return nil
 }

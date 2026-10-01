@@ -422,7 +422,7 @@ flk config validate                    # 体检设置文件，逐条指出会被
 
 - `language`：界面语言，取值为 `en` 或 `zh-CN`，默认 `en`。命令行 `--lang/-l` 优先级更高
 - `allowHosts`：WebUI 的长期访问白名单，逗号分隔（如 `flk config set allowHosts 192.168.1.5,my.dev.lan`），默认空。与 `--allow-host` 取并集，详见上文「访问控制」
-- `logLevel`：日志级别，取值为 `debug`、`info`、`warn`、`error`，默认 `warn`。命令行 `-v`（Info）/`-vv`（Debug）优先级更高
+- `logLevel`：日志级别，取值为 `debug`、`info`、`warn`、`error`，默认 `warn`。命令行 `-v`（Info）/`-vv`（Debug）优先级更高。它只管**诊断日志**（`-vv` 下带时间、文件行号的那些行）；面向你的提示——例如取值非法时的回退说明、Windows 上的管理员权限说明——属于命令的正常输出，不受该级别约束
 
 几点约定：
 
