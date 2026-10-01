@@ -243,6 +243,7 @@
   "Remove link relationships, replacing links/copies with real files": "解除链接关系，用真实文件替换链接/副本",
   "Removed #{{.Index}}": "解除成功 #{{.Index}}",
   "Removing #{{.Index}}: {{.Device}}/{{.Type}} {{.Paths}}": "正在解除 #{{.Index}}: {{.Device}}/{{.Type}} {{.Paths}}",
+  "Rename failed; falling back to copying into the trash": "改名失败，改为复制进回收站",
   "Repair #{{.Index}} failed": "修复 #{{.Index}} 失败",
   "Repair failed #{{.Index}}: {{.Err}}": "修复失败 #{{.Index}}: {{.Err}}",
   "Repair finished: {{.Ok}} succeeded, {{.Failed}} failed": "修复结束：成功 {{.Ok}} 条，失败 {{.Failed}} 条",

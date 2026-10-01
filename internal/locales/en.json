@@ -292,6 +292,7 @@
   "Remove link relationships, replacing links/copies with real files": "Remove link relationships, replacing links/copies with real files",
   "Removed #{{.Index}}": "Removed #{{.Index}}",
   "Removing #{{.Index}}: {{.Device}}/{{.Type}} {{.Paths}}": "Removing #{{.Index}}: {{.Device}}/{{.Type}} {{.Paths}}",
+  "Rename failed; falling back to copying into the trash": "Rename failed; falling back to copying into the trash",
   "Repair": "Repair",
   "Repair #{{.Index}} failed": "Repair #{{.Index}} failed",
   "Repair failed": "Repair failed",
