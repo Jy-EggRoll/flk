@@ -154,6 +154,11 @@ func (s *serveServer) handleMeta(w http.ResponseWriter, r *http.Request) {
 		"rev":       storeRev(),
 		"version":   Version,
 		"platform":  platformLabel(),
+		// noTrash 告知前端「服务启动时带了 --no-trash」：解除弹窗据此把「真实删除」
+		// 复选框置为勾选且禁用（见 cmd/ui/config.html 的 openUnlinkModal），
+		// 否则用户会看到一个可以取消、而取消后仍会被服务端当成永久删除的开关。
+		// 用字符串而不是布尔：本响应是 map[string]string，全字段同类型更简单
+		"noTrash": fmt.Sprintf("%t", noTrash),
 	}
 	if fi, err := os.Stat(normalizedPath); err == nil {
 		info["modTime"] = fi.ModTime().Format("2006-01-02 15:04:05")
@@ -350,8 +355,13 @@ func (s *serveServer) handleUnlink(w http.ResponseWriter, r *http.Request) {
 
 	// skipConfirm 固定为 true：网页上已经用确认对话框列出过要解除哪一条、后果如何，
 	// 这里再弹一次确认会落到服务端 stdin（无人值守时直接报错），解除必然失败
-	// noTrash 取请求里的取值，让「本次是否真实删除」由用户在对话框里决定
-	if err := unlinkFilesystem(target, true, req.NoTrash, &buf); err != nil {
+	//
+	// noTrash 取「服务级 --no-trash」与「弹窗复选框」的并集，而不是让后者覆盖前者：
+	// 启动时带上 --no-trash 的人意图是「这台服务一律不用回收站」，常见起因是回收站对他
+	// 不可用（跨分区、空间不够）。若被弹窗默认的不勾选盖掉，等于他特意关掉的开关又被悄悄
+	// 打开；而一旦回收站真的不可用，失败信息只会说「移入回收站失败」，很难让人联想到是这里被覆盖。
+	// 前端会把复选框置为勾选且禁用，让这条约定在界面上也看得见
+	if err := unlinkFilesystem(target, true, noTrash || req.NoTrash, &buf); err != nil {
 		fmt.Fprintln(&buf, l10n.T("Removal failed #{{.Index}}: {{.Err}}", map[string]any{"Index": 1, "Err": err.Error()}))
 		// 与 /api/repair 一样广播「链接状态已变化」：解除失败前可能已经删掉了派生位置，
 		// 文件系统状态确实变了，页面需要重跑检测才能反映出来

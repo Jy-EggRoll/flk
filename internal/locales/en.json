@@ -380,6 +380,7 @@
   "The new language takes effect on the next run": "The new language takes effect on the next run",
   "The new log level takes effect on the next run": "The new log level takes effect on the next run",
   "The primary file {{.Path}} does not exist": "The primary file {{.Path}} does not exist",
+  "The server was started with --no-trash, so every deletion in this session is permanent and this option cannot be turned off": "The server was started with --no-trash, so every deletion in this session is permanent and this option cannot be turned off",
   "The settings file has several keys that differ only in case ({{.Key}}), so which one wins is undefined; please keep just one": "The settings file has several keys that differ only in case ({{.Key}}), so which one wins is undefined; please keep just one",
   "The settings file starts with a UTF-8 BOM, which breaks JSON parsing; re-save it as UTF-8 without BOM": "The settings file starts with a UTF-8 BOM, which breaks JSON parsing; re-save it as UTF-8 without BOM",
   "The settings file {{.Path}} is not valid JSON: {{.Err}}": "The settings file {{.Path}} is not valid JSON: {{.Err}}",

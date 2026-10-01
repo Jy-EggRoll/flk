@@ -308,7 +308,8 @@ tr.drag-over { border-top: 2px solid #d97706; }
       <input type="checkbox" id="unlinkNoTrash">
       <label for="unlinkNoTrash">
         <span data-i18n="Delete permanently (unrecoverable)">Delete permanently (unrecoverable)</span>
-        <span class="hint" data-i18n="When checked, the old link is deleted permanently instead of being moved to the trash; the deleted data cannot be recovered">When checked, the old link is deleted permanently instead of being moved to the trash; the deleted data cannot be recovered</span>
+        <span class="hint" id="unlinkTrashHint" data-i18n="When checked, the old link is deleted permanently instead of being moved to the trash; the deleted data cannot be recovered">When checked, the old link is deleted permanently instead of being moved to the trash; the deleted data cannot be recovered</span>
+        <span class="hint hidden" id="unlinkForcedHint" data-i18n="The server was started with --no-trash, so every deletion in this session is permanent and this option cannot be turned off">The server was started with --no-trash, so every deletion in this session is permanent and this option cannot be turned off</span>
       </label>
     </div>
     <pre id="unlinkOutput" class="repair-output hidden"></pre>
@@ -420,6 +421,7 @@ var MSG = {
     'Replaces the link at the derived path with a real copy of the content from the authoritative path, then removes this entry from the config': '解除会把权威路径的真实内容复制到派生位置（派生位置从此成为一份独立副本），并从清单中删除这一条记录',
     'Delete permanently (unrecoverable)': '真实删除（不可恢复）',
     'When checked, the old link is deleted permanently instead of being moved to the trash; the deleted data cannot be recovered': '勾选后旧的链接会被真实删除而不进入回收站，删掉的数据无法恢复',
+    'The server was started with --no-trash, so every deletion in this session is permanent and this option cannot be turned off': '服务以 --no-trash 启动，本次会话中的所有删除都会永久生效，该选项无法取消',
     'Confirm unlink': '确认解除',
     'Unlinking…': '解除中…',
     'Unlink result': '解除结果',
@@ -530,6 +532,8 @@ var unlinkModal      = document.getElementById('unlinkModal');
 var unlinkTitle      = document.getElementById('unlinkTitle');
 var unlinkList       = document.getElementById('unlinkList');
 var unlinkNoTrash    = document.getElementById('unlinkNoTrash');
+var unlinkTrashHint  = document.getElementById('unlinkTrashHint');
+var unlinkForcedHint = document.getElementById('unlinkForcedHint');
 var unlinkOutput     = document.getElementById('unlinkOutput');
 var unlinkConfirmBtn = document.getElementById('unlinkConfirmBtn');
 var unlinkCancelBtn  = document.getElementById('unlinkCancelBtn');
@@ -556,6 +560,8 @@ var checkLoaded   = false;/* 是否已成功完成过一次检测（区分「未
 var repairTargets = [];   /* 当前弹窗待修复的记录，直接来自 checkResults 的无效项 */
 var repairAll     = false;/* 本次修复是全量还是单条：决定 POST /api/repair 的请求体形态 */
 var unlinkTarget  = null; /* 当前解除弹窗的目标记录（来自 checkResults 的有效项）；单条端点，故只需一个 */
+var serverNoTrash = false;/* 服务端是否以 --no-trash 启动（来自 /api/meta）：为真时解除一律真实删除，
+                             弹窗里的复选框只能勾选不能取消，避免给出一个点了也不生效的开关 */
 var beforeUnloadAttached = false; /* beforeunload 是否已注册，避免重复挂载或漏摘 */
 
 /* ---------- UI Helpers ---------- */
@@ -1192,8 +1198,13 @@ function openUnlinkModal(target) {
   unlinkList.innerHTML = '<div class="repair-item"><span class="repair-type">' + escHtml(target.type) + '</span> ' +
     escHtml(target.device) + '<br>' + escHtml(resultPaths(target)) + '</div>';
 
-  /* 每次打开都必须把复选框复位成「不勾」：真实删除不可恢复，绝不能沿用上一次的勾选状态 */
-  unlinkNoTrash.checked = false;
+  /* 每次打开都重新决定复选框的状态，绝不沿用上一次的勾选：真实删除不可恢复。
+     默认复位成「不勾」；但服务端以 --no-trash 启动时它是底线——那种情况下删除一律永久执行，
+     因此强制勾上并禁用，并换成说明缘由的提示，避免给出一个取消后仍会永久删除的假开关 */
+  unlinkNoTrash.checked = serverNoTrash;
+  unlinkNoTrash.disabled = serverNoTrash;
+  unlinkTrashHint.classList.toggle('hidden', serverNoTrash);
+  unlinkForcedHint.classList.toggle('hidden', !serverNoTrash);
 
   /* 回到「确认」阶段：上一轮的结果输出与按钮状态不能残留 */
   unlinkList.classList.remove('hidden');
@@ -1502,6 +1513,10 @@ async function loadMeta() {
       versionInfo.textContent = 'flk ' + meta.version + (meta.platform ? ' · ' + meta.platform : '');
     }
     if (meta.rev) knownRev = meta.rev;
+    /* 服务端以 --no-trash 启动时为 'true'：解除弹窗据此把复选框置为勾选且禁用，
+       让「本次会话一律真实删除」这条约定在界面上可见（缺失该字段时按 false 处理，
+       即沿用旧行为——服务端与页面版本不一致时不该因此卡住解除操作） */
+    if (meta.noTrash === 'true') serverNoTrash = true;
   } catch (_) {
     /* 元信息读取失败不影响配置展示，静默忽略 */
   }
