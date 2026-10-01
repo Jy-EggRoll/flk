@@ -78,6 +78,9 @@ func MoveToTrash(path string) error {
 
 	renameErr := renameFunc(absPath, dest)
 	if renameErr == nil {
+		// 首选路径（同设备 rename）成功是这个函数唯一的正常出口，补一条 Debug 记录「从哪搬到哪」
+		// 与下面「rename 失败改走复制」那条互为对照：有成功记录才能一眼看出本次到底走了哪条路径
+		logger.Debug(l10n.T("Moved to the trash", nil), "from", absPath, "to", dest)
 		return nil
 	}
 

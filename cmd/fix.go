@@ -111,10 +111,18 @@ func RunFix(cmd *cobra.Command, args []string) error {
 	repairSelected := func(indices []int) {
 		for _, idx := range indices {
 			result := invalidResults[idx]
+			// 逐条修复的三段日志：开始（Debug）→ 成功（Info）或失败（Warn）
+			// 放在这个循环而不是 repairResult 内部：repairResult 有多个错误返回点，在它内部逐点补日志会把
+			// 「一条记录一次结果」拆散；而循环这里本就在按「每条」迭代，天然是日志的正确粒度
+			// 字段统一走 recordLogArgs（type/device/from,to），与 unlink、serve 的审计口径一致
+			logger.Debug(l10n.T("Repairing link", nil), recordLogArgs(result)...)
 			if err := repairResult(result, idx, skipConfirm, errOut); err != nil {
+				// 失败用 Warn 而不是 Error：批量修复时单条失败不中断其余记录，符合「用户需知道但可继续」的级别语义
+				logger.Warn(l10n.T("Repair failed", nil), append(recordLogArgs(result), "error", err)...)
 				pterm.Error.WithWriter(errOut).Println(l10n.T("Repair failed #{{.Index}}: {{.Err}}", map[string]any{"Index": idx + 1, "Err": err.Error()}))
 				operationErrors = append(operationErrors, fmt.Errorf("%s: %w", l10n.T("Repair #{{.Index}} failed", map[string]any{"Index": idx + 1}), err))
 			} else {
+				logger.Info(l10n.T("Repaired link", nil), recordLogArgs(result)...)
 				pterm.Success.WithWriter(errOut).Println(l10n.T("Repaired #{{.Index}}", map[string]any{"Index": idx + 1}))
 			}
 		}

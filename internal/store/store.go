@@ -100,6 +100,27 @@ func cloneRootConfig(rc RootConfig) RootConfig {
 	return out
 }
 
+// CountEntries 统计清单中链接记录的总条数，供日志观测「落盘 / 读入 / 改写前后的规模」
+//
+// 之所以单独实现而不复用 cloneRootConfig：后者会为每个字段、每条记录分配整份副本，
+// 只为数一个条数就复制整棵树代价过大；这里只遍历三层 map 累加 len，不产生任何分配
+// nil data 与 nil 各层都能安全遍历（range nil map 零次），因此调用方无需先做归一
+//
+// 导出而非包内私有：cmd 层的 POST /api/config 审计日志要统计「整表改写前后的条目数」，
+// 那时它手里拿到的也是 RootConfig。同一份遍历逻辑若在 cmd 再写一遍，
+// 日后 RootConfig 的层级一变就会两边分叉，而分叉的结果只是日志数字悄悄变得不准
+func CountEntries(rc RootConfig) int {
+	total := 0
+	for _, deviceGroup := range rc {
+		for _, typeGroup := range deviceGroup {
+			for _, entries := range typeGroup {
+				total += len(entries)
+			}
+		}
+	}
+	return total
+}
+
 // newManagerFromData 是 LoadFromFile 所有成功路径的统一出口，保证返回的 Manager 里 data 永不为 nil
 // 关键场景：文件内容为 JSON null 时 json.Unmarshal 会成功并把 RootConfig 留成 nil map，
 // 若直接把 data 塞进 Manager，调用方一 AddRecord 就 panic
@@ -196,7 +217,8 @@ func (m *Manager) AddRecord(device, linkType string, fields map[string]string) {
 
 	// 日志刻意放在解锁之后：logger 落到 stderr / 文件属于可能阻塞的 I/O，
 	// 在写锁内做 I/O 会把所有并发读请求一起拖住
-	logger.Info(l10n.T("Structure created successfully", nil))
+	// 文案按约定去掉 successfully——完成的动作只陈述结果，是否「成功」由「已写入」本身表达
+	logger.Info(l10n.T("Structure created", nil))
 }
 
 // ToJSON 将当前数据序列化为格式化 JSON 字符串
@@ -338,7 +360,14 @@ func (m *Manager) Save(filePath string) error {
 	// 就会留下残缺 JSON，之后每条命令都会在 InitStore 处启动失败，且没有第二份副本可恢复。
 	// 原子写顺带保留了「用户把清单文件做成符号链接链进配置仓库」这一用法的语义，
 	// 因此这里不是「原子」与「保链接」的二选一，两者由 atomicfile.Write 一并满足
-	return atomicfile.Write(expanded, payload)
+	if err := atomicfile.Write(expanded, payload); err != nil {
+		return err
+	}
+	// 只在真正的原子写成功之后才记这条 Debug：失败已由上层处理错误，不能再留下「已保存」的误导
+	// 条目数用 CountEntries 现算（序列化用的 data 是 Snapshot 出来的副本，不改内部状态），
+	// path 给出扩展后的真实落点，二者合起来能回答「这次到底写出去了什么、写到哪」
+	logger.Debug(l10n.T("Store saved", nil), "path", expanded, "count", CountEntries(data))
+	return nil
 }
 
 // LoadFromFile 加载存储文件，自动检测并迁移旧格式（4 层嵌套带 parentPath）
@@ -360,6 +389,9 @@ func LoadFromFile(filePath string) (*Manager, error) {
 	// 内容为裸 null 时这里也会解析成功，data 仍是 nil，交由 newManagerFromData 归一成空表
 	var data RootConfig
 	if err := json.Unmarshal(b, &data); err == nil {
+		// 读入成功后记一条 Debug：条目数直接反映这份清单里到底有多少条链接记录
+		// data 为裸 null 时 Unmarshal 同样成功，CountEntries 对 nil 归零处理，不会 panic
+		logger.Debug(l10n.T("Store loaded", nil), "path", expanded, "count", CountEntries(data))
 		return newManagerFromData(data), nil
 	}
 

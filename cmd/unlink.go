@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/prompt"
@@ -131,10 +132,17 @@ func RunUnlink(cmd *cobra.Command, args []string) error {
 	unlinkSelected := func(indices []int) {
 		for _, idx := range indices {
 			result := validResults[idx]
+			// 逐条解除的三段日志：开始（Debug）→ 成功（Info）或失败（Warn）
+			// 与 fix 的 repairSelected 同构：循环这里就是「每条」的粒度，字段统一走 recordLogArgs（type/device/from,to）
+			// 放在循环而不是 unlinkResult 内部，是因为 unlinkResult 有多个错误返回点，逐点补日志会把单条结果拆散
+			logger.Debug(l10n.T("Removing the link relationship", nil), recordLogArgs(result)...)
 			if err := unlinkResult(result, skipConfirm, errOut); err != nil {
+				// 失败用 Warn 而不是 Error：批量解除时单条失败不中断其余记录，符合「用户需知道但可继续」的级别语义
+				logger.Warn(l10n.T("Removal failed", nil), append(recordLogArgs(result), "error", err)...)
 				pterm.Error.WithWriter(errOut).Println(l10n.T("Removal failed #{{.Index}}: {{.Err}}", map[string]any{"Index": idx + 1, "Err": err.Error()}))
 				operationErrors = append(operationErrors, fmt.Errorf("%s: %w", l10n.T("Removal #{{.Index}} failed", map[string]any{"Index": idx + 1}), err))
 			} else {
+				logger.Info(l10n.T("Removed the link relationship", nil), recordLogArgs(result)...)
 				pterm.Success.WithWriter(errOut).Println(l10n.T("Removed #{{.Index}}", map[string]any{"Index": idx + 1}))
 			}
 		}

@@ -57,9 +57,6 @@ func Symlink(cmd *cobra.Command, args []string) error {
 		return failure(message, errors.New(message))
 	}
 
-	// 日志调用始终执行，是否展示完全由根层配置的日志级别决定
-	logger.Info(l10n.T("Creating a symbolic link", nil), "real", symlinkReal, "fake", symlinkFake, "device", createDevice, "force", createForce)
-
 	normalizedReal, err := pathutil.NormalizePath(symlinkReal)
 	if err != nil {
 		message := l10n.T("Failed to normalize the real file path: {{.Err}}", map[string]any{"Err": err.Error()})
@@ -71,7 +68,6 @@ func Symlink(cmd *cobra.Command, args []string) error {
 		message := l10n.T("Failed to normalize the link file path: {{.Err}}", map[string]any{"Err": err.Error()})
 		return failure(message, fmt.Errorf("%s: %w", l10n.T("Failed to normalize the link file path", nil), err))
 	}
-	logger.Debug(l10n.T("Path normalization complete", nil), "normalizedReal", normalizedReal, "normalizedFake", normalizedFake)
 
 	backupResult, err := shared.HandleTargetBackup(shared.BackupOptions{
 		SourcePath:  normalizedReal,
@@ -90,7 +86,12 @@ func Symlink(cmd *cobra.Command, args []string) error {
 		return failure(err.Error(), err)
 	}
 
-	logger.Info(l10n.T("Creating a symbolic link", nil), "real", normalizedReal, "fake", normalizedFake)
+	// 这是本次创建唯一的一条 Info：它带的是归一化后的路径，也就是真正被落盘的操作对象，
+	// 并合并了原先那条「入参版」Info 独有的 device 与 force
+	// 被删掉的两条是：归一化之前打印原始入参的 Info（打印的还不是最终落盘的路径，参考价值低），
+	// 以及紧随归一化结果的 Debug（打印的路径与这条 Info 完全重复，-vv 下只会多刷一行、没有任何增量信息，
+	// 对定位问题毫无帮助，故整条删除而不是改键名）
+	logger.Info(l10n.T("Creating a symbolic link", nil), "real", normalizedReal, "fake", normalizedFake, "device", createDevice, "force", createForce)
 	if err := symlink.Create(normalizedReal, normalizedFake, backupResult.RemoveOpts); err != nil {
 		if errors.Is(err, safeop.ErrOperationCancelled) {
 			return renderCreateCancellation(cmd, format, resultType)

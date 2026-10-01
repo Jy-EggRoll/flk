@@ -57,8 +57,6 @@ func Hardlink(cmd *cobra.Command, args []string) error {
 		return failure(message, errors.New(message))
 	}
 
-	logger.Info(l10n.T("Creating a hard link", nil), "prim", hardlinkPrim, "seco", hardlinkSeco, "device", createDevice, "force", createForce)
-
 	normalizedPrim, err := pathutil.NormalizePath(hardlinkPrim)
 	if err != nil {
 		message := l10n.T("Failed to normalize the primary file path: {{.Err}}", map[string]any{"Err": err.Error()})
@@ -70,7 +68,6 @@ func Hardlink(cmd *cobra.Command, args []string) error {
 		message := l10n.T("Failed to normalize the secondary file path: {{.Err}}", map[string]any{"Err": err.Error()})
 		return failure(message, fmt.Errorf("%s: %w", l10n.T("Failed to normalize the secondary file path", nil), err))
 	}
-	logger.Debug(l10n.T("Path normalization complete", nil), "normalizedPrim", normalizedPrim, "normalizedSeco", normalizedSeco)
 
 	backupResult, err := shared.HandleTargetBackup(shared.BackupOptions{
 		SourcePath:  normalizedPrim,
@@ -89,7 +86,11 @@ func Hardlink(cmd *cobra.Command, args []string) error {
 		return failure(err.Error(), err)
 	}
 
-	logger.Info(l10n.T("Creating a hard link", nil), "prim", normalizedPrim, "seco", normalizedSeco)
+	// 这是本次创建唯一的一条 Info：它带的是归一化后的路径，也就是真正被落盘的操作对象，
+	// 并合并了原先那条「入参版」Info 独有的 device 与 force
+	// 被删掉的两条是：归一化之前打印原始入参的 Info，以及紧随归一化结果、与这条 Info 路径完全重复的 Debug
+	// （后者在 -vv 下只会多刷一行、没有任何增量信息，故整条删除而不是改键名）
+	logger.Info(l10n.T("Creating a hard link", nil), "prim", normalizedPrim, "seco", normalizedSeco, "device", createDevice, "force", createForce)
 	if err := hardlink.Create(normalizedPrim, normalizedSeco, backupResult.RemoveOpts); err != nil {
 		if errors.Is(err, safeop.ErrOperationCancelled) {
 			return renderCreateCancellation(cmd, format, resultType)

@@ -59,8 +59,6 @@ func Copy(cmd *cobra.Command, args []string) error {
 		return failure(message, errors.New(message))
 	}
 
-	logger.Info(l10n.T("Copying file", nil), "src", copySrc, "dst", copyDst, "device", createDevice, "force", createForce)
-
 	normalizedSrc, err := pathutil.NormalizePath(copySrc)
 	if err != nil {
 		message := l10n.T("Failed to normalize the source file path: {{.Err}}", map[string]any{"Err": err.Error()})
@@ -72,7 +70,11 @@ func Copy(cmd *cobra.Command, args []string) error {
 		message := l10n.T("Failed to normalize the destination file path: {{.Err}}", map[string]any{"Err": err.Error()})
 		return failure(message, fmt.Errorf("%s: %w", l10n.T("Failed to normalize the destination file path", nil), err))
 	}
-	logger.Debug(l10n.T("Path normalization complete", nil), "normalizedSrc", normalizedSrc, "normalizedDst", normalizedDst)
+	// copy 与 symlink / hardlink 的差异：它原本只有一条 Info，且用的是未经归一化的入参，
+	// 归一化后的真实操作对象反而只出现在一条键名不合规的 Debug 里
+	// 这里把两者合并为一条 Info：保留「归一化后路径」这个真正的操作对象，并补上 device 与 force
+	// 放在归一化之后、任何文件系统操作之前，因此无论后续走常规复制还是智能回填，都先记录下本次要操作的目标
+	logger.Info(l10n.T("Copying file", nil), "src", normalizedSrc, "dst", normalizedDst, "device", createDevice, "force", createForce)
 
 	srcInfo, _ := os.Stat(normalizedSrc)
 	dstInfo, _ := os.Stat(normalizedDst)

@@ -41,7 +41,8 @@ func Create(src, dst string, force, smart, noTrash bool, outputs ...io.Writer) e
 	}
 
 	if !dstExists {
-		logger.Debug(l10n.T("The destination file does not exist", nil))
+		// 目标不存在是常规分支，与 symlink/hardlink 采用同一条措辞，具体对象由 path 字段承载
+		logger.Debug(l10n.T("The derived path does not exist", nil), "path", dst)
 	}
 
 	if dstExists && dstInfo.IsDir() {
@@ -49,10 +50,11 @@ func Create(src, dst string, force, smart, noTrash bool, outputs ...io.Writer) e
 	}
 
 	if dstExists && !smart {
-		logger.Debug(l10n.T("The destination file exists and smart mode is off; asking whether to delete", nil), "path", dst)
+		logger.Debug(l10n.T("The derived path exists and smart mode is off; asking whether to delete", nil), "path", dst)
 		if _, removeErr := safeop.RemoveWithConfirm(dst, safeop.RemoveOptions{Force: force, NoTrash: noTrash, Output: progressOutput}); removeErr != nil {
 			if errors.Is(removeErr, safeop.ErrOperationCancelled) {
-				logger.Info(l10n.T("User cancelled deleting the destination file", nil), "path", dst)
+				// 用户看过确认后选了否，是正常交互结果而非异常，按约定用 Debug，不在 -v 时刷屏
+				logger.Debug(l10n.T("User cancelled the deletion", nil), "path", dst)
 				return removeErr
 			}
 			return removeErr
@@ -65,7 +67,8 @@ func Create(src, dst string, force, smart, noTrash bool, outputs ...io.Writer) e
 			parentPath := filepath.Dir(dst)
 			if _, removeErr := safeop.RemoveWithConfirm(parentPath, safeop.RemoveOptions{Force: force, NoTrash: noTrash, Output: progressOutput}); removeErr != nil {
 				if errors.Is(removeErr, safeop.ErrOperationCancelled) {
-					logger.Info(l10n.T("User cancelled deleting the destination parent path", nil), "path", parentPath)
+					// 删父路径时的取消同样属于正常交互结果，级别为 Debug，措辞与其它取消路径统一
+					logger.Debug(l10n.T("User cancelled the deletion of the parent path", nil), "path", parentPath)
 					return removeErr
 				}
 				return removeErr
@@ -93,7 +96,7 @@ func Create(src, dst string, force, smart, noTrash bool, outputs ...io.Writer) e
 	if _, err := io.Copy(to, from); err != nil {
 		// 主错误继续上抛；清理失败无法替代主错误，因此只记录 warn 供诊断
 		if removeErr := os.Remove(dst); removeErr != nil {
-			logger.Warn(l10n.T("Failed to clean up the destination file after the copy failed", nil), "path", dst, "error", removeErr)
+			logger.Warn(l10n.T("Failed to clean up the derived path after the copy failed", nil), "path", dst, "error", removeErr)
 		}
 		return err
 	}
@@ -101,7 +104,7 @@ func Create(src, dst string, force, smart, noTrash bool, outputs ...io.Writer) e
 	if err := to.Close(); err != nil {
 		// 关闭失败意味着写入结果不可信，尽力删除半成品；清理失败只记 warn，保留原始关闭错误
 		if removeErr := os.Remove(dst); removeErr != nil {
-			logger.Warn(l10n.T("Failed to clean up the destination file after closing it failed", nil), "path", dst, "error", removeErr)
+			logger.Warn(l10n.T("Failed to clean up the derived path after the close failed", nil), "path", dst, "error", removeErr)
 		}
 		return err
 	}

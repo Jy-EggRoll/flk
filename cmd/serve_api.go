@@ -24,6 +24,7 @@ import (
 	"sync"
 
 	"github.com/jy-eggroll/flk/internal/config"
+	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/internal/store"
@@ -129,6 +130,12 @@ func (s *serveServer) handleConfig(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, l10n.T("Save failed: {{.Err}}", map[string]any{"Err": saveErr.Error()}), http.StatusInternalServerError)
 			return
 		}
+		// 审计：POST /api/config 是清单唯一的整表改写入口，成功落盘后记下「改写前后条目数的变化」
+		// 放在 saveErr 判定之后，只记真正写下去的那一次；失败的情况由响应体的错误信息承载，不再重复记一行日志
+		// previous 取的是写盘前的内存快照（深拷贝，落盘失败时还会用它回滚），此处只读不改
+		logger.Info(l10n.T("Store manifest replaced", nil),
+			"previous", store.CountEntries(previous),
+			"count", store.CountEntries(newData))
 		// 保存成功后广播变更并回传版本号：前端保存成功时记下这个 rev，
 		// 随后的 SSE 事件带上同一个 rev 就会被判定为「本页自己保存」，不做多余重载
 		s.hub.notify(rev)
@@ -267,10 +274,15 @@ func (s *serveServer) handleRepair(w http.ResponseWriter, r *http.Request) {
 		// 这里再弹一次确认会落到服务端 stdin（无人值守时直接报错），修复必然失败
 		if err := repairResult(item, idx, true, &buf); err != nil {
 			failed++
+			// 审计：失败的修复用 Warn 记录（带 error），成功的不在这里记，统一放到下面一行 Info，
+			// 目的是「一条记录一条结果」，与 CLI fix 的逐条日志口径一致（字段同样走 recordLogArgs）
+			logger.Warn(l10n.T("Repair failed", nil), append(recordLogArgs(item), "error", err)...)
 			fmt.Fprintln(&buf, l10n.T("Repair failed #{{.Index}}: {{.Err}}", map[string]any{"Index": idx + 1, "Err": err.Error()}))
 			outcomes = append(outcomes, repairOutcome{Device: item.Device, Type: item.Type, Paths: paths, Success: false, Error: err.Error()})
 			continue
 		}
+		// 审计：修复的对象与结果（Info），字段走 recordLogArgs，便于和 CLI fix 的日志一起聚合
+		logger.Info(l10n.T("Repaired link", nil), recordLogArgs(item)...)
 		fmt.Fprintln(&buf, l10n.T("Repaired #{{.Index}}", map[string]any{"Index": idx + 1}))
 		outcomes = append(outcomes, repairOutcome{Device: item.Device, Type: item.Type, Paths: paths, Success: true})
 	}
@@ -362,6 +374,8 @@ func (s *serveServer) handleUnlink(w http.ResponseWriter, r *http.Request) {
 	// 打开；而一旦回收站真的不可用，失败信息只会说「移入回收站失败」，很难让人联想到是这里被覆盖。
 	// 前端会把复选框置为勾选且禁用，让这条约定在界面上也看得见
 	if err := unlinkFilesystem(target, true, noTrash || req.NoTrash, &buf); err != nil {
+		// 审计：文件系统层面的解除失败（可能已删掉派生位置），用 Warn 记录并带上 error 与 recordLogArgs 字段
+		logger.Warn(l10n.T("Removal failed", nil), append(recordLogArgs(target), "error", err)...)
 		fmt.Fprintln(&buf, l10n.T("Removal failed #{{.Index}}: {{.Err}}", map[string]any{"Index": 1, "Err": err.Error()}))
 		// 与 /api/repair 一样广播「链接状态已变化」：解除失败前可能已经删掉了派生位置，
 		// 文件系统状态确实变了，页面需要重跑检测才能反映出来
@@ -403,6 +417,18 @@ func (s *serveServer) handleUnlink(w http.ResponseWriter, r *http.Request) {
 		// 清单确实变了，广播 updated（携带新 rev）：其它打开的页面据此重载并看到记录已消失；
 		// 本页的前端在响应回来后会自己重载一次，不依赖这次广播的时序
 		s.hub.notify(rev)
+	}
+
+	// 审计：把「解除了哪一条」（recordLogArgs 的 type/device/from,to）与最终结果落进日志
+	// 三类结局分别对应：清单移除后又落盘失败（带 saveErr）、清单里根本没找到这条记录、
+	// 以及真正的成功；文件系统层面的失败已在上面提前 return，不在此重复
+	switch {
+	case saveErr != nil:
+		logger.Warn(l10n.T("Removal failed", nil), append(recordLogArgs(target), "error", saveErr)...)
+	case !removed:
+		logger.Warn(l10n.T("Removal failed", nil), recordLogArgs(target)...)
+	default:
+		logger.Info(l10n.T("Removed the link relationship", nil), recordLogArgs(target)...)
 	}
 	writeActionResponse(w, removed && saveErr == nil, nil, buf.String())
 }
@@ -475,6 +501,11 @@ func (s *serveServer) handleLanguage(w http.ResponseWriter, r *http.Request) {
 	// 广播给所有打开的页面（包括发起本次切换的这个标签页）：语言是进程级状态，
 	// 每个页面注入的语言与命令树文案都要跟着对齐，整页重载是最省事也最不易出错的同步方式
 	s.hub.notifyLanguage()
+
+	// 审计：语言是进程级状态，切换成功后必须留下记录；目标语言用归一化后的 resolved 而不是请求里的原始写法，
+	// 因为 zh-Hant 这类变体会被收敛成 zh-CN，记下真正生效的那个才与落盘、回传一致
+	// 目标语言为什么并入文案：约定的键名白名单没有语言类键，故走文案模板渲染
+	logger.Info(l10n.T("Language switched", nil), "language", resolved)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"success": true, "language": resolved})

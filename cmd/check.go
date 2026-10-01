@@ -52,6 +52,10 @@ type CheckResult = output.CheckResult
 // RunCheck 执行链接检查并把业务结果写入命令标准输出
 // 检查或输出失败由 Cobra 统一处理并转换为非零退出；记录无效属于正常业务结果，不应作为命令错误返回
 func RunCheck(cmd *cobra.Command, args []string) error {
+	// 开始检查的 Debug：-vv 下先落一行「已进入检查」，把「检查根本没跑」与「检查跑了但结果为空」区分开
+	// 只记动作本身、不记过滤条件：device/type/dir 的过滤口径属于命令行语义，排查时看命令行比看日志更直接
+	logger.Debug(l10n.T("Checking links", nil))
+
 	deviceFilters := parseDeviceFilters(checkDevice)
 	results, err := performCheck(CheckOptions{
 		DeviceFilters: deviceFilters,
@@ -69,7 +73,11 @@ func RunCheck(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("%s: %w", l10n.T("Output failed", nil), err)
 	}
 
-	logger.Info(l10n.T("Check complete", nil))
+	// 检查统计：总数与无效数一并入日志，让「链接全部正常」与「有坏链接但被输出吞掉」在日志层面可区分
+	// 无效数直接复用 filterCheckResults 的过滤结果，不另外手写一遍遍历，避免与过滤口径分叉
+	logger.Info(l10n.T("Check complete", nil),
+		"count", len(results),
+		"invalid", len(filterCheckResults(results, false)))
 	return nil
 }
 
@@ -371,6 +379,21 @@ func recordValues(result output.CheckResult) (string, string) {
 		return result.Src, result.Dst
 	}
 	return "", ""
+}
+
+// recordLogArgs 组装「记录级日志」的公共结构化字段：链接类型、设备名与一对路径
+//
+// 一对路径按 store 的领域字段顺序给出（权威副本在前、派生位置在后），值来自 recordValues，
+// 键名固定为约定的 from / to 而不是按类型动态生成 real/fake 等：同一条记录的日志字段集合
+// 保持稳定，日志系统才好做聚合；而「权威 → 派生」正是修复与解除两条链路的实际搬运方向
+//
+// 抽取理由（熵减）：fix / unlink / serve 三处都要「开始 / 成功 / 失败」各打一条带同样字段的日志，
+// 若各拼一份，字段顺序与命名一旦调整就会只改一处、漏改另一处，导致同类日志在不同命令里字段不一致
+// 潜在影响点：本函数是纯映射，不读全局状态；未知类型时 recordValues 返回两个空串，
+// 此处如实透传空值，不额外造错误分支（真出问题也会由后续的 Unknown type 逻辑报错）
+func recordLogArgs(result output.CheckResult) []any {
+	from, to := recordValues(result)
+	return []any{"type", result.Type, "device", result.Device, "from", from, "to", to}
 }
 
 // buildRecordEntry 依据检查结果构造在 store 中定位同一条记录的匹配键
