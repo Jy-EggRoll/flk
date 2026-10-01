@@ -2,42 +2,17 @@
 
 package updater
 
-import (
-	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
-
-	"github.com/jy-eggroll/flk/pkg/l10n"
-)
-
-// replaceExecutable 通过延迟批处理脚本完成替换
+// replaceExecutable 在 Windows 上通过「原地改名交接」替换当前可执行文件
 //
-// Windows 上正在运行的映像文件被内核锁定，既不能覆盖也不能删除，
-// 因此必须把替换动作交给一个独立于当前进程的脚本，在进程退出后再执行；
-// 脚本承担等待、替换与失败保留三件事，具体内容见 planWindowsUpgrade
+// 旧实现在这里写一个批处理脚本、等进程退出后再由脚本复制覆盖。那条路在安装目录含非 ASCII 字符时
+// 会静默失败（脚本按 UTF-8 落盘、cmd.exe 按本地代码页读取，路径被解码成乱码），
+// 而且脚本是「丢出去就不管」的，主进程会误报「升级完成」——用户直到下次看版本号才发现没换上。
+// 完整的失败过程与取舍见 swapExecutable 的注释
 //
-// 与 Unix 路径的能力差异是平台固有的，不是实现取舍：
-// Unix 靠内核允许重命名覆盖运行中的文件，因此完全不需要脚本
+// 与 Unix 的差别仍然存在，但不再需要外部脚本：Windows 只禁止覆盖运行中的映像，不禁止给它改名，
+// 因此改名交接就足以在本进程尚未退出时完成替换
 func replaceExecutable(staged, execPath string) error {
-	plan := planWindowsUpgrade(staged, execPath)
-	dir := filepath.Dir(execPath)
-
-	if err := os.WriteFile(plan.ScriptPath, []byte(plan.Script), 0o644); err != nil {
-		// 脚本都没能创建，替换注定不会发生，把暂存文件一并清掉避免留下垃圾
-		_ = os.Remove(staged)
-		return fmt.Errorf("%s: %w", l10n.T("Failed to write the upgrade script (write permission on {{.Dir}} may be required)", map[string]any{"Dir": dir}), err)
-	}
-
-	cmd := exec.Command("cmd", "/c", plan.ScriptPath)
-	cmd.Dir = dir
-	if err := cmd.Start(); err != nil {
-		_ = os.Remove(staged)
-		_ = os.Remove(plan.ScriptPath)
-		return fmt.Errorf("%s: %w", l10n.T("Failed to start the upgrade script", nil), err)
-	}
-
-	// 脚本已成功交付，替换会在当前进程退出后发生；
-	// 这里只做交付确认，不能等待脚本完成，否则会与"等待本进程退出"互相死锁
-	return nil
+	// 固定用同一个后辍名而不是每次生成新名：本进程仍在占用这个文件，此刻删不掉，
+	// 固定名字让残留至多一份、并被下一次升级自然覆盖，而不是随升级次数累积
+	return swapExecutable(staged, execPath, execPath+".old")
 }
