@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jy-eggroll/flk/internal/atomicfile"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/pkg/l10n"
 )
@@ -401,85 +402,5 @@ func writeEntriesAt(path string, entries []settingEntry) error {
 	}
 	buf.WriteString("}\n")
 
-	return writeFileAtomic(expanded, buf.Bytes())
-}
-
-// writeFileAtomic 通过"同目录临时文件 + rename"原子地替换目标文件。
-//
-// 临时文件必须与目标同目录：rename 只在同一文件系统内才是原子的，把临时文件放到
-// 系统临时目录会退化成"复制 + 删除"，崩溃窗口依然存在。
-//
-// 顺序是 Write → Sync → Close → Chmod → Rename：rename 只保证"文件名替换"这一步原子，
-// 不保证数据已落盘；缺了 Sync，断电后可能出现"新文件名 + 空内容"，效果等同于清空设置
-func writeFileAtomic(path string, data []byte) (err error) {
-	// 目标可能是符号链接：用户可以把设置文件链进自己的配置仓库，与 flk-store.json 是同一种用法。
-	// 必须让写入落到链接指向的真实文件上——本函数最终用 rename 落位，而 rename 替换的是
-	// 「路径上的那个名字」，直接写链接路径会把链接本身换成普通文件，用户的仓库与
-	// ~/.config 下的入口从此脱钩，直到下次同步才发现两边各写各的
-	//
-	// 两条解析路径覆盖两种链接形态：
-	//  1. 链接的目标已存在：走 EvalSymlinks，它会把整条链（含链上的目录链接）都解到底
-	//  2. 链接是断的（目标还没被创建——例如刚把设置文件链进配置仓库，仓库侧那份还没写）：
-	//     EvalSymlinks 会对缺失的目标报错，此时不能用它。改为手工沿链接走一步到目标路径，
-	//     让首次写入**落在用户指定的位置**并保持链接完好；
-	//     若直接沿用链接自身的路径，rename 会把链接替换成普通文件，用户"把配置放进仓库"的
-	//     意图就被静默推翻了
-	if resolved, resolveErr := filepath.EvalSymlinks(path); resolveErr == nil {
-		path = resolved
-	} else if target, linkErr := os.Readlink(path); linkErr == nil {
-		if !filepath.IsAbs(target) {
-			target = filepath.Join(filepath.Dir(path), target)
-		}
-		// 只走一步：多级断链（链接指向另一个断链）会在这里停下并把链接建在下一跳的位置上，
-		// 结果仍是"文件出现在用户链路的下一个节点"，不会写坏别处
-		path = target
-	}
-
-	dir := filepath.Dir(path)
-
-	// 目录可能不存在（首次运行，或用户把配置放到一个新位置），先按需创建
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-
-	// 权限沿用目标文件原有的权限位，首次创建时为 0644。
-	// 设置文件里没有密钥，但也没必要因为一次写回而改变用户既有的权限设置
-	mode := os.FileMode(0o644)
-	if fi, statErr := os.Stat(path); statErr == nil {
-		mode = fi.Mode().Perm()
-	}
-
-	tmp, err := os.CreateTemp(dir, ".flk-config-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-
-	// 失败路径统一清理临时文件：留着它既污染配置目录，也会让后续排查的人
-	// 误以为"有一份没写完的设置"。成功路径上它已经被 rename 掉，Remove 会失败但无妨
-	defer func() {
-		if err != nil {
-			_ = os.Remove(tmpName)
-		}
-	}()
-
-	if _, err = tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err = tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err = tmp.Close(); err != nil {
-		return err
-	}
-	// CreateTemp 建出来的文件是 0600，落位前显式对齐用户原有的权限位
-	if err = os.Chmod(tmpName, mode); err != nil {
-		return err
-	}
-	if err = os.Rename(tmpName, path); err != nil {
-		return err
-	}
-	return nil
+	return atomicfile.Write(expanded, buf.Bytes())
 }

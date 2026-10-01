@@ -535,6 +535,60 @@ func TestSaveReturnsErrorWhenParentIsFile(t *testing.T) {
 	}
 }
 
+// TestSaveFollowsSymlink 守住「清单文件本身是符号链接时，Save 必须写在链接指向的真实文件上」
+//
+// 这一条防的是两类回归：一是落盘改用 rename 后把链接写成了普通文件（用户把清单链进
+// 配置仓库的用法被静默推翻），二是为了保住链接而退回非原子直写（崩溃时又会出现截断文件）。
+// 因此除了断言链接还在、内容落在真实文件上，还断言链接所在的目录里没有残留临时文件
+func TestSaveFollowsSymlink(t *testing.T) {
+	const device = "device-symlink-save"
+
+	dir := t.TempDir()
+	realPath := filepath.Join(dir, "repo", "flk-store.json")
+	linkPath := filepath.Join(dir, "flk-store.json")
+	if err := os.MkdirAll(filepath.Dir(realPath), 0o755); err != nil {
+		t.Fatalf("准备仓库目录失败: %v", err)
+	}
+	if err := os.WriteFile(realPath, []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("准备真实文件失败: %v", err)
+	}
+	if err := os.Symlink(realPath, linkPath); err != nil {
+		t.Fatalf("创建符号链接失败: %v", err)
+	}
+
+	m := newTestManager()
+	m.AddRecord(device, "symlink", Entry{"real": foldedJoin("flk", "real"), "fake": foldedJoin("flk", "fake")})
+	if err := m.Save(linkPath); err != nil {
+		t.Fatalf("Save 失败: %v", err)
+	}
+
+	fi, err := os.Lstat(linkPath)
+	if err != nil {
+		t.Fatalf("lstat 链接失败: %v", err)
+	}
+	if fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("清单链接被写成了普通文件，用户放进仓库的用法被推翻")
+	}
+
+	loaded, err := LoadFromFile(realPath)
+	if err != nil {
+		t.Fatalf("从真实文件读回失败: %v", err)
+	}
+	if !reflect.DeepEqual(loaded.Snapshot(), m.Snapshot()) {
+		t.Fatalf("链接指向的真实文件内容与内存不一致\n实际: %#v\n期望: %#v", loaded.Snapshot(), m.Snapshot())
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("读取目录失败: %v", err)
+	}
+	for _, e := range entries {
+		if e.Name() != "flk-store.json" && e.Name() != "repo" {
+			t.Fatalf("落盘后残留了多余文件 %q", e.Name())
+		}
+	}
+}
+
 // TestLoadFromFileMissingFile 验证文件不存在时返回 nil manager 与可被 os.IsNotExist 识别的错误
 // 这层语义是 InitStore 区分「首次运行」和「真故障」的唯一依据
 func TestLoadFromFileMissingFile(t *testing.T) {

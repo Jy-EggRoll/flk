@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/jy-eggroll/flk/internal/atomicfile"
 	"github.com/jy-eggroll/flk/internal/logger"
 	"github.com/jy-eggroll/flk/internal/pathutil"
 	"github.com/jy-eggroll/flk/pkg/l10n"
@@ -311,7 +312,12 @@ func InitStore(storePath string) error {
 	return nil
 }
 
-// Save 将数据持久化到指定文件
+// Save 将数据原子地持久化到指定文件
+//
+// 「原子」的含义见 internal/atomicfile：先写同目录临时文件并 Sync，再 rename 落位。
+// 潜在影响点：filePath 是符号链接时（用户把清单链进配置仓库）写入落在链接指向的真实文件上，
+// 链接本身保持完好；但 rename 会换掉 inode，因此文件对原有硬链接会脱钩，自定义属主与
+// ACL/xattr 也不会被继承——这是原子性换来的代价，详见 atomicfile 的说明
 func (m *Manager) Save(filePath string) error {
 	// 序列化在 Snapshot 出的私有副本上进行：读锁保证拿到的是某一时刻完整一致的清单，
 	// 随后的排序与 Marshal 都作用在这份副本上，既不需要长时间持锁，也不会为落盘而去改写内部顺序
@@ -327,13 +333,12 @@ func (m *Manager) Save(filePath string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(expanded), 0755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(expanded, payload, 0644); err != nil {
-		return err
-	}
-	return nil
+	// 落盘走项目统一的原子写（同目录临时文件 + rename，跟随符号链接）：
+	// 清单是用户链接记录的唯一存放处，此前的截断写一旦在中途被打断（崩溃、磁盘满、断电）
+	// 就会留下残缺 JSON，之后每条命令都会在 InitStore 处启动失败，且没有第二份副本可恢复。
+	// 原子写顺带保留了「用户把清单文件做成符号链接链进配置仓库」这一用法的语义，
+	// 因此这里不是「原子」与「保链接」的二选一，两者由 atomicfile.Write 一并满足
+	return atomicfile.Write(expanded, payload)
 }
 
 // LoadFromFile 加载存储文件，自动检测并迁移旧格式（4 层嵌套带 parentPath）

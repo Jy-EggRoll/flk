@@ -333,33 +333,6 @@ func TestSetKeyAtLeavesNoTempFile(t *testing.T) {
 	}
 }
 
-// TestWriteFileAtomicCleansTempOnFailure 验证落位失败时会清掉临时文件
-//
-// 手段是把目标路径做成一个非空目录：rename 到目录上必然失败，从而走到清理分支。
-// 这一条必须单独守——失败路径上的临时文件不会被任何成功用例发现，
-// 而它恰恰是用户最容易在"磁盘满了/权限不对"之后撞见的东西
-func TestWriteFileAtomicCleansTempOnFailure(t *testing.T) {
-	dir := t.TempDir()
-	target := filepath.Join(dir, "flk-config.json")
-	if err := os.MkdirAll(filepath.Join(target, "sub"), 0o755); err != nil {
-		t.Fatalf("准备非空目录失败: %v", err)
-	}
-
-	if err := writeFileAtomic(target, []byte("{}\n")); err == nil {
-		t.Fatal("目标是非空目录时写入应当失败")
-	}
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("读取目录失败: %v", err)
-	}
-	for _, e := range entries {
-		if e.Name() != "flk-config.json" {
-			t.Fatalf("失败后残留了临时文件 %q", e.Name())
-		}
-	}
-}
-
 // TestSetLanguageWritesDefaultPath 验证默认路径入口真的落在 ~/.config/flk/flk-config.json
 //
 // 前因：WebUI 切换语言调用的正是 SetLanguage（无路径版本），它的路径拼接一旦与读取侧
