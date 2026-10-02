@@ -53,6 +53,9 @@ html,body { height: 100%; }
   --radius: 10px;
   --radius-lg: 16px;
   --mono: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+  /* 页签专用：未选中底色 / 选中底色（「更亮」在浅色=纯白、暗色=更亮的面，见按钮式页签一节） */
+  --tab-bg: var(--surface-2);
+  --tab-active-bg: var(--surface);
   /* 下拉箭头按主题换色：令牌里存整条 background-image，组件规则只引用 */
   --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a8a29e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
 }
@@ -85,6 +88,9 @@ html[data-theme="dark"] {
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, .35);
   --shadow-lg: 0 16px 48px rgba(0, 0, 0, .55);
+  /* 暗色下「更亮的选中页签」= 比 surface-2 再亮一档的面（token 体系里就是 surface-3） */
+  --tab-bg: var(--surface-2);
+  --tab-active-bg: var(--surface-3);
   --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238f8880' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
 }
 
@@ -251,51 +257,57 @@ html[data-theme="dark"] .btn-add { color: #1c1008; }
   background: linear-gradient(90deg, var(--accent), var(--accent-soft));
 }
 
-/* ========== 浏览器式页签 ==========
-   三条筛选条（平台/设备/链接类型）统一改成浏览器页签的形态：
-   每个页签是圆角顶的「小卡片」，坐在一条基线上（border-bottom），
-   未选中时是平静的透明态，悬停浮起为浅色按钮（淡淡的按钮效果），
-   选中时白底描边 + 顶部一条品牌色刻线——参照 Firefox/Chrome 的页签语言，
-   用户对「一排可点的东西 + 一条基线 + 选中项高亮」有肌肉记忆 */
+/* ========== 按钮式页签 ==========
+   三条筛选条（平台/设备/链接类型）统一为「带形状的按钮」：
+   未选中也常驻描边 + 底色，可点击性一目了然——纯文字页签在移动端换行后
+   尤其看不出哪里能点；选中项更亮（浅色=纯白、暗色=更亮的面）+ 品牌色描边，
+   并保留顶部高亮条，那条琥珀刻线是选中态最抓眼的信号
+   旧的「基线」（tab-bar 的 border-bottom）随之移除：按钮不再坐在一条线上，
+   窄屏换行成两行按钮也不会像两行裸文字那样难看 */
 .tab-bar {
-  display: flex; gap: 4px; flex-wrap: wrap; align-items: flex-end;
-  border-bottom: 1px solid var(--border);
+  display: flex; gap: 6px; flex-wrap: wrap;
   padding: 0 2px; margin-bottom: 16px;
 }
 .tab {
-  position: relative; top: 1px;
-  padding: 7px 14px 8px;
+  position: relative;
+  padding: 6.5px 14px 7.5px;
   font-size: 12.5px; font-weight: 600; font-family: inherit;
-  border: 1px solid transparent; border-bottom: none;
-  border-radius: 9px 9px 0 0;
-  background: transparent; color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--tab-bg);
+  color: var(--text-2);
   cursor: pointer; white-space: nowrap; text-align: center;
   transition: background-color .14s ease, color .14s ease, border-color .14s ease;
 }
 .tab:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
-/* 未选中悬停：浮起成浅色按钮 */
-.tab:hover { background: var(--surface-2); color: var(--text); border-color: var(--border); }
-.tab.active { background: var(--surface); color: var(--accent-strong); border-color: var(--border-strong); }
-/* 选中刻线：页签顶部的品牌色短横，浏览器页签的经典高亮语言 */
+/* 未选中悬停：面加深一档（浅色变灰、暗色变亮），形状感更清楚 */
+.tab:hover { background: var(--surface-3); color: var(--text); border-color: var(--border-strong); }
+/* 选中：更亮的面 + 品牌色描边与文字 */
+.tab.active { background: var(--tab-active-bg); color: var(--accent-strong); border-color: var(--accent); }
+/* 选中高亮条：页签顶部的品牌色短横，跨在描边上，是「这一颗被选中」的第一信号 */
 .tab.active::before {
-  content: ""; position: absolute; left: 12px; right: 12px; top: -1px;
+  content: ""; position: absolute; left: 10px; right: 10px; top: -1px;
   height: 2.5px; border-radius: 0 0 3px 3px; background: var(--accent);
 }
 /* 含删除 × 的设备页签：文字与 × 之间留呼吸，× 默认半隐、悬停显现 */
 .tab-dev { display: inline-flex; align-items: center; gap: 7px; }
-/* 新建设备：虚线描边的幽灵页签，与普通页签区分「这是一个动作而不是一个值」 */
-.tab-new { border-style: dashed; border-bottom: none; color: var(--text-3); }
+/* 新建设备：虚线描边的幽灵按钮，与普通页签区分「这是一个动作而不是一个值」 */
+.tab-new { border-style: dashed; color: var(--text-3); background: transparent; }
 .tab-new:hover { color: var(--accent-strong); border-color: var(--accent); background: var(--accent-soft); }
 
 /* ========== 表格卡片 ==========
-   保留 overflow:hidden 以裁出圆角——代价是放弃粘性表头（粘性定位会被
-   overflow:hidden 的祖先劫持）；三重分层阴影替代单层阴影，卡片更「浮」更轻 */
+   overflow-x: auto：窄屏（表格超出可见宽度）时横向滑动而不是把列压扁——
+   路径列被压到几十像素宽时读路径比滑动更费劲；桌面宽度足够，不出现滚动条
+   圆角裁剪依旧成立（滚动容器同样按 border-radius 裁内容），粘性表头依旧放弃
+   （overflow 容器会劫持粘性定位，见最初注释） */
 .table-wrap {
   background: var(--surface); border-radius: 13px; border: 1px solid var(--border);
-  overflow: hidden;
+  overflow-x: auto;
   box-shadow: var(--shadow-sm), var(--shadow-md);
 }
-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+/* 最小宽度是「不压扁」的底座：给路径列留出可读的宽度，而不是让六个固定列
+   把两个路径列挤成竖条；宽度足够时表格仍是 100% 撑满 */
+table { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 13.5px; }
 th {
   font-size: 10.5px; font-weight: 700; color: var(--text-3);
   text-transform: uppercase; letter-spacing: .09em; text-align: left;
@@ -305,7 +317,11 @@ th {
 td { padding: 7px 14px; border-bottom: 1px solid var(--surface-3); vertical-align: middle; }
 tbody tr:last-child td { border-bottom: none; }
 tbody tr { transition: background-color .12s ease; }
-tbody tr:hover { background: var(--surface-2); }
+/* 斑马条纹：偶数行铺一档浅底，扫读长清单时行与行不再粘连——
+   三档阶梯全用既有令牌：奇数行 surface / 偶数行 surface-2 / 悬停 surface-3，
+   两种主题下「更深一档」的方向各自成立（浅色变灰、暗色变亮） */
+tbody tr:nth-child(even) { background: var(--surface-2); }
+tbody tr:hover { background: var(--surface-3); }
 /* 行号在悬停时点亮为品牌色：给出「这一行是活的」的反馈 */
 tbody tr:hover td.num-col { color: var(--accent); }
 tr.dragging { opacity: .45; background: var(--accent-soft) !important; }
@@ -532,6 +548,28 @@ html[data-theme="dark"] .modal-overlay { background: rgba(0, 0, 0, .6); }
 .unlink-check .hint { display: block; font-size: 12px; font-weight: 400; color: var(--danger-strong); margin-top: 3px; }
 /* 无效条目悬停时的红底：与 danger-bg 区分，只在亮色主题需要（暗色的 danger-bg 已是暗红） */
 .health-bad:hover { filter: brightness(.97); }
+
+/* ========== 移动端 ==========
+   两层适配，各管一件事：
+   pointer:coarse 按「输入方式是触摸」命中（手机/平板，无论横竖屏与宽度）：
+   输入类控件字号一律 16px——iOS Safari 对小于 16px 的输入框聚焦时会自动放大
+   整页，这是唯一可靠的规避方式；模拟器里看不出来，真机上点任何路径格都会触发
+   max-width 按「视口宽度」命中：页头/主区/弹窗的内边距与宽度收紧，给内容让宽度 */
+@media (pointer: coarse) {
+  .cell-input, #filterInput, .add-device-form input,
+  .modal-box select, .modal-box input[type="text"] { font-size: 16px; }
+}
+@media (max-width: 640px) {
+  .header { padding: 10px 14px; }
+  .header h1 { font-size: 15.5px; }
+  .header-right { gap: 8px; }
+  .msg-bar { padding: 10px 12px 0; }
+  .main { padding: 16px 12px 22px; }
+  .footer { padding: 10px 12px 14px; }
+  .filter-bar { justify-content: stretch; }
+  .filter-box { width: 100%; max-width: none; }
+  .modal-box { width: auto; max-width: none; padding: 20px 18px; }
+}
 
 </style>
   <script>
