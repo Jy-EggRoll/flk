@@ -60,7 +60,7 @@ func init() {
 	// 与设置文件的分工：全局设置文件 ~/.config/flk/flk-config.json 的 allowHosts 字段是它的等价物
 	//（用 `flk config set allowHosts a,b` 或 `flk config reset allowHosts` 维护，不必手工编辑文件），
 	// 两者是并集关系（见 runServe 里的白名单组装），命令行适合临时授权，设置文件适合长期生效
-	// 潜在影响点：白名单条目只做「主机名/IP 字面量」比对（见 serve_guard.go 的 normalizeHost），
+	// 潜在影响点：白名单条目只做「主机名/IP 字面量」比对（见 eggokit/webui 的 normalizeHost），
 	// 因此填域名时该域名解析到哪个 IP 不受约束——这是用户显式授权的结果，不是绕过
 	serveCmd.Flags().StringSlice("allow-host", nil,
 		l10n.T("Extra hosts allowed to access the WebUI; the WebUI can operate on your files, so list only hosts you trust (repeatable or comma-separated)", nil))

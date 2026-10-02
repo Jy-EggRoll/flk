@@ -14,7 +14,6 @@ serveServer 是这些端点的接收者：端点之间唯一共享的状态就�
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -75,46 +74,6 @@ type serveServer struct {
 	//
 	// 它与 writeMu 保护的对象不同（设置文件 vs 清单文件），因此不存在锁序问题
 	languageMu *sync.Mutex
-}
-
-// handleIndex 处理首页 GET /，输出注入当前语言的嵌入式 HTML 页面
-func (s *serveServer) handleIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// 禁止缓存：页面里注入了当前语言（见 servedConfigHTML），而"切换语言后整页重载"
-	// 是前端唯一的对齐手段——若浏览器拿缓存顶上，重载后仍是切换前的语言，
-	// 用户会以为切换失败。页面只有几十 KB，禁用缓存没有性能代价
-	w.Header().Set("Cache-Control", "no-store")
-	w.Write(servedConfigHTML())
-}
-
-/*
-serveAsset 服务拆分后的静态资源（ui/style.css 与 ui/app.js，见 serve_web.go 的三个 embed）
-
-缓存策略与页面的 no-store 刻意不同，用 ETag 内容哈希 + no-cache 协商：
-  - 资源字节内嵌在二进制里，同一次构建内永不变更，ETag 恒定，重复请求全部走 304
-  - 换新二进制后字节变了、ETag 跟着变，浏览器必然拿到新版本——
-    避免「HTML 已是新版本、JS 还是浏览器缓存里的旧版本」的错配；
-    页面自身因为注入语言必须 no-store，两套策略各管各的理由，不共用
-
-etag 在构造时算一次（内容是只读的 embed 切片，进程生命周期内不变），
-而不是每个请求都做一次 SHA-256——把「不可变资源」这个事实直接编码进实现
-*/
-func serveAsset(body []byte, contentType string) http.HandlerFunc {
-	etag := fmt.Sprintf(`"%x"`, sha256.Sum256(body))
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("ETag", etag)
-		w.Header().Set("Cache-Control", "no-cache")
-		if r.Header.Get("If-None-Match") == etag {
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-		w.Header().Set("Content-Type", contentType)
-		w.Write(body)
-	}
 }
 
 // handleConfig 处理 /api/config：GET 读取 store JSON，POST 保存前端传来的 JSON

@@ -25,9 +25,11 @@
 #   - 回收站靠 XDG_DATA_HOME 重定向到临时目录（internal/trash 优先读 $XDG_DATA_HOME/flk/trash），
 #     真实家目录 ~/.local/share/flk/trash 与用户的真实文件都不受影响
 #   - 端口不写死，也不自己做「探测空闲端口」：探测用的 socket 关掉到被测进程绑定之间是有一段
-#     竞态窗口的。这里反过来——给 flk 一个随机起始端口，它内部会从该端口起顺延到可用端口
-#     （cmd/serve_web.go 的 listenWithRetry），并把**实际**用上的端口打进启动摘要
-#     「Service started: http://localhost:<port>」，本脚本再从日志里把它读出来。
+#     竞态窗口的。这里反过来——给 flk 一个随机起始端口，它内部的端口策略（webui.Sequential）
+#     会从该端口起顺延到可用端口，并把**实际**用上的端口与访问 token 一起打进启动摘要
+#     「Service started: http://<host>:<port>/?token=<token>」，本脚本再从日志里把它读出来
+#     （主机名由 webui 按实际绑定地址生成，因此解析只认「http://host:port」这个形状；
+#     token 是 webui 的门禁要求，见下面 BASE 之后的取用与包装）。
 #     这与 tools/e2e/verify.mjs「等启动行解析真实端口」的做法是同一套约定，且不再需要
 #     python3 之类的空闲端口探测工具
 #
@@ -148,7 +150,7 @@ SERVE_PID=$!
 # 用英文语言包时这些文案与 l10n 的英文源串逐字一致，断言才有意义
 PORT=""
 for _ in $(seq 1 150); do
-  LINE="$(grep -oE 'localhost:[0-9]+' "$WORK/serve.log" | head -n 1 || true)"
+  LINE="$(grep -oE 'https?://[^/[:space:]]+:[0-9]+' "$WORK/serve.log" | head -n 1 || true)"
   if [ -n "$LINE" ]; then PORT="${LINE##*:}"; break; fi
   # 进程都已经不在了就没必要继续等，直接跳出走下面的失败分支
   kill -0 "$SERVE_PID" 2>/dev/null || break
@@ -160,6 +162,18 @@ if [ -z "$PORT" ]; then
   exit 1
 fi
 BASE="http://localhost:$PORT"
+
+# webui 的 tokenGate 保护 "/" 与 "/api/" 前缀，所有 /api/ 请求都必须带 token。
+# 用一层同名函数携带凭据：脚本里有十几处 curl 调用，逐处补参数既啰嗦又必然漏掉某一处，
+# 而漏掉的那处会以 401 的形式表现为「断言值不对」，非常难查。
+# 走请求头而不是查询参数：下面有些调用自带 query string，拼查询参数更容易出错
+TOKEN="$(grep -oE 'token=[A-Za-z0-9_-]+' "$WORK/serve.log" | head -n 1 | cut -d= -f2 || true)"
+if [ -z "$TOKEN" ]; then
+  echo "启动摘要里没有 token，无法访问受保护的 /api/ 端点，日志如下：" >&2
+  cat "$WORK/serve.log" >&2
+  exit 1
+fi
+curl() { command curl -H "X-WebUI-Token: $TOKEN" "$@"; }
 
 # 启动摘要出现不等于 HTTP 已经能服务，再探一次 /api/meta
 for _ in $(seq 1 150); do

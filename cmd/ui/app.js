@@ -43,6 +43,32 @@ var REPAIR_API = '/api/repair';
 var UNLINK_API = '/api/unlink';
 var LANGUAGE_API = '/api/language';
 
+/* ---------- token ----------
+   首屏地址由 Go 端生成，形如 http://<host>:8999/?token=<随机串>：webui 的门禁只保护 "/" 与
+   "/api/" 前缀（静态资源一律放行），所以页面能正常加载，但页面里每个 API 请求都必须自带凭据，
+   否则全部 401、页面看起来像白屏。
+   首屏只能靠查询参数——浏览器地址栏发起的导航请求无法附加请求头；此后统一改用 X-WebUI-Token 头。
+   刻意不把 token 从地址栏清掉：用户明确选了「token 留在 URL 里」这种最简方案，刷新还能直接复用 */
+var TOKEN = new URLSearchParams(location.search).get('token') || '';
+
+/* apiFetch 是所有 API 请求的唯一出口：token 在这里统一塞进请求头，
+   调用方不必各自记得这件事（漏一处就是一处静默 401）。
+   用 Object.assign 复制一份 headers：调用方传进来的对象可能还在别处使用，就地改写会留下意外副作用 */
+function apiFetch(url, options) {
+  var opts = options || {};
+  var headers = Object.assign({}, opts.headers);
+  headers['X-WebUI-Token'] = TOKEN;
+  opts.headers = headers;
+  return fetch(url, opts);
+}
+
+/* apiURL 把 token 放进查询参数，专供无法自定义请求头的场合。
+   目前唯一的调用点是 SSE：EventSource 不支持自定义请求头，token 只能走查询参数
+   （webui 的门禁同时接受查询参数与请求头，因此这条可行） */
+function apiURL(url) {
+  return url + (url.indexOf('?') === -1 ? '?' : '&') + 'token=' + encodeURIComponent(TOKEN);
+}
+
 /* 每种链接类型的字段定义 */
 var TYPE_FIELDS = {
   symlink: [
@@ -719,7 +745,7 @@ function healthBadge(entry) {
 async function loadCheckStatus() {
   checkInfoEl.textContent = tr('Checking…');
   try {
-    var resp = await fetch(CHECK_API);
+    var resp = await apiFetch(CHECK_API);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     var payload = await resp.json();
     checkPlatform = payload.platform || '';
@@ -853,7 +879,7 @@ async function doRepair() {
   repairCount.textContent = tr('Repairing…');
 
   try {
-    var resp = await fetch(REPAIR_API, {
+    var resp = await apiFetch(REPAIR_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -940,7 +966,7 @@ async function doUnlink() {
   unlinkTitle.textContent = tr('Unlinking…');
 
   try {
-    var resp = await fetch(UNLINK_API, {
+    var resp = await apiFetch(UNLINK_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -1210,7 +1236,7 @@ function resolveConflict(reload) {
 /* 读取文件元信息并同步 knownRev */
 async function loadMeta() {
   try {
-    var meta = await fetch(META_API).then(function (r) { return r.json(); });
+    var meta = await apiFetch(META_API).then(function (r) { return r.json(); });
     if (meta.storePath) storePathEl.textContent = trf('Path: {path}', {path: meta.storePath});
     var info = '';
     if (meta.modTime) info += trf('Modified: {time}', {time: meta.modTime});
@@ -1237,7 +1263,7 @@ async function loadMeta() {
    非 force 时若存在未保存改动，绝不覆盖用户输入，改为弹出冲突提示条 */
 async function loadConfig(force) {
   try {
-    var resp = await fetch(STORE_API);
+    var resp = await apiFetch(STORE_API);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     var fetched = await resp.json();
 
@@ -1290,7 +1316,7 @@ async function saveConfig() {
        用户完全可能继续打字、删行、新增、拖拽换序，
        这些新改动不属于本次写盘内容，后续必须能与快照区分开 */
     var sentBody = JSON.stringify(data);
-    var resp = await fetch(STORE_API, {
+    var resp = await apiFetch(STORE_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: sentBody
@@ -1349,7 +1375,9 @@ function discardChanges() {
    连接必须在页面初始化时立刻建立：若延迟建立，这段时间内发生的文件变更事件会永久丢失，
    用户就会看到一份不弹冲突、也不自动重载的过期页面 */
 function connectSSE() {
-  var es = new EventSource(EVENT_API);
+  /* token 只能走查询参数：EventSource 无法自定义请求头（见 apiURL 的说明），
+     漏掉这一步 SSE 会静默 401——页面照常渲染，但实时更新再也不会到达 */
+  var es = new EventSource(apiURL(EVENT_API));
   /* 连接状态只有一个来源：EventSource 自己。
      onerror 在浏览器自动重连期间也会触发，此时先如实显示「已断开」，重连成功后 onopen 再改回来 */
   es.onopen  = function () { setOnline(true); };
@@ -1398,7 +1426,7 @@ function connectSSE() {
 async function switchLanguage(lang) {
   langSelect.disabled = true;
   try {
-    var resp = await fetch(LANGUAGE_API, {
+    var resp = await apiFetch(LANGUAGE_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ language: lang })

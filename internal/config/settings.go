@@ -152,9 +152,9 @@ func (s Setting) effective(raw map[string]any) any {
 // stringList 把 JSON 解码后的值整理成字符串列表，并做元素级清洗：
 // 只接受数组，元素必须是字符串，元素去首尾空白、丢弃空串。
 //
-// 为什么丢弃空串：白名单里的空主机名不存在（见 cmd/serve_guard.go 的 normalizeHost 会在归一化后返回空串并被跳过），
+// 为什么丢弃空串：白名单里的空主机名不存在（eggokit/webui 的 normalizeHost 会把空串归一成空串并跳过），
 // 留着它只会让用户误以为配置已经生效。
-// 注意这里刻意不做"归一化"（不去端口、不转小写）：那是 guard 的职责，且它同时作用于请求侧与允许侧，
+// 注意这里刻意不做"归一化"（不去端口、不转小写）：那是 webui 护栏的职责，且它同时作用于请求侧与允许侧，
 // 在配置解析阶段提前归一反而会引入第二份可能漂移的实现
 func stringList(v any) ([]string, bool) {
 	items, ok := v.([]any)

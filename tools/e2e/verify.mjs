@@ -13,8 +13,12 @@
  *      「端口被占则 +1 顺延」逻辑，所以即便有极小概率的竞态也不会撞车
  *   3. store 文件里的路径一律指向本次运行的临时目录，且真实创建了文件/符号链接/硬链接，
  *      让 /api/check 能同时产出「有效」与「无效」两种真实状态，而不是一堆假路径
- *   4. `--lang zh-CN` 下被测进程的启动行是中文（服务已启动: http://localhost:N），
- *      因此端口解析只认 localhost:(\d+)，不认英文原串
+ *   4. `--lang zh-CN` 下被测进程的启动行是中文（服务已启动：http://<host>:N/?token=...）。
+ *      解析只认「http(s)://host:port」这个形状，不认固定主机名：地址里的主机名由 webui 按
+ *      实际绑定地址生成（默认 127.0.0.1，--host 换成别的就跟着变），写死 localhost 会解析不到。
+ *      导航一律走 127.0.0.1（回环地址在白名单内），token 从同一行的 `?token=` 里取出。
+ *      这一条是硬要求：webui 的 tokenGate 保护 "/" 与 "/api/" 前缀，地址与请求不带 token 时
+ *      页面是 401 白屏、断言只会看到「元素找不到」，因此取不到 token 必须当场报错而不是继续跑
  *   5. 旧实现的 watchStoreFile 轮询里 lastModTime 是零值，服务起来约 1 秒后必然触发
  *      一次「假变更」SSE + 重载。脚本在开页面之前先等过这一跳，避免它污染 B5/B6 的时序
  *   6. 每条断言前都从 pristine 夹具重置 store（外部写盘 + 轮询确认服务端已读回内存），
@@ -461,13 +465,15 @@ async function main() {
   const stderrChunks = []
   let startupLineSeen = ''
   let base = ''
+  let token = ''
   child.stdout.on('data', (chunk) => {
     const text = chunk.toString()
     stdoutChunks.push(text)
     for (const line of text.split('\n')) {
-      if (base === '' && /localhost:\d+/.test(line)) {
+      if (base === '' && /https?:\/\/[^\s/]+:\d+/.test(line)) {
         startupLineSeen = line.trim()
-        base = `http://127.0.0.1:${line.match(/localhost:(\d+)/)[1]}`
+        base = `http://127.0.0.1:${line.match(/https?:\/\/[^\s/]+:(\d+)/)[1]}`
+        token = (line.match(/[?&]token=([A-Za-z0-9_-]+)/) || [])[1] || ''
       }
     }
   })
@@ -475,20 +481,32 @@ async function main() {
   // spawn 失败（二进制不存在/无执行权限）不会抛错，只会发 error 事件；不接住的话表现为「等启动行超时」看不出原因
   child.on('error', (error) => stderrChunks.push(`\n[spawn error] ${error.message}\n`))
 
+  /**
+   * api 把 token 拼进查询参数后返回完整地址。
+   * 为什么 Node 侧统一用查询参数而不是请求头：webui 的 tokenGate 两者都接受，
+   * 而查询参数让 GET / POST / SSE 三种调用点的写法一致，不必让十几处调用各自记得加一个头
+   */
+  const api = (path) => `${base}${path}${path.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
+
   let browser
   let page
   let code = 1
   let setupFailed = false
   try {
     // 等启动行；同时容忍端口顺延（解析到的是真实端口）
-    await waitUntil(() => base !== '', 15000, '等待启动行（含 localhost:<port>）')
+    await waitUntil(() => base !== '', 15000, '等待启动行（含 http://host:port）')
     report.note(`启动行原文：${JSON.stringify(startupLineSeen)}`)
+    // token 缺失只可能是启动摘要的格式变了（例如退回旧实现）；此时立刻失败并说清原因，
+    // 否则后续每条断言都会以「找不到元素」的面目失败，看不出真正的原因
+    if (token === '') {
+      throw new Error(`启动行里没有 ?token= 查询参数，无法访问受保护页面；启动行原文=${JSON.stringify(startupLineSeen)}`)
+    }
 
     // 等 /api/meta 就绪
     await waitUntil(
       async () => {
         try {
-          const resp = await fetch(`${base}/api/meta`)
+          const resp = await fetch(api('/api/meta'))
           return resp.ok
         } catch {
           return false
@@ -590,7 +608,7 @@ async function main() {
       let lastSeen = ''
       for (;;) {
         try {
-          const payload = await (await fetch(`${base}/api/config`)).json()
+          const payload = await (await fetch(api('/api/config'))).json()
           lastSeen = canonicalStore(payload)
           if (lastSeen === canonicalPristine) return
         } catch (error) {
@@ -609,7 +627,7 @@ async function main() {
     /** 重置 store + 整页重载 + 切到目标平台/设备/类型 */
     const resetAndOpen = async () => {
       await resetStore()
-      await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' })
+      await page.goto(`${base}/?token=${encodeURIComponent(token)}`, { waitUntil: 'domcontentloaded' })
       await page.waitForSelector('#panel:not(.hidden)', { timeout: 10000 })
       await page.waitForFunction(() => document.querySelectorAll('tbody tr').length > 0, undefined, {
         timeout: 10000,
@@ -674,7 +692,7 @@ async function main() {
          只作用于宿主平台——页签不对齐时徽标全程显示「—」、行内按钮不渲染，像功能坏了
          断言刻意自校准：期望值从 /api/meta 实时读取，而不是硬编码 linux，
          这样这条断言在任何宿主平台上跑都是对的（CI 换机器也不需要改） */
-      const meta = await fetch(`${base}/api/meta`).then((r) => r.json())
+      const meta = await fetch(api('/api/meta')).then((r) => r.json())
       const hostFamily = String(meta.platform || '').split('-')[0]
       const activePlatform = await page.locator('#platformTabs .tab.active').textContent()
       expect(
@@ -774,7 +792,7 @@ async function main() {
         diskAfter === diskBefore,
         `期望：撤销不写盘，磁盘内容与操作前逐字节相同；实际：操作前 ${diskBefore.length} 字节，操作后 ${diskAfter.length} 字节，是否相同=${diskAfter === diskBefore}`,
       )
-      const apiPayload = await (await fetch(`${base}/api/config`)).json()
+      const apiPayload = await (await fetch(api('/api/config'))).json()
       const apiValues = (apiPayload?.[PLAT]?.[DEV]?.[TYPE] ?? []).map((entry) => entry.real)
       expect(
         apiValues.includes(original) && !apiValues.includes(`${original}.edited`),
@@ -826,7 +844,7 @@ async function main() {
         found === 1,
         `期望：磁盘文件里 ${PLAT}/${DEV}/${TYPE} 有一条 real=${JSON.stringify(newValue)}；实际：匹配 ${found} 条，该组实际 real 取值=${JSON.stringify(entries.map((e) => e.real))}`,
       )
-      const apiPayload = await (await fetch(`${base}/api/config`)).json()
+      const apiPayload = await (await fetch(api('/api/config'))).json()
       const apiValues = (apiPayload?.[PLAT]?.[DEV]?.[TYPE] ?? []).map((entry) => entry.real)
       expect(
         apiValues.includes(newValue),
@@ -987,7 +1005,7 @@ async function main() {
       await waitUntil(
         async () => {
           try {
-            const serverText = await (await fetch(`${base}/api/config`)).text()
+            const serverText = await (await fetch(api('/api/config'))).text()
             serverHasMarker = serverText.includes(EXTERNAL_MARKER)
           } catch {
             serverHasMarker = false
@@ -1159,7 +1177,7 @@ async function main() {
         `期望：删除一条后脏计数为 1；实际：#dirtyCount 文本=${JSON.stringify(dirtyText)}`,
       )
       // 用规范化精确比对代替「不含 .saved/.edited」这种子串判断：后者在值本身以这些字符串结尾时会误判
-      const apiCanonical = canonicalStore(await (await fetch(`${base}/api/config`)).json())
+      const apiCanonical = canonicalStore(await (await fetch(api('/api/config'))).json())
       const diskCanonical = canonicalStore(JSON.parse(readFileSync(storeFile, 'utf8')))
       expect(
         apiCanonical === canonicalPristine && diskCanonical === canonicalPristine,
@@ -1279,7 +1297,7 @@ async function main() {
     })
 
     await check('X4', '附加：GET /api/meta 返回 rev 字段（spec 3.2）', async () => {
-      const payload = await (await fetch(`${base}/api/meta`)).json()
+      const payload = await (await fetch(api('/api/meta'))).json()
       expect(
         typeof payload.rev === 'string' && payload.rev.length > 0,
         `期望：/api/meta 含非空字符串 rev；实际：rev=${JSON.stringify(payload.rev)}，全部字段=${JSON.stringify(Object.keys(payload))}`,
@@ -1287,8 +1305,8 @@ async function main() {
     })
 
     await check('X5', '附加：POST /api/config 返回 rev（spec 3.3）', async () => {
-      const current = await (await fetch(`${base}/api/config`)).json()
-      const resp = await fetch(`${base}/api/config`, {
+      const current = await (await fetch(api('/api/config'))).json()
+      const resp = await fetch(api('/api/config'), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(current),
@@ -1307,7 +1325,7 @@ async function main() {
       let dataLine
       let rawBuffer = ''
       try {
-        const resp = await fetch(`${base}/api/events`, {
+        const resp = await fetch(api('/api/events'), {
           signal: controller.signal,
           headers: { accept: 'text/event-stream' },
         })
@@ -1644,7 +1662,10 @@ async function main() {
       expect(idx >= 0, `期望：存在 real=${markerA} 的目标行；实际=${JSON.stringify(await fieldValues(page, 'real'))}`)
       await inputAt(idx).fill(`${markerA}.x10`)
       const metaRev = await page.evaluate(async () => {
-        const meta = await (await fetch('/api/meta')).json()
+        // 页面内直连 /api/meta 必须自带 token：app.js 的 apiFetch 封装在 IIFE 里，evaluate 拿不到它，
+        // 因此这里自己从 location.search 取一次（webui 的门禁同时接受查询参数与 X-WebUI-Token 头）
+        const token = new URLSearchParams(location.search).get('token') || ''
+        const meta = await (await fetch('/api/meta', { headers: { 'X-WebUI-Token': token } })).json()
         return meta.rev ?? null
       })
       await page.evaluate(() => {

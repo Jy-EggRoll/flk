@@ -2,20 +2,19 @@ package cmd
 
 import (
 	"bytes"
-	_ "embed"
+	"embed"
 	"encoding/json"
 	"fmt"
-	"net"
+	"io/fs"
 	"net/http"
 	"os"
-	"os/exec"
 	"runtime"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/jy-eggroll/eggokit/l10n"
 	"github.com/jy-eggroll/eggokit/logger"
+	"github.com/jy-eggroll/eggokit/webui"
 	"github.com/jy-eggroll/flk/internal/config"
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
@@ -37,16 +36,27 @@ import (
     var MSG 表，这是它不能搬去 app.js 的硬约束）+ 首帧前的主题/语言引导脚本
   - ui/style.css：全部样式（设计令牌 + 组件规则，浅/暗两套主题）
   - ui/app.js：全部页面逻辑（IIFE，消费 HTML 里定义的全局 MSG 与 window.__FLK_LANG__）
+
+三者整体嵌成一份目录、再交给 webui 包托管：原先按文件各嵌一份、由 flk 自己写路径路由，
+而路由、ETag 与目录托管的实现已在 webui 里（重复一份就会立刻漂移）。
+用 all:ui 而不是逐个列文件：日后新增资源（图标、字体）不必再回来改这里，也不会漏嵌
 */
 
-//go:embed ui/config.html
-var configHTML []byte
+//go:embed all:ui
+var uiFS embed.FS
 
-//go:embed ui/style.css
-var styleCSS []byte
-
-//go:embed ui/app.js
-var appJS []byte
+// configHTML 惰性装载首页模板：页面字节随二进制固定，读一次即可，不必每次请求都去 FS 里查找
+//
+// 用 sync.OnceValue 而不是包级变量 + init：读取结果天然只算一次，也没有「谁先赋值」的顺序问题
+// 读失败只可能是 embed 指令与实际文件不符，那是构建期错误（编译都过不了），
+// 因此不走 panic，退化成空页面也比让整个进程崩掉好
+var configHTML = sync.OnceValue(func() []byte {
+	content, err := fs.ReadFile(uiFS, "ui/config.html")
+	if err != nil {
+		return nil
+	}
+	return content
+})
 
 // servedConfigHTML 把**当前**语言注入 WebUI 页面后返回，因此必须在每次请求时现算。
 //
@@ -61,11 +71,11 @@ var appJS []byte
 //
 // 为什么每次请求都要重新渲染而不是启动时烧一次：语言可以在运行期切换
 // （见 /api/language），烧一次的话切换后刷新页面拿到的还是旧语言；
-// 又因为 configHTML 是共享的只读切片、bytes.Replace 会返回新切片，
-// 这个渲染过程本身不修改共享数据，天然可并发
+// 又因为模板本身是只读的共享切片（configHTML() 每次返回同一份）、bytes.Replace 会返回新切片，
+// 这个渲染过程不修改任何共享数据，天然可并发
 func servedConfigHTML() []byte {
 	lang := l10n.Current()
-	out := bytes.Replace(configHTML, []byte("__FLK_HTML_LANG__"), []byte(lang), 1)
+	out := bytes.Replace(configHTML(), []byte("__FLK_HTML_LANG__"), []byte(lang), 1)
 	return bytes.Replace(out, []byte("__FLK_LANG_VALUE__"), []byte(lang), 1)
 }
 
@@ -185,18 +195,15 @@ func (h *sseHub) currentRev() string {
 
 // runServe 启动 WebUI 服务并阻塞到服务退出，是 serve 命令的唯一执行入口
 //
-// 访问白名单由三部分组成（回环地址由 guard 内置，不在此列出）：
-//   - 服务实际绑定的地址（--host）
-//   - --allow-host 逐条列出的地址（临时授权）
-//   - 设置文件 allowHosts 字段列出的地址（长期生效，见 internal/config）
-//
-// 前两者与第三者是并集：任意一处列出的主机都放行，用户不必为了长期生效而每次都敲一遍命令行
+// 访问白名单只组装「调用方额外授权」的部分：--allow-host 逐条列出的地址（临时授权）
+// 与设置文件 allowHosts 字段（长期生效，见 internal/config）的并集。
+// 服务实际绑定的地址与回环地址由 webui 自动纳入（见它 New 里的说明），这里不再重复列一遍——
+// 重复一份就多一处可能与实际判定漂移的清单
 func runServe(cmd *cobra.Command, args []string) error {
 	// 从自身 flag 获取网络配置（serve 已无子命令，flag 全部声明在 serveCmd 上）
 	port, _ := cmd.Flags().GetInt("port")
 	host, _ := cmd.Flags().GetString("host")
 	noOpen, _ := cmd.Flags().GetBool("no-open")
-	// 访问白名单的显式部分，与绑定地址、设置文件一起交给 guard（回环地址由 guard 内置）
 	allowHosts, _ := cmd.Flags().GetStringSlice("allow-host")
 
 	// 设置文件里的白名单属于可选的长期授权，读取失败只警告不中止：
@@ -216,18 +223,16 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// 显式构造新切片而不是链式 append：append 在容量足够时会就地改写底层数组，
 	// 而 allowHosts 是 flag 返回的切片，就地改写它可能影响同一进程内后续对该 flag 值的读取
-	allowedHosts := make([]string, 0, 1+len(allowHosts)+len(fileAllowHosts))
-	allowedHosts = append(allowedHosts, host)
+	allowedHosts := make([]string, 0, len(allowHosts)+len(fileAllowHosts))
 	allowedHosts = append(allowedHosts, allowHosts...)
 	allowedHosts = append(allowedHosts, fileAllowHosts...)
 
-	// 端口自动顺延：从指定端口开始尝试，被占用则依次 +1，最多尝试 100 次
-	listener, usedPort, err := listenWithRetry(host, port, 100)
-	if err != nil {
-		return fmt.Errorf("%s: %w", l10n.T("Could not find an available port (tried {{.From}} to {{.To}})", map[string]any{"From": port, "To": port + 99}), err)
+	// 把嵌入目录的 ui 子目录作为静态资源根交给 webui：/style.css、/app.js 都从这份 FS 里取
+	assets, subErr := fs.Sub(uiFS, "ui")
+	if subErr != nil {
+		return fmt.Errorf("%s: %w", l10n.T("Failed to load the WebUI assets", nil), subErr)
 	}
 
-	addr := fmt.Sprintf("%s:%d", host, usedPort)
 	hub := newSSEHub()
 
 	// 端点之间共享的依赖收进 serveServer：hub 用于广播变更事件，三把锁用于串行化各自的临界区
@@ -237,7 +242,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	//
 	// 锁在此处逐次新建：生命周期与本次服务实例严格一致，避免同进程内再次调用 runServe（测试里就会）时
 	// 两代服务共用一把锁；watchStoreFile 也传入同一把 writeMu（见其函数注释）
-	srv := &serveServer{
+	srvState := &serveServer{
 		hub:        hub,
 		writeMu:    new(sync.Mutex),
 		repairMu:   new(sync.Mutex),
@@ -245,75 +250,60 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	// 启动文件变更监听（轮询方式，每秒检查一次文件的修改时间）
-	go watchStoreFile(hub, srv.writeMu)
+	go watchStoreFile(hub, srvState.writeMu)
 
+	// 业务端点整体作为 API 交给 webui：页面入口、静态资源托管与三道护栏都由它负责，
+	// 这里只保留 /api/* 这层业务路由。把端点挂在 "/api/" 前缀下（而不是原来的裸 mux + 自己的
+	// 路径路由），意味着 flk 侧不再需要 "/" 与静态资源的路由与兜底 404，那部分已随 webui 上收
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/config", srvState.handleConfig)
+	mux.HandleFunc("/api/meta", srvState.handleMeta)
+	mux.HandleFunc("/api/check", srvState.handleCheck)
+	mux.HandleFunc("/api/repair", srvState.handleRepair)
+	mux.HandleFunc("/api/unlink", srvState.handleUnlink)
+	mux.HandleFunc("/api/language", srvState.handleLanguage)
+	mux.HandleFunc("/api/events", srvState.handleEvents)
 
-	// 逐个注册各端点；端点逻辑集中在 serve_api.go 中对应的 serveServer 方法上
-	mux.HandleFunc("/", srv.handleIndex)
-	// 静态资源路由：精确模式优先于 "/"，其余未知路径仍由 handleIndex 兜底 404
-	// （见 handleIndex 开头的 Path != "/" 判断）
-	mux.HandleFunc("/style.css", serveAsset(styleCSS, "text/css; charset=utf-8"))
-	mux.HandleFunc("/app.js", serveAsset(appJS, "application/javascript; charset=utf-8"))
-	mux.HandleFunc("/api/config", srv.handleConfig)
-	mux.HandleFunc("/api/meta", srv.handleMeta)
-	mux.HandleFunc("/api/check", srv.handleCheck)
-	mux.HandleFunc("/api/repair", srv.handleRepair)
-	mux.HandleFunc("/api/unlink", srv.handleUnlink)
-	mux.HandleFunc("/api/language", srv.handleLanguage)
-	mux.HandleFunc("/api/events", srv.handleEvents)
-
-	// 非回环绑定意味着同网段任何人都能打开这个 WebUI，而 WebUI 可以直接改写清单文件，
-	// 因此启动时必须明确警告；绑定回环地址（默认）时保持安静，不打扰用户
-	// 与上面两条同理走 pterm：它是启动摘要的一部分，用户必须在同一屏里看到它，而不是一条 logfmt 行
-	if !isLoopbackHost(host) {
-		pterm.Warning.WithWriter(cmd.ErrOrStderr()).Println(l10n.T("The WebUI is bound to {{.Host}}, a non-loopback address; anyone who can reach this port can read and edit your store file", map[string]any{"Host": host}))
+	srv, err := webui.New(webui.Config{
+		Host: host,
+		// 端口自动顺延：从指定端口开始尝试，被占用则依次 +1，最多尝试 100 次
+		Port:   webui.Sequential(port, 100),
+		Assets: assets,
+		// 首页必须由 Index 现算，不能让 webui 直接托管 config.html：语言可在运行期切换
+		//（见 /api/language），若把渲染烧死在启动时，切换后刷新拿到的还是旧语言
+		IndexName: "config.html",
+		Index:     servedConfigHTML,
+		API:       mux,
+		// 只传额外授权；绑定地址由 webui 自动追加（--host 192.168.1.5 时用户从地址栏访问用的就是它）
+		AllowHosts:  allowedHosts,
+		OpenBrowser: !noOpen,
+		// 页面与 API 都必须带 token：WebUI 能直接改写清单文件，只靠回环绑定挡不住本机其它进程
+		Auth: webui.Auth{Enabled: true},
+	})
+	if err != nil {
+		return err
 	}
 
-	// 把「当前生效的完整白名单」与地址一起打印出来：
-	// 白名单现在有三个来源（绑定地址、--allow-host、设置文件 allowHosts），用户无法只凭命令行判断
-	// 设置文件里的条目是否真的被读到（写错字段名、拼错主机名都不会报错），打印是唯一的确认手段
-	// 展示内容直接取自 buildAllowedHosts（guard 判定用的同一份实现），因此不会出现「打印一套、实际放行另一套」
-	//
-	// 为什么走 cmd.OutOrStdout() 而不是 logger.Info：logger 的默认级别是 Warn（见 internal/logger/config.go），
-	// Info 级日志默认被过滤掉，而这条信息与下面的服务地址一样属于「必须默认可见」的启动摘要；
-	// 两行合并成一次写入，只保留一个写失败分支，避免为第二行再复制一遍同样的错误处理
-	startupSummary := l10n.T("Service started: http://localhost:{{.Port}}", map[string]any{"Port": usedPort}) + "\n" +
-		l10n.T("Allowed hosts for this session: {{.Hosts}}", map[string]any{"Hosts": strings.Join(allowedHostDisplay(allowedHosts), ", ")})
+	// 非回环绑定意味着同网段任何人都能打开这个 WebUI，而 WebUI 可以直接改写清单文件，
+	// 因此启动时必须明确警告；「什么算回环」与文案都由 webui 给出，避免两处判断各说各话
+	if warning := srv.NonLoopbackWarning(); warning != "" {
+		pterm.Warning.WithWriter(cmd.ErrOrStderr()).Println(warning)
+	}
 
-	logger.Info(l10n.T("Starting service", nil), "addr", addr)
+	// 为什么走 cmd.OutOrStdout() 而不是 logger.Info：logger 的默认级别是 Warn（见 internal/logger/config.go），
+	// Info 级日志默认被过滤掉，而这条属于「必须默认可见」的启动摘要。
+	// Summary 里同时带上含 token 的完整链接与本次生效的白名单：链接打全是为了让用户直接复制打开，
+	// 白名单则是用户确认「设置文件里那条是否真的被读到」的唯一手段（字段名写错、主机名拼错都不会报错）
+	startupSummary := srv.Summary()
+
+	logger.Info(l10n.T("Starting service", nil), "addr", srv.Addr())
 	if _, err := fmt.Fprintln(cmd.OutOrStdout(), startupSummary); err != nil {
-		_ = listener.Close()
+		_ = srv.Close()
 		return fmt.Errorf("%s: %w", l10n.T("Failed to output the service address", nil), err)
 	}
 
-	if !noOpen {
-		tryOpenBrowser(fmt.Sprintf("http://localhost:%d", usedPort))
-	}
-
-	// 统一在入口处套上护栏：Host 校验挡 DNS rebinding、Origin/Referer 校验挡 CSRF、body 上限挡超大请求
-	// 白名单在函数开头就已组装成 allowedHosts：绑定地址 + --allow-host + 设置文件 allowHosts（回环地址由 guard 内置）
-	// 绑定地址必须放行：--host 192.168.1.5 时用户从地址栏访问用的就是它，否则自己都打不开页面
-	// 注意绑定通配地址（0.0.0.0 / ::）时它不是一个能出现在 Host 头里的主机名，不会被任何请求命中，
-	// 因此要通过局域网访问必须显式绑定具体 IP，或把该 IP 写进 --allow-host / 设置文件——这是刻意收紧的取向
-	if err := http.Serve(listener, guard(mux, allowedHosts)); err != nil {
-		return fmt.Errorf("%s: %w", l10n.T("Service failed to run", nil), err)
-	}
-	return nil
-}
-
-// listenWithRetry 从 startPort 开始依次尝试端口，成功时返回 listener 和实际使用的端口
-func listenWithRetry(host string, startPort, maxAttempts int) (net.Listener, int, error) {
-	for i := 0; i < maxAttempts; i++ {
-		port := startPort + i
-		addr := fmt.Sprintf("%s:%d", host, port)
-		listener, err := net.Listen("tcp", addr)
-		if err == nil {
-			return listener, port, nil
-		}
-		logger.Debug(l10n.T("Port in use, trying the next one", nil), "port", port)
-	}
-	return nil, 0, fmt.Errorf("%s", l10n.T("Ports {{.From}}-{{.To}} are all in use", map[string]any{"From": startPort, "To": startPort + maxAttempts - 1}))
+	// 拉起浏览器与阻塞都由 webui 负责：OpenBrowser 打开的是带 token 的地址，用户无需手动补凭据
+	return srv.Serve()
 }
 
 // watchStoreFile 轮询检查 store 文件的修改时间，有变化时刷新全局存储并通知 SSE 客户端
@@ -365,22 +355,6 @@ func watchStoreFile(hub *sseHub, writeMu *sync.Mutex) {
 			continue
 		}
 		hub.notify(storeRev())
-	}
-}
-
-// tryOpenBrowser 尝试在默认浏览器中打开指定 URL，失败时静默忽略
-func tryOpenBrowser(url string) {
-	var err error
-	switch runtime.GOOS {
-	case "linux":
-		err = exec.Command("xdg-open", url).Start()
-	case "darwin":
-		err = exec.Command("open", url).Start()
-	case "windows":
-		err = exec.Command("cmd", "/c", "start", url).Start()
-	}
-	if err != nil {
-		logger.Debug(l10n.T("Failed to open the browser automatically", nil), "error", err)
 	}
 }
 
