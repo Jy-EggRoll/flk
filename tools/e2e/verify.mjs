@@ -669,6 +669,19 @@ async function main() {
         editBtn === 0 && cancelBtn === 0,
         `期望：页面上不存在 #editBtn 与 #cancelBtn（匹配数应为 0）；实际：#editBtn=${editBtn}，#cancelBtn=${cancelBtn}`,
       )
+      /* 默认平台页签 = 宿主平台族（linux-amd64 → linux）：
+         曾经的缺陷是按字母序取第一个（多平台清单往往落在 darwin），而「检测/修复/解除」
+         只作用于宿主平台——页签不对齐时徽标全程显示「—」、行内按钮不渲染，像功能坏了
+         断言刻意自校准：期望值从 /api/meta 实时读取，而不是硬编码 linux，
+         这样这条断言在任何宿主平台上跑都是对的（CI 换机器也不需要改） */
+      const meta = await fetch(`${base}/api/meta`).then((r) => r.json())
+      const hostFamily = String(meta.platform || '').split('-')[0]
+      const activePlatform = await page.locator('#platformTabs .tab.active').textContent()
+      expect(
+        activePlatform === hostFamily,
+        `期望：默认激活的平台页签是宿主平台族 ${hostFamily}（/api/meta 上报 ${meta.platform}）；` +
+          `实际激活的是 ${JSON.stringify(activePlatform)}`,
+      )
     })
 
     /* ================= B2 ================= */
