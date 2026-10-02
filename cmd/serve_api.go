@@ -14,6 +14,7 @@ serveServer 是这些端点的接收者：端点之间唯一共享的状态就�
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -90,6 +91,32 @@ func (s *serveServer) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Write(servedConfigHTML())
 }
 
+/*
+serveAsset 服务拆分后的静态资源（ui/style.css 与 ui/app.js，见 serve_web.go 的三个 embed）
+
+缓存策略与页面的 no-store 刻意不同，用 ETag 内容哈希 + no-cache 协商：
+  - 资源字节内嵌在二进制里，同一次构建内永不变更，ETag 恒定，重复请求全部走 304
+  - 换新二进制后字节变了、ETag 跟着变，浏览器必然拿到新版本——
+    避免「HTML 已是新版本、JS 还是浏览器缓存里的旧版本」的错配；
+    页面自身因为注入语言必须 no-store，两套策略各管各的理由，不共用
+
+etag 在构造时算一次（内容是只读的 embed 切片，进程生命周期内不变），
+而不是每个请求都做一次 SHA-256——把「不可变资源」这个事实直接编码进实现
+*/
+func serveAsset(body []byte, contentType string) http.HandlerFunc {
+	etag := fmt.Sprintf(`"%x"`, sha256.Sum256(body))
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Cache-Control", "no-cache")
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("Content-Type", contentType)
+		w.Write(body)
+	}
+}
+
 // handleConfig 处理 /api/config：GET 读取 store JSON，POST 保存前端传来的 JSON
 func (s *serveServer) handleConfig(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -162,7 +189,7 @@ func (s *serveServer) handleMeta(w http.ResponseWriter, r *http.Request) {
 		"version":   Version,
 		"platform":  platformLabel(),
 		// noTrash 告知前端「服务启动时带了 --no-trash」：解除弹窗据此把「真实删除」
-		// 复选框置为勾选且禁用（见 cmd/ui/config.html 的 openUnlinkModal），
+		// 复选框置为勾选且禁用（见 cmd/ui/app.js 的 openUnlinkModal），
 		// 否则用户会看到一个可以取消、而取消后仍会被服务端当成永久删除的开关。
 		// 用字符串而不是布尔：本响应是 map[string]string，全字段同类型更简单
 		"noTrash": fmt.Sprintf("%t", noTrash),

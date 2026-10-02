@@ -1,0 +1,560 @@
+*,*::before,*::after { margin: 0; padding: 0; box-sizing: border-box; }
+html,body { height: 100%; }
+
+/* ========== 设计令牌 ==========
+   颜色只在这里定义，组件样式一律引用 var(--*)，不允许再出现裸色值——
+   这是暗色主题能「一份结构两套皮」的前提：切主题只换令牌，不动几十处组件规则
+   强调色刻意用 orange-600（#ea580c）而不是改造前的 amber-600（#d97706）：
+   后者偏黄，大面积铺开后观感发闷发土；前者色相更正、更干净，仍属同一个橙色品牌基因
+   令牌分四组语义：中性面（bg/surface）、文字、品牌强调（accent）、语义色（success/danger/warn），
+   后续任何新组件先在这里补令牌再写样式，避免暗色主题出现漏网的硬编码色 */
+:root {
+  color-scheme: light;
+  --bg: #fafaf9;
+  --bg-glow-1: rgba(194, 65, 12, .05);
+  --bg-glow-2: rgba(234, 88, 12, .04);
+  --surface: #ffffff;
+  --surface-2: #f7f5f2;
+  --surface-3: #efedea;
+  --border: #e7e5e4;
+  --border-strong: #d6d3d1;
+  --text: #1c1917;
+  --text-2: #57534e;
+  --text-3: #a8a29e;
+  --accent: #ea580c;
+  --accent-strong: #c2410c;
+  --accent-soft: rgba(234, 88, 12, .08);
+  --accent-ring: rgba(234, 88, 12, .3);
+  /* 页头是整页唯一的品牌大色块：浅色主题用「深烧橙 → 净橙」的斜向渐变，
+     深色主题换成近黑暖底 + 琥珀发丝线（见下方覆盖） */
+  --header-bg: linear-gradient(135deg, #7c2d12 0%, #c2410c 62%, #e86a10 100%);
+  --header-shadow: 0 2px 6px rgba(124, 45, 18, .22), 0 1px 2px rgba(28, 25, 23, .08);
+  --on-header: #ffffff;
+  --success: #047857;  --success-bg: #ecfdf5;  --success-border: #a7f3d0;
+  --danger: #dc2626;   --danger-strong: #b91c1c; --danger-bg: #fef2f2;  --danger-border: #fecaca;
+  --warn: #b45309;     --warn-bg: #fffbeb;     --warn-border: #fde68a;
+  --shadow-sm: 0 1px 2px rgba(28, 25, 23, .05);
+  --shadow-md: 0 4px 16px rgba(28, 25, 23, .07);
+  --shadow-lg: 0 12px 40px rgba(28, 25, 23, .12);
+  --radius-sm: 7px;
+  --radius: 10px;
+  --radius-lg: 16px;
+  --mono: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+  /* 页签专用：未选中底色 / 选中底色（「更亮」在浅色=纯白、暗色=更亮的面，见按钮式页签一节） */
+  --tab-bg: var(--surface-2);
+  --tab-active-bg: var(--surface);
+  /* 下拉箭头按主题换色：令牌里存整条 background-image，组件规则只引用 */
+  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a8a29e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+}
+
+/* 暗色令牌：暖黑（stone 系）而不是冷蓝黑，与橙色品牌同色温；
+   color-scheme 同步切换，让复选框、下拉等原生控件也走暗色渲染 */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0e0c0b;
+  --bg-glow-1: rgba(234, 88, 12, .07);
+  --bg-glow-2: rgba(120, 53, 15, .14);
+  --surface: #171412;
+  --surface-2: #201b18;
+  --surface-3: #2a2420;
+  --border: #2b2622;
+  --border-strong: #403a33;
+  --text: #fafaf9;
+  --text-2: #d6d3d1;
+  --text-3: #8f8880;
+  --accent: #fb923c;
+  --accent-strong: #f97316;
+  --accent-soft: rgba(249, 115, 22, .12);
+  --accent-ring: rgba(249, 115, 22, .32);
+  --header-bg: linear-gradient(180deg, #1b1614, #131010);
+  --header-shadow: 0 1px 0 rgba(251, 154, 59, .16), 0 4px 16px rgba(0, 0, 0, .4);
+  --on-header: #fafaf9;
+  --success: #34d399; --success-bg: rgba(6, 78, 59, .35);    --success-border: rgba(52, 211, 153, .3);
+  --danger: #f87171;  --danger-strong: #fca5a5;               --danger-bg: rgba(127, 29, 29, .32);   --danger-border: rgba(248, 113, 113, .3);
+  --warn: #fbbf24;    --warn-bg: rgba(69, 26, 3, .4);         --warn-border: rgba(251, 191, 36, .3);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, .35);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, .55);
+  /* 暗色下「更亮的选中页签」= 比 surface-2 再亮一档的面（token 体系里就是 surface-3） */
+  --tab-bg: var(--surface-2);
+  --tab-active-bg: var(--surface-3);
+  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238f8880' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+}
+
+/* 动效可关闭：前庭障碍用户与省电场景下退化为直接切换 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* ========== 基底 ========== */
+body {
+  display: flex; flex-direction: column;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background:
+    radial-gradient(1100px 380px at 18% -8%, var(--bg-glow-1), transparent 62%),
+    radial-gradient(900px 300px at 88% -4%, var(--bg-glow-2), transparent 58%),
+    var(--bg);
+  background-attachment: fixed;
+  color: var(--text);
+  font-size: 14px;
+  font-feature-settings: "tnum" 1;
+  -webkit-font-smoothing: antialiased;
+}
+.hidden { display: none !important; }
+
+/* ========== 页头 ==========
+   布局仍是 body 直下的 flex 行，但改为定高工具栏观感（内容不再换行挤压） */
+.header {
+  flex-shrink: 0;
+  background: var(--header-bg);
+  color: var(--on-header);
+  padding: 0 28px;
+  min-height: 60px;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+  box-shadow: var(--header-shadow);
+  position: relative;
+}
+/* 顶缘内高光：一条极淡的白线，让渐变头有一层「被灯照着」的立体感 */
+.header::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .1), transparent 26%);
+}
+.header h1 {
+  font-size: 17px; font-weight: 700; letter-spacing: -.02em;
+  display: flex; align-items: center; gap: 10px;
+}
+/* 品牌 mark：旋转小方块 + 光环，替代裸文字标题的单薄感 */
+.header h1::before {
+  content: ""; width: 10px; height: 10px; border-radius: 3px;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, .22), 0 2px 6px rgba(28, 25, 23, .28);
+  transform: rotate(45deg);
+}
+.header-right { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; }
+.status { display: flex; align-items: center; gap: 7px; font-size: 12.5px; }
+
+/* 状态点：在线呼吸光晕——它是页面唯一「活着」的信号，值得一点动效 */
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; box-shadow: 0 0 0 2px rgba(255, 255, 255, .25); }
+.dot.online { background: #4ade80; animation: dot-pulse 2.4s ease-in-out infinite; }
+.dot.offline { background: #f87171; }
+@keyframes dot-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(255, 255, 255, .25), 0 0 0 0 rgba(74, 222, 128, .55); }
+  50% { box-shadow: 0 0 0 2px rgba(255, 255, 255, .25), 0 0 0 5px rgba(74, 222, 128, 0); }
+}
+
+/* ========== 主题切换器 ==========
+   三态（浅色/跟随系统/深色）玻璃分段控件，位于页头右侧；
+   选中片永远用白底 + 橙色图标，在浅色的橙渐变头与深色的暖黑头上都成立 */
+.theme-toggle {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 3px; border-radius: 999px;
+  background: rgba(255, 255, 255, .16);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .16) inset;
+}
+.theme-btn {
+  width: 30px; height: 24px; border: none; border-radius: 999px;
+  background: transparent; color: var(--on-header); opacity: .72;
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  transition: background-color .15s ease, opacity .15s ease, box-shadow .15s ease;
+}
+.theme-btn:hover { opacity: 1; background: rgba(255, 255, 255, .16); }
+.theme-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(255, 255, 255, .7); }
+.theme-btn.active { background: #fff; color: #c2410c; opacity: 1; box-shadow: 0 1px 3px rgba(28, 25, 23, .22); }
+.theme-btn svg { width: 13px; height: 13px; display: block; }
+
+/* ========== 按钮体系 ==========
+   页头上的按钮（Re-check/保存/放弃/语言）处在品牌色大底上，用白底或实色；
+   页面内的按钮（迁移/新增/删除等）用令牌描边或实色，两套语境不混用 */
+.btn {
+  border: 1px solid transparent; border-radius: 8px;
+  padding: 6px 15px; font-size: 13px; cursor: pointer;
+  font-weight: 600; font-family: inherit; outline: none;
+  transition: background-color .15s ease, box-shadow .15s ease, border-color .15s ease, color .15s ease, transform .1s ease;
+}
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn:active { transform: scale(.97); }
+.btn:focus-visible { box-shadow: 0 0 0 3px var(--accent-ring); }
+.btn-edit { background: rgba(255, 255, 255, .96); color: #c2410c; }
+.btn-edit:hover { background: #fff; box-shadow: var(--shadow-sm); }
+.btn-save { background: #059669; color: #fff; }
+.btn-save:hover { background: #047857; box-shadow: 0 3px 12px rgba(5, 150, 105, .35); }
+.btn-cancel { background: var(--danger); color: #fff; }
+.btn-cancel:hover { background: var(--danger-strong); box-shadow: 0 3px 12px rgba(220, 38, 38, .3); }
+.btn-sm { padding: 4px 11px; font-size: 12px; border-radius: var(--radius-sm); }
+.btn-add { background: var(--accent); color: #fff; }
+html[data-theme="dark"] .btn-add { color: #1c1008; }
+.btn-add:hover { background: var(--accent-strong); box-shadow: 0 3px 12px var(--accent-soft); }
+.btn-dell { background: transparent; color: var(--danger); border-color: var(--danger-border); }
+.btn-dell:hover { background: var(--danger-bg); border-color: var(--danger); }
+.btn-ghost { background: transparent; color: var(--accent-strong); }
+.btn-ghost:hover { background: var(--accent-soft); }
+/* 语言选择器 — 与页头的白底按钮同一套配色，避免大色块上出现第二块抢眼的高饱和色 */
+.lang-select {
+  background: rgba(255, 255, 255, .96); color: #c2410c;
+  border: none; border-radius: 8px; padding: 6px 10px;
+  font-size: 12.5px; font-weight: 600; cursor: pointer; outline: none; font-family: inherit;
+}
+.lang-select:hover { background: #fff; box-shadow: var(--shadow-sm); }
+.lang-select:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ========== 消息与提示条 ========== */
+.msg-bar { flex-shrink: 0; max-width: 1100px; margin: 0 auto; width: 100%; padding: 14px 28px 0; }
+.error-msg {
+  background: var(--danger-bg); border: 1px solid var(--danger-border); border-left: 3px solid var(--danger);
+  color: var(--danger); padding: 10px 16px; border-radius: var(--radius); font-size: 13.5px; display: none; margin-bottom: 8px;
+}
+.success-msg {
+  background: var(--success-bg); border: 1px solid var(--success-border); border-left: 3px solid var(--success);
+  color: var(--success); padding: 10px 16px; border-radius: var(--radius); font-size: 13.5px; display: none; margin-bottom: 8px;
+}
+
+/* 未保存改动区 — 与 Re-check 同排，无改动时整体隐藏 */
+#saveActions { display: flex; align-items: center; gap: 9px; }
+/* 脏值计数：胶囊化，白底在两种页头底色上都可读 */
+#dirtyCount {
+  background: rgba(255, 255, 255, .94); color: #c2410c;
+  padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 外部冲突提示条 — 警示语义，左竖条 + 语义底色 */
+.conflict-bar {
+  flex-shrink: 0; max-width: 1100px; margin: 12px auto 0; width: 100%;
+  display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+  background: var(--warn-bg); border: 1px solid var(--warn-border); border-left: 3px solid var(--warn);
+  border-radius: var(--radius); color: var(--warn); font-size: 13px;
+}
+.conflict-bar #conflictText { flex: 1; font-weight: 600; }
+
+/* ========== 主区 ========== */
+.main { flex: 1; overflow-y: auto; max-width: 1100px; margin: 0 auto; width: 100%; padding: 24px 28px 30px; }
+.main::-webkit-scrollbar { width: 7px; }
+.main::-webkit-scrollbar-track { background: transparent; }
+.main::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; }
+.main::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+
+/* 小节标签：左侧强调短线 + 微大写，比裸灰字更有「章节」的层级感 */
+.section-label {
+  font-size: 10.5px; font-weight: 700; color: var(--text-3);
+  text-transform: uppercase; letter-spacing: .1em; margin-bottom: 7px;
+  display: flex; align-items: center; gap: 7px;
+}
+.section-label::before {
+  content: ""; width: 14px; height: 2px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-soft));
+}
+
+/* ========== 按钮式页签 ==========
+   三条筛选条（平台/设备/链接类型）统一为「带形状的按钮」：
+   未选中也常驻描边 + 底色，可点击性一目了然——纯文字页签在移动端换行后
+   尤其看不出哪里能点；选中项更亮（浅色=纯白、暗色=更亮的面）+ 品牌色描边，
+   并保留顶部高亮条，那条琥珀刻线是选中态最抓眼的信号
+   旧的「基线」（tab-bar 的 border-bottom）随之移除：按钮不再坐在一条线上，
+   窄屏换行成两行按钮也不会像两行裸文字那样难看 */
+.tab-bar {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  padding: 0 2px; margin-bottom: 16px;
+}
+.tab {
+  position: relative;
+  padding: 6.5px 14px 7.5px;
+  font-size: 12.5px; font-weight: 600; font-family: inherit;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--tab-bg);
+  color: var(--text-2);
+  cursor: pointer; white-space: nowrap; text-align: center;
+  transition: background-color .14s ease, color .14s ease, border-color .14s ease;
+}
+.tab:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+/* 未选中悬停：面加深一档（浅色变灰、暗色变亮），形状感更清楚 */
+.tab:hover { background: var(--surface-3); color: var(--text); border-color: var(--border-strong); }
+/* 选中：更亮的面 + 品牌色描边与文字 */
+.tab.active { background: var(--tab-active-bg); color: var(--accent-strong); border-color: var(--accent); }
+/* 选中高亮条：页签顶部的品牌色短横，跨在描边上，是「这一颗被选中」的第一信号 */
+.tab.active::before {
+  content: ""; position: absolute; left: 10px; right: 10px; top: -1px;
+  height: 2.5px; border-radius: 0 0 3px 3px; background: var(--accent);
+}
+/* 含删除 × 的设备页签：文字与 × 之间留呼吸，× 默认半隐、悬停显现 */
+.tab-dev { display: inline-flex; align-items: center; gap: 7px; }
+/* 新建设备：虚线描边的幽灵按钮，与普通页签区分「这是一个动作而不是一个值」 */
+.tab-new { border-style: dashed; color: var(--text-3); background: transparent; }
+.tab-new:hover { color: var(--accent-strong); border-color: var(--accent); background: var(--accent-soft); }
+
+/* ========== 表格卡片 ==========
+   overflow-x: auto：窄屏（表格超出可见宽度）时横向滑动而不是把列压扁——
+   路径列被压到几十像素宽时读路径比滑动更费劲；桌面宽度足够，不出现滚动条
+   圆角裁剪依旧成立（滚动容器同样按 border-radius 裁内容），粘性表头依旧放弃
+   （overflow 容器会劫持粘性定位，见最初注释） */
+.table-wrap {
+  background: var(--surface); border-radius: 13px; border: 1px solid var(--border);
+  overflow-x: auto;
+  box-shadow: var(--shadow-sm), var(--shadow-md);
+}
+/* 最小宽度是「不压扁」的底座：给路径列留出可读的宽度，而不是让六个固定列
+   把两个路径列挤成竖条；宽度足够时表格仍是 100% 撑满 */
+table { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 13.5px; }
+th {
+  font-size: 10.5px; font-weight: 700; color: var(--text-3);
+  text-transform: uppercase; letter-spacing: .09em; text-align: left;
+  padding: 11px 14px; border-bottom: 1px solid var(--border);
+  background: var(--surface-2); white-space: nowrap; user-select: none;
+}
+td { padding: 7px 14px; border-bottom: 1px solid var(--surface-3); vertical-align: middle; }
+tbody tr:last-child td { border-bottom: none; }
+tbody tr { transition: background-color .12s ease; }
+/* 斑马条纹：偶数行铺一档浅底，扫读长清单时行与行不再粘连——
+   三档阶梯全用既有令牌：奇数行 surface / 偶数行 surface-2 / 悬停 surface-3，
+   两种主题下「更深一档」的方向各自成立（浅色变灰、暗色变亮） */
+tbody tr:nth-child(even) { background: var(--surface-2); }
+tbody tr:hover { background: var(--surface-3); }
+/* 行号在悬停时点亮为品牌色：给出「这一行是活的」的反馈 */
+tbody tr:hover td.num-col { color: var(--accent); }
+tr.dragging { opacity: .45; background: var(--accent-soft) !important; }
+tr.drag-over { border-top: 2px solid var(--accent); }
+tr.drag-over td { border-top: none; }
+
+/* 路径输入框：常态隐身（无框透明），悬停浮出浅底，聚焦点亮品牌环；
+   三段式让表格读起来像「展示」，只有编辑时才露出「表单」面孔 */
+.cell-input {
+  width: 100%;
+  font-family: var(--mono); font-size: 12.5px;
+  padding: 6px 10px;
+  border: 1px solid transparent; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text); outline: none;
+  transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.cell-input:hover { background: var(--surface-2); border-color: var(--border); }
+.cell-input:focus { background: var(--surface); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+/* 脏单元格 — 与已保存版本不同的输入框标亮，便于一眼定位未保存改动 */
+.cell-input.dirty { border-color: var(--warn); background: var(--warn-bg); box-shadow: 0 0 0 3px var(--accent-soft); }
+.num-col { width: 34px; text-align: center; color: var(--text-3); font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.drag-handle {
+  cursor: grab; color: var(--border-strong); font-size: 18px; user-select: none;
+  width: 28px; text-align: center; line-height: 1;
+  transition: color .15s ease, transform .15s ease;
+}
+.drag-handle:hover { color: var(--accent); transform: scale(1.15); }
+.drag-handle:active { cursor: grabbing; }
+.action-col { width: 1%; white-space: nowrap; }
+
+/* ========== 搜索过滤工具栏 ==========
+   106 条记录里找一条路径，靠肉眼扫是痛点；过滤器只做子串匹配（大小写不敏感），
+   覆盖当前「平台+设备+类型」视图下的所有路径字段 */
+.filter-bar {
+  display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+  margin-bottom: 12px;
+}
+.filter-box { position: relative; width: 300px; max-width: 60vw; }
+.filter-box .filter-icon {
+  position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+  width: 14px; height: 14px; color: var(--text-3); pointer-events: none;
+}
+#filterInput {
+  width: 100%; padding: 7px 30px 7px 32px;
+  border: 1px solid var(--border); border-radius: 9px;
+  background: var(--surface); color: var(--text);
+  font-size: 12.5px; font-family: inherit; outline: none;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+#filterInput::placeholder { color: var(--text-3); }
+#filterInput:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+#filterClear {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 20px; height: 20px; border: none; border-radius: 50%;
+  background: transparent; color: var(--text-3); cursor: pointer;
+  display: none; align-items: center; justify-content: center; font-size: 13px; line-height: 1;
+  font-family: inherit;
+}
+#filterClear:hover { color: var(--danger); background: var(--danger-bg); }
+.filter-box.has-text #filterClear { display: inline-flex; }
+#filterCount { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Empty state — 虚线卡片 + 静默灰 */
+.empty-state {
+  text-align: center; padding: 52px 20px; color: var(--text-3); font-size: 13.5px;
+  border: 1.5px dashed var(--border-strong); border-radius: 13px; margin-top: 14px;
+  background: var(--surface);
+}
+/* 过滤无命中的占位行：比空状态更轻（不画卡片），表达「有数据但没匹配」而不是「没有数据」 */
+.filter-empty { text-align: center; padding: 38px 14px; color: var(--text-3); font-size: 13px; }
+
+/* ========== 页脚 ========== */
+.footer {
+  flex-shrink: 0; max-width: 1100px; margin: 0 auto; width: 100%;
+  padding: 12px 28px 18px;
+  display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px;
+}
+.path-info { font-size: 11.5px; color: var(--text-3); }
+.meta-info { font-size: 11.5px; color: var(--text-3); display: flex; gap: 16px; flex-wrap: wrap; }
+
+/* Add-bar below table */
+.add-bar { padding: 10px 12px; border-top: 1px solid var(--surface-3); }
+
+/* 设备删除 × — 页签内的小圆钮：常态半隐（opacity .55），悬停整个页签时显现，
+   避免一排 × 视觉噪点；hover 变红提示破坏性 */
+.btn-dev-del {
+  width: 17px; height: 17px; border: none; border-radius: 50%;
+  background: transparent; color: var(--text-3);
+  font-size: 14px; line-height: 1; cursor: pointer; font-family: inherit;
+  display: inline-flex; align-items: center; justify-content: center;
+  opacity: .55;
+  transition: opacity .14s ease, color .14s ease, background-color .14s ease;
+}
+.tab-dev:hover .btn-dev-del { opacity: 1; }
+.btn-dev-del:hover { color: var(--danger); background: var(--danger-bg); }
+.btn-dev-del:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); opacity: 1; }
+
+/* Add device inline */
+.add-device-form { display: flex; gap: 8px; align-items: center; }
+.add-device-form input {
+  font-size: 13px; font-family: inherit; padding: 5px 12px;
+  border: 1px solid var(--border); border-radius: 8px; outline: none;
+  background: var(--surface); color: var(--text);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.add-device-form input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+
+/* Checkbox — 复选框走令牌强调色，原生渲染由 color-scheme 接管暗色 */
+.cb-col { width: 36px; text-align: center; }
+.cb-all, .cb-row { cursor: pointer; width: 15px; height: 15px; accent-color: var(--accent); }
+
+/* 可用性状态徽标 — 常驻列，脏行降级为「待重检」；
+   圆点 + 文字的胶囊：圆点带一圈同色光环，扫视时先看色点再读文字 */
+.health-col { width: 1%; white-space: nowrap; }
+.health-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2.5px 10px 2.5px 8px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 600;
+}
+.health-badge::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+}
+.health-ok { background: var(--success-bg); color: var(--success); border: 1px solid var(--success-border); }
+.health-ok::before { background: var(--success); box-shadow: 0 0 0 2px var(--success-border); }
+.health-bad { background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger-border); cursor: help; }
+.health-bad::before { background: var(--danger); box-shadow: 0 0 0 2px var(--danger-border); }
+.health-none { background: transparent; color: var(--text-3); border: 1px solid var(--border); }
+.health-none::before { display: none; }
+.health-pending { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-border); }
+.health-pending::before { background: var(--warn); box-shadow: 0 0 0 2px var(--warn-border); }
+
+/* Action bar — 表格卡片的收底条，与表头同用浅底形成首尾呼应 */
+.action-bar {
+  padding: 11px 14px; border-top: 1px solid var(--surface-3);
+  background: var(--surface-2);
+  display: flex; align-items: center; gap: 10px; font-size: 13px;
+}
+.action-bar .sel-count { color: var(--text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* Modal overlay — 毛玻璃背景 + 弹入动画；遮罩色按主题加深，暗色主题下更深以保证对比 */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(28, 25, 23, .38);
+  backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000; animation: fadeIn .15s ease;
+}
+html[data-theme="dark"] .modal-overlay { background: rgba(0, 0, 0, .6); }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+/* 弹窗弹入带回弹（cubic-bezier 末段过冲），比纯 ease 更「有分量」 */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(14px) scale(.96); }
+  60% { transform: translateY(-1px) scale(1.001); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.modal-box {
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 15px; padding: 24px 26px;
+  width: 440px; max-width: 90vw;
+  box-shadow: var(--shadow-lg), 0 0 0 1px rgba(28, 25, 23, .03);
+  animation: slideUp .22s cubic-bezier(.2, .9, .3, 1.15);
+}
+.modal-box h2 {
+  font-size: 16px; font-weight: 700; letter-spacing: -.01em;
+  padding-bottom: 13px; border-bottom: 1px solid var(--surface-3);
+  margin-bottom: 18px;
+  display: flex; align-items: center; gap: 9px;
+}
+/* 弹窗标题的品牌色竖条：给每个弹窗一个统一的「身份标记」 */
+.modal-box h2::before {
+  content: ""; width: 4px; height: 15px; border-radius: 2px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+}
+.modal-box .field { margin-bottom: 15px; }
+.modal-box label { display: block; font-size: 11.5px; font-weight: 600; color: var(--text-2); margin-bottom: 5px; letter-spacing: .03em; }
+.modal-box select, .modal-box input[type="text"] {
+  width: 100%; padding: 9px 12px; font-size: 13.5px;
+  border: 1px solid var(--border-strong); border-radius: 9px; outline: none;
+  background: var(--surface); color: var(--text);
+  transition: border-color .15s ease, box-shadow .15s ease;
+  appearance: none; -webkit-appearance: none;
+  background-image: var(--select-arrow);
+  background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px;
+}
+.modal-box select:hover, .modal-box input[type="text"]:hover { border-color: var(--text-3); }
+.modal-box select:focus, .modal-box input[type="text"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.modal-box .radio-group { display: flex; gap: 24px; }
+.modal-box .radio-group label { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; color: var(--text); cursor: pointer; }
+.modal-box .radio-group input[type="radio"] { accent-color: var(--accent); width: 15px; height: 15px; }
+.modal-box .modal-actions {
+  display: flex; justify-content: flex-end; gap: 9px;
+  margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--surface-3);
+}
+
+/* 待修复清单 — 等宽字体便于逐字符核对路径，超高时内部滚动，避免弹窗被长列表撑破 */
+.repair-list {
+  max-height: 220px; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px;
+  background: var(--surface-2);
+  font-family: var(--mono); font-size: 12px; color: var(--text-2); line-height: 1.7;
+}
+.repair-list .repair-item + .repair-item { border-top: 1px dashed var(--border); padding-top: 4px; margin-top: 4px; }
+.repair-list .repair-type { color: var(--accent-strong); font-weight: 700; }
+/* 修复输出 — 服务端返回的整段文本原样展示（plan 行 + 逐条结果），等宽字体 + 保留换行；
+   两种主题都保持「终端黑」：它是输出语境，不是界面语境 */
+.repair-output {
+  max-height: 260px; overflow: auto; margin: 0 0 16px; padding: 10px 12px;
+  border-radius: 9px; background: #1c1917; color: #e7e5e4;
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.6;
+  white-space: pre-wrap; word-break: break-all;
+}
+.repair-output.failed { background: #450a0a; color: #fecaca; }
+
+/* 行内解除按钮 — 独立类名，刻意不挂 .btn-dell：浏览器验收按 .btn-dell 逐行计数（每行应恰好一个），
+   复用同一个类会让「删除」的计数翻倍，属于改样式时顺手打破既有断言 */
+.btn-unlink { background: transparent; color: var(--accent-strong); border: 1px solid var(--warn-border); }
+.btn-unlink:hover { background: var(--accent-soft); border-color: var(--accent); }
+/* 解除弹窗 — 后果说明与「真实删除」复选框；后者是危险选项，用红框与红字提示不可恢复 */
+.unlink-desc { font-size: 12px; color: var(--text-2); line-height: 1.6; margin-bottom: 16px; }
+.unlink-check { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border: 1px solid var(--danger-border); border-radius: 9px; background: var(--danger-bg); }
+.unlink-check input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--danger); margin-top: 2px; cursor: pointer; }
+.unlink-check label { margin: 0; cursor: pointer; color: var(--danger); }
+.unlink-check .hint { display: block; font-size: 12px; font-weight: 400; color: var(--danger-strong); margin-top: 3px; }
+/* 无效条目悬停时的红底：与 danger-bg 区分，只在亮色主题需要（暗色的 danger-bg 已是暗红） */
+.health-bad:hover { filter: brightness(.97); }
+
+/* ========== 移动端 ==========
+   两层适配，各管一件事：
+   pointer:coarse 按「输入方式是触摸」命中（手机/平板，无论横竖屏与宽度）：
+   输入类控件字号一律 16px——iOS Safari 对小于 16px 的输入框聚焦时会自动放大
+   整页，这是唯一可靠的规避方式；模拟器里看不出来，真机上点任何路径格都会触发
+   max-width 按「视口宽度」命中：页头/主区/弹窗的内边距与宽度收紧，给内容让宽度 */
+@media (pointer: coarse) {
+  .cell-input, #filterInput, .add-device-form input,
+  .modal-box select, .modal-box input[type="text"] { font-size: 16px; }
+}
+@media (max-width: 640px) {
+  .header { padding: 10px 14px; }
+  .header h1 { font-size: 15.5px; }
+  .header-right { gap: 8px; }
+  .msg-bar { padding: 10px 12px 0; }
+  .main { padding: 16px 12px 22px; }
+  .footer { padding: 10px 12px 14px; }
+  .filter-bar { justify-content: stretch; }
+  .filter-box { width: 100%; max-width: none; }
+  .modal-box { width: auto; max-width: none; padding: 20px 18px; }
+}
+

@@ -1,5 +1,9 @@
 # flk 更新日志
 
+## 未发布
+
+- ♻️ WebUI 页面资产按语言拆分：2300 余行的单文件 config.html 拆为 config.html（标记 + 翻译表 + 首帧引导）/ style.css（全部样式）/ app.js（全部逻辑），Go 侧相应改为三个 embed 与两条新路由；翻译表刻意留在 .html——l10n 扫描器只认 HTML 里的 MSG 表，这是拆分布局的硬约束；静态资源走 ETag 内容哈希协商缓存，换二进制必失效，避免「新 HTML 配旧 JS」的版本错配
+
 ## 0.3.1
 
 **WebUI（`flk serve`）**

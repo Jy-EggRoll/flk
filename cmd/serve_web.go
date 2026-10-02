@@ -31,10 +31,22 @@ import (
 历史沿革：本文件原名 serve_config.go，服务曾挂在 serve config 子命令下；
 该子命令已整体并入 serve（详见 cmd/serve.go 中 serveCmd 的注释），因此文件与命令一起更名，
 但页面自身的文件仍叫 cmd/ui/config.html——它展示的正是「配置清单」，这个文件名依然准确，无需跟着改
+
+页面资产由三个文件组成（原先全部挤在一个 2300+ 行的 HTML 里，按语言拆开）：
+  - ui/config.html：标记 + 内嵌翻译表（MSG 必须留在 .html——l10n 扫描器只认 HTML 里的
+    var MSG 表，这是它不能搬去 app.js 的硬约束）+ 首帧前的主题/语言引导脚本
+  - ui/style.css：全部样式（设计令牌 + 组件规则，浅/暗两套主题）
+  - ui/app.js：全部页面逻辑（IIFE，消费 HTML 里定义的全局 MSG 与 window.__FLK_LANG__）
 */
 
 //go:embed ui/config.html
 var configHTML []byte
+
+//go:embed ui/style.css
+var styleCSS []byte
+
+//go:embed ui/app.js
+var appJS []byte
 
 // servedConfigHTML 把**当前**语言注入 WebUI 页面后返回，因此必须在每次请求时现算。
 //
@@ -239,6 +251,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// 逐个注册各端点；端点逻辑集中在 serve_api.go 中对应的 serveServer 方法上
 	mux.HandleFunc("/", srv.handleIndex)
+	// 静态资源路由：精确模式优先于 "/"，其余未知路径仍由 handleIndex 兜底 404
+	// （见 handleIndex 开头的 Path != "/" 判断）
+	mux.HandleFunc("/style.css", serveAsset(styleCSS, "text/css; charset=utf-8"))
+	mux.HandleFunc("/app.js", serveAsset(appJS, "application/javascript; charset=utf-8"))
 	mux.HandleFunc("/api/config", srv.handleConfig)
 	mux.HandleFunc("/api/meta", srv.handleMeta)
 	mux.HandleFunc("/api/check", srv.handleCheck)

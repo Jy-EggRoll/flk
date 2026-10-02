@@ -20,6 +20,8 @@ vars:
   # 升级与日志那两块文案随 eggokit 发布（eggokit/locales），运行时由 internal/locales 叠加进来
   # --html 覆盖 cmd/ui 下的页面：WebUI 的译文内嵌在页面里，只有把它交给提取器，
   # 页面文案的漏译与失效译文才会被 l10n:check 拦住（否则只会静默回退英文）
+  # 注意拆分后的三文件布局：扫描器只收集 .html，因此 MSG 翻译表必须留在
+  # config.html（不能搬去 app.js）；style.css 与 app.js 对该扫描器不可见，属预期
   # 与 internal/locales/locales.go 里的语言列表是一对，改动时要一起看
   L10N_ARGS: '--pkg github.com/jy-eggroll/eggokit/l10n --src cmd,internal --html cmd/ui --dir internal/locales'
   # E2E 现场（截图、录屏、回看页、临时 store）的落点，只在这里声明一次
