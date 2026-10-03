@@ -192,7 +192,7 @@ tasks:
   # 也进不了只认 DOM 的浏览器断言，所以单独一层
   # 与 verify:browser 同级，同样刻意不挂进 verify/default：要构建二进制、要起真实服务，
   # 代价比静态检查高一个量级，只在改 serve / unlink 或交付前跑
-  # 隔离：被测二进制、store、夹具、服务日志全在脚本自建的 mktemp 目录里，回收站用 XDG_DATA_HOME
+  # 隔离：被测二进制、store、测试数据、服务日志全在脚本自建的 mktemp 目录里，回收站用 XDG_DATA_HOME
   # 重定向到临时目录（不碰真实家目录），跑完整体删除，不会往 git status 里加东西
   # 用法：task verify:api [BINARY=/path/to/flk]；不给 BINARY 时脚本用仓库源码构建一份临时二进制，
   # 给了就用它（换二进制做前后对比时用）

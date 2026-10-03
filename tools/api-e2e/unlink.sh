@@ -21,7 +21,7 @@
 #   8. 服务端终端不得出现文件系统操作的输出（writer 注入生效），且进程仍存活
 #
 # 隔离手段（跑测试不碰真实环境，跑完不留垃圾）
-#   - 二进制、store、夹具、服务日志全放在 mktemp 出来的临时目录里，脚本退出时整体删除
+#   - 二进制、store、测试数据、服务日志全放在 mktemp 出来的临时目录里，脚本退出时整体删除
 #   - 回收站靠 XDG_DATA_HOME 重定向到临时目录（internal/trash 优先读 $XDG_DATA_HOME/flk/trash），
 #     真实家目录 ~/.local/share/flk/trash 与用户的真实文件都不受影响
 #   - 端口不写死，也不自己做「探测空闲端口」：探测用的 socket 关掉到被测进程绑定之间是有一段
@@ -98,7 +98,7 @@ cleanup() {
     wait "$SERVE_PID" 2>/dev/null || true
   fi
   rm -rf "$WORK"
-  echo "[clean] 已删除临时目录（含被测二进制、store、夹具、服务日志）"
+  echo "[clean] 已删除临时目录（含被测二进制、store、测试数据、服务日志）"
 }
 trap cleanup EXIT
 
@@ -119,7 +119,7 @@ chk() { if [ "$2" = "$3" ]; then ok "$1（$2）"; else bad "$1（实得 $2，期
 mkdir -p "$WORK/store" "$F" "$DATA"
 export XDG_DATA_HOME="$DATA"
 
-# 三种链接类型各造一份真实夹具：symlink 用真的符号链接，hardlink 用真的硬链接，copy 是两个独立文件
+# 三种链接类型各造一份真实测试数据：symlink 用真的符号链接，hardlink 用真的硬链接，copy 是两个独立文件
 printf 'hello-symlink\n' > "$F/real1.txt"
 ln -s "$F/real1.txt" "$F/link1.txt"
 
@@ -249,7 +249,7 @@ echo "== 5. 并发：两条不同记录同时解除 =="
 printf 'c4\n' > "$F/real4.txt"; ln -s "$F/real4.txt" "$F/link4.txt"
 printf 'c5\n' > "$F/real5.txt"; ln -s "$F/real5.txt" "$F/link5.txt"
 set_store "{\"linux\":{\"dev\":{\"symlink\":[{\"real\":\"$F/real4.txt\",\"fake\":\"$F/link4.txt\"},{\"real\":\"$F/real5.txt\",\"fake\":\"$F/link5.txt\"}],\"hardlink\":[],\"copy\":[]}}}"
-wait_valid 2 || { echo "夹具未就绪"; exit 1; }
+wait_valid 2 || { echo "测试数据未就绪"; exit 1; }
 curl -s -X POST "$BASE/api/unlink" -H 'Content-Type: application/json' \
   -d "{\"device\":\"dev\",\"type\":\"symlink\",\"fields\":{\"real\":\"$F/real4.txt\",\"fake\":\"$F/link4.txt\"},\"noTrash\":false}" > "$WORK/r4.json" &
 P1=$!
@@ -270,7 +270,7 @@ chk "清单里两条记录都已消失" "$(jq '.linux.dev.symlink|length' "$STOR
 echo "== 6. 并发：同一条记录被两个请求同时解除 =="
 printf 'c6\n' > "$F/real6.txt"; ln -s "$F/real6.txt" "$F/link6.txt"
 set_store "{\"linux\":{\"dev\":{\"symlink\":[{\"real\":\"$F/real6.txt\",\"fake\":\"$F/link6.txt\"}],\"hardlink\":[],\"copy\":[]}}}"
-wait_valid 1 || { echo "夹具未就绪"; exit 1; }
+wait_valid 1 || { echo "测试数据未就绪"; exit 1; }
 BODY="{\"device\":\"dev\",\"type\":\"symlink\",\"fields\":{\"real\":\"$F/real6.txt\",\"fake\":\"$F/link6.txt\"},\"noTrash\":false}"
 curl -s -X POST "$BASE/api/unlink" -H 'Content-Type: application/json' -d "$BODY" > "$WORK/r6a.json" &
 P1=$!

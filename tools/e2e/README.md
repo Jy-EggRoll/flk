@@ -37,7 +37,7 @@ node verify.mjs --binary=build/flk --root=.task/e2e --label=local
 .task/e2e/runs/<时间戳>/video/*.mp4    整场录屏（默认放慢 3 倍，便于复审）
 .task/e2e/runs/<时间戳>/run.log        控制台全文
 .task/e2e/runs/<时间戳>/serve-*.log    被测进程的 stdout/stderr
-.task/e2e/work/<label>-<时间戳>/       本次的临时 store 与夹具文件，刻意保留便于事后复现
+.task/e2e/work/<label>-<时间戳>/       本次的临时 store 与测试数据文件，刻意保留便于事后复现
 ```
 
 现场刻意不放 `build/`：`task clean` 是 `rm -rf build/`，放那儿会被顺手删掉。`.task/` 是 Task 自己的元数据目录，`clean` 不碰它，要清现场就自己删 `.task/e2e`

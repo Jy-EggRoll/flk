@@ -21,7 +21,7 @@
  *      页面是 401 白屏、断言只会看到「元素找不到」，因此取不到 token 必须当场报错而不是继续跑
  *   5. 旧实现的 watchStoreFile 轮询里 lastModTime 是零值，服务起来约 1 秒后必然触发
  *      一次「假变更」SSE + 重载。脚本在开页面之前先等过这一跳，避免它污染 B5/B6 的时序
- *   6. 每条断言前都从 pristine 夹具重置 store（外部写盘 + 轮询确认服务端已读回内存），
+ *   6. 每条断言前都从 pristine 测试数据重置 store（外部写盘 + 轮询确认服务端已读回内存），
  *      再整页重新加载，保证条目之间互不污染；重置必须轮询确认，否则 GET 可能拿到旧数据
  *   7. 断言失败信息一律带实际值（元素个数 / 真实文本 / 真实类名），不留「断言失败」四个字
  *   8. 所有产物只写到 --root 指定的目录（Taskfile 默认指向 build/e2e，已被 .gitignore 忽略），
@@ -75,7 +75,7 @@ const TYPE_FIELDS = {
 
 /** 外部改写时写入的独特标记，用来判断页面是否真的拿到了外部内容 */
 const EXTERNAL_MARKER = 'z-external-real.txt'
-/** B7/B9 里敲进输入框的未保存内容，必须足够独特，避免和夹具里的真实路径混淆 */
+/** B7/B9 里敲进输入框的未保存内容，必须足够独特，避免和测试数据里的真实路径混淆 */
 const UNSAVED_MARKER = 'MY-UNSAVED-EDIT-VALUE'
 
 /**
@@ -190,10 +190,10 @@ async function waitUntil(predicate, timeoutMs, description, intervalMs = 200) {
   }
 }
 
-/* ---------- 夹具：真实文件 + 三种链接类型 + 多平台多设备 ---------- */
+/* ---------- 测试数据：真实文件 + 三种链接类型 + 多平台多设备 ---------- */
 
 /**
- * 在临时目录里造出一份完全真实的 store 夹具
+ * 在临时目录里造出一份完全真实的 store 测试数据
  *
  * 「真实」的含义：symlink 条目造出真的符号链接、hardlink 条目造出真的硬链接、
  * copy 条目造出真的两个文件；同时每个类型都留一条路径不存在，这样 /api/check
@@ -213,7 +213,7 @@ function buildFixture(dataDir) {
     // 目标必须用绝对路径：符号链接的**相对**目标是相对「链接自身所在目录」解析的，
     // 而这里的 target 是相对仓库根（--root 传相对路径时 dataDir 就是相对的）拼出来的，
     // 直接用会让目标被拼接两次（<dataDir>/<dataDir>/a-real.txt）而指向不存在的路径——
-    // 于是夹具里那条「本应有效」的符号链接记录实际是无效的，与夹具自己的意图（有效/无效各一条）不符
+    // 于是测试数据里那条「本应有效」的符号链接记录实际是无效的，与测试数据自己的意图（有效/无效各一条）不符
     symlinkSync(resolve(target), path(name))
     return path(name)
   }
@@ -295,7 +295,7 @@ function buildFixture(dataDir) {
 /**
  * 把 store 内容规范化成可精确比较的字符串
  *
- * 为什么不能用子串判断「文件是否已回到 pristine」：夹具里 a 行的值是 `a-real.txt`，
+ * 为什么不能用子串判断「文件是否已回到 pristine」：测试数据里 a 行的值是 `a-real.txt`，
  * 而保存过之后会变成 `a-real.txt.saved`——`a-real.txt` 恰好是它的前缀，
  * 于是「包含 a-real.txt」这种判断会在**服务端还没读回新内容**时也对陈旧数据成立，
  * 重置提前返回、页面读到上一条断言留下的旧值（B5 就是这么被自己坑失败的）
@@ -447,7 +447,7 @@ async function main() {
   report.note(`被测二进制：${options.binary}`)
   report.note(`二进制 mtime：${existsSync(options.binary) ? new Date(statSafe(options.binary)).toISOString() : '不存在'}`)
   report.note(`store 文件：${storeFile}`)
-  report.note(`夹具数据目录：${dataDir}`)
+  report.note(`测试数据目录：${dataDir}`)
   report.note(`语言：zh-CN（固定，顺带验证中文文案无英文残留）`)
   report.note(`slowMo：${options.fast ? '关闭（--fast）' : '350ms（默认，便于录屏）'}`)
   if (options.only !== undefined) report.note(`只跑：${options.only.join(', ')}`)
@@ -1924,7 +1924,7 @@ async function main() {
      * 服务端侧的删除策略（回收站 vs 真实删除）、并发串行化与 writer 注入由 curl 端到端覆盖，
      * 这里只跑默认策略（不勾真实删除）这一条 UI 路径，避免把同一条结论测两遍
      *
-     * 位置说明：本条会改变夹具的文件系统状态（a-link 变成真实副本），因此固定在全部断言末尾；
+     * 位置说明：本条会改变测试数据的文件系统状态（a-link 变成真实副本），因此固定在全部断言末尾；
      * 它自己开头会 resetStore，不受前面断言的影响
      */
     await check('X13', '附加：行内「解除」→ 弹窗默认不勾真实删除 → 提交后记录消失且派生位置变成真实副本', async () => {
