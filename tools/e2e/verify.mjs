@@ -7,7 +7,7 @@
  * 复用能力：vendor 自 browser-verify 技能的 lib/（Playwright + 本机 Chromium），
  * 来源与同步方式见同目录 README.md
  *
- * 设计要点（都是实测踩过或推演出的坑，写在这里避免以后重复踩）：
+ * 设计要点（都是实测出现过或推演出的问题，写在这里避免以后重复遇到）：
  *   1. 被测二进制由 --binary 指定，脚本本身不关心是旧版还是新版，同一份脚本两版都跑
  *   2. 端口用 node:net listen(0) 由系统分配，再释放后交给被测进程；被测侧本身还有
  *      「端口被占则 +1 顺延」逻辑，所以即便有极小概率的竞态也不会撞车
@@ -28,7 +28,7 @@
  *      绝不写进仓库；脚本内不含任何仓库外的绝对路径，换机器、换目录都能跑
  *   9. 「保存窗口内继续编辑」这类时序断言（X12）不靠 sleep 造窗口：用 page.route 拦住
  *      POST /api/config 的响应，先 route.fetch() 把请求真正发出去（服务端此刻就写盘），
- *      再用闸门卡住 fulfil，等窗口内的输入做完才放行。固定 sleep 造窗口会与 slowMo
+ *      再卡住 fulfil 不放行，等窗口内的输入做完才放行。固定 sleep 造窗口会与 slowMo
  *      （每个动作 +350ms）抢时间，窗口长度不可控，必然 flaky
  *
  * 用法（--binary 与产物目录 --root 都是必填，缺了直接报参数错误并以退出码 2 结束）：
@@ -298,7 +298,7 @@ function buildFixture(dataDir) {
  * 为什么不能用子串判断「文件是否已回到 pristine」：测试数据里 a 行的值是 `a-real.txt`，
  * 而保存过之后会变成 `a-real.txt.saved`——`a-real.txt` 恰好是它的前缀，
  * 于是「包含 a-real.txt」这种判断会在**服务端还没读回新内容**时也对陈旧数据成立，
- * 重置提前返回、页面读到上一条断言留下的旧值（B5 就是这么被自己坑失败的）
+ * 重置提前返回、页面读到上一条断言留下的旧值（B5 的偶发失败就是这么来的）
  *
  * 规范化规则：对象键全部排序；每个 plat/dev/type 下的条目列表也排序后再比较，
  * 这样既不受 Go 侧 map 键序影响，也不受 sortEntrySlice 造成的条目顺序影响
@@ -664,7 +664,7 @@ async function main() {
         `页面 SSE 连通（探针：外部写入后表格出现 ${PROBE_MARKER}）`,
         1500,
       )
-      // 排空在途事件：探针期间可能连写了多次，SSE 是覆盖式的，等一会儿让页面把残留事件处理完，
+      // 排空在途事件：探针期间可能连写了多次，SSE 是覆盖式的，等待一段时间让页面把残留事件处理完，
       // 免得后续「填输入框」与「重载配置」两条路径在极短窗口里互相踩踏（那会让 B7/B9 偶发丢改动）
       await sleep(1500)
     }
@@ -946,7 +946,7 @@ async function main() {
         }
         // 不能只用定时采样抓闪烁：实测这个窗口只有 3–5ms，25ms 的采样会因相位误差漏掉（4 次里漏了 1 次），
         // 于是改成监听 class/style 的每一次变化——只要提示条变可见就必然留下记录，不受采样相位影响；
-        // 另外保留一路 25ms 轮询兜底，防止实现改用别的显示方式（不触发属性变化）而漏检
+        // 另外保留一路 25ms 轮询作为回退，防止实现改用别的显示方式（不触发属性变化）而漏检
         window.__b5Observer = new MutationObserver(() => record('mutation'))
         window.__b5Observer.observe(el, { attributes: true, attributeFilter: ['class', 'style'] })
         record('start')
@@ -976,7 +976,7 @@ async function main() {
         ),
       )
       report.note(
-        `B5 记录 ${samples.length} 条（class/style 变化监听 + 25ms 轮询兜底），其中 #conflictBar 可见 ${flashed.length} 条；首个可见记录=${JSON.stringify(flashed[0] ?? null)}`,
+        `B5 记录 ${samples.length} 条（class/style 变化监听 + 25ms 轮询回退），其中 #conflictBar 可见 ${flashed.length} 条；首个可见记录=${JSON.stringify(flashed[0] ?? null)}`,
       )
       report.note(`B5 时间线（SSE/提示条/响应，t 为页面内 performance.now 毫秒）=${JSON.stringify(timeline)}`)
       expect(
@@ -1682,7 +1682,7 @@ async function main() {
      * 派发一次「没有经过认可的拖拽起点」的 drop：用真实 DragEvent + 真实 DataTransfer，
      * 模拟用户从页面外（另一个窗口、文件管理器、聊天工具）往表格里拖东西松手。
      * 必须显式 bubbles:true —— 构造出来的 DragEvent 默认不冒泡，不冒泡就永远到不了绑定在 tr 上的 onDrop，
-     * 那样断言只会「空真通过」；所以这条的非空真由「在未加守卫的旧二进制上必须失败」兜底
+     * 那样断言只会「空真通过」；所以这条的非空真由「在未加守卫的旧二进制上必须失败」来保证
      */
     const dispatchForeignDrop = async (selector) => {
       const dataTransfer = await page.evaluateHandle(() => new DataTransfer())
@@ -1729,7 +1729,7 @@ async function main() {
      * 跑一次「保存窗口内继续编辑」场景，返回三个可观察量，供 X12.1/12.2/12.3 分别断言
      *
      * 窗口怎么造：拦住 POST /api/config 的响应，但先 route.fetch() 把请求真正发出去
-     * （服务端此刻就按这份请求体写盘），再用闸门卡住 fulfil 不返回，
+     * （服务端此刻就按这份请求体写盘），再卡住 fulfil 不返回，
      * 于是在「请求已发出、响应未回来」的窗口里，我可以用真实鼠标点回单元格、真实键盘继续打字。
      * 窗口长度由我控制，不与 slowMo 抢时间；用固定 sleep 造窗口会 flaky
      *
@@ -1773,7 +1773,7 @@ async function main() {
         // 请求先真正发出去：服务端此刻就按这份请求体写盘
         const response = await route.fetch()
         const body = await response.text()
-        // 响应卡在闸门后面，等窗口内的输入做完
+        // 响应被卡住不返回，等窗口内的输入做完
         await waitGate(seq)
         postFulfills += 1
         await route.fulfill({ response, body })
@@ -1787,7 +1787,7 @@ async function main() {
         await page.keyboard.press('End')
         await page.keyboard.type('.win2')
         const midEditValue = await input.inputValue()
-        // 记录「窗口确实存在」的硬证据：此刻响应尚未 fulfil 过任何一次
+        // 记录「窗口确实存在」的证据：此刻响应尚未 fulfil 过任何一次
         const fulfillsAtMidEdit = postFulfills
         releaseGate(1)
         // 等这一次保存真正处理完（saveConfig 的 finally 会重新启用保存按钮），再如实读结果 ——
@@ -1841,7 +1841,7 @@ async function main() {
         }
         return saveWindowCache
       } finally {
-        // 无论成败都要放行所有闸门并撤掉路由，否则挂住的响应会让后续断言卡死
+        // 无论成败都要放行所有被卡住的响应并撤掉路由，否则挂住的响应会让后续断言卡死
         releaseGate(1)
         releaseGate(2)
         await page.unroute('**/api/config')

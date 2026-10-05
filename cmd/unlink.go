@@ -134,7 +134,7 @@ func RunUnlink(cmd *cobra.Command, args []string) error {
 			result := validResults[idx]
 			// 逐条解除的三段日志：开始（Debug）→ 成功（Info）或失败（Warn）
 			// 与 fix 的 repairSelected 同构：循环这里就是「每条」的粒度，字段统一走 recordLogArgs（type/device/from,to）
-			// 放在循环而不是 unlinkResult 内部，是因为 unlinkResult 有多个错误返回点，逐点补日志会把单条结果拆散
+			// 放在循环而不是 unlinkResult 内部，是因为 unlinkResult 有多个错误返回点，逐点补日志会让单条结果分散在多处
 			logger.Debug(l10n.T("Removing the link relationship", nil), recordLogArgs(result)...)
 			if err := unlinkResult(result, skipConfirm, errOut); err != nil {
 				// 失败用 Warn 而不是 Error：批量解除时单条失败不中断其余记录，符合「用户需知道但可继续」的级别语义
@@ -227,8 +227,8 @@ func RunUnlink(cmd *cobra.Command, args []string) error {
 // 注意：本函数只更新内存中的 store（走共享的 removeTrackedRecord），
 // 落盘由调用方在一批操作后统一执行 saveTrackedStore，减少重复写盘
 //
-// 拆分说明（本次改造）：物理替换与清单记录删除被拆成两步，物理部分收在 unlinkFilesystem 里，
-// 本函数只负责「替换成功后再移除记录」这个顺序。拆分的唯一动机是 WebUI——
+// 改动说明（本次改造）：物理替换与清单记录删除分成了两步，物理部分收在 unlinkFilesystem 里，
+// 本函数只负责「替换成功后再移除记录」这个顺序。分成两步的唯一动机是 WebUI——
 // 网页端解除时这两件事必须落在不同的锁里：文件系统操作（可能复制整棵目录，耗时数秒）
 // 不能持清单写锁，否则保存请求要排队、轮询重载也得停摆；而清单改动又必须在清单写锁内完成。
 // 若两者仍耦合在同一个函数里，服务端就只能二选一，要么长时间持锁要么留下内存与磁盘的分叉

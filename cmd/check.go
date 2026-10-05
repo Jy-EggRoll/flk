@@ -417,7 +417,7 @@ func buildRecordEntry(result output.CheckResult) store.Entry {
 
 // removeTrackedRecord 从全局存储中移除一条追踪记录，返回值表示「是否真的执行了一次移除」
 //
-// 收口的三件事：
+// 集中的三件事：
 //  1. 构造匹配键：统一走 buildRecordEntry，fix 与 unlink 不再各写一份 switch
 //  2. store 判空：全局实例为 nil（InitStore 失败等极端场景）时安全跳过而不解引用 panic，
 //     原先 fix 的删除分支直接使用 mgr 缺少这层保护，与 unlink 的处理不一致，此处顺手补齐
@@ -431,14 +431,14 @@ func buildRecordEntry(result output.CheckResult) store.Entry {
 //   - unlink：单条删除时只改内存（unlinkResult 的返回值用于判定「解除失败」），
 //     批量结束后由 RunUnlink 的 saveStore 闭包调用 saveTrackedStore 统一落盘并上报「Save failed」
 //
-// 若把 Save 硬塞进本函数，unlink 的落盘失败就会被 unlinkResult 当成「解除失败」上报（文案与退出码语义都变了），
+// 若在本函数里顺手 Save，unlink 的落盘失败就会被 unlinkResult 当成「解除失败」上报（文案与退出码语义都变了），
 // fix 也会从「一批一次落盘」变成「一条一次落盘」；因此落盘单独抽成 saveTrackedStore 共享，
 // 「构造 entry → 校验 store → 移除」与「校验 store → 落盘」两条链路仍是同一份实现，没有重复
 //
 // 返回值：两处调用方都不消费它（重构前也没有消费等价的信号，输出决策取决于落盘是否成功），
 // 保留返回值是为了让「store 不可用」「空匹配键」这两种安全跳过在调用方与单测中可观测
 func removeTrackedRecord(result output.CheckResult) bool {
-	// 防御性判空：全局实例可能因 InitStore 失败而为 nil（Global() 已加锁读取，不再有裸变量竞态）
+	// 防御性判空：全局实例可能因 InitStore 失败而为 nil（Global() 已加锁读取，不再有无保护变量的竞态）
 	mgr := store.Global()
 	if mgr == nil {
 		return false
@@ -482,12 +482,12 @@ func saveTrackedStore() error {
 // 边界设计（三条独立约束，缺一不可）：
 //   - 编号语义面向用户是 1 基序号，减一后返回，调用方可直接拿来做下标访问
 //   - input 由调用方负责去掉命令前缀：fix 的 `d<number>` 里 `d` 只表示「删除动作」而不是编号的一部分，
-//     本函数只认识「空格分隔的数字串」，不掺入任何 d 前缀语义，避免把删除分支的特例塞进公共函数
+//     本函数只认识「空格分隔的数字串」，不掺入任何 d 前缀语义，避免把删除分支的特例写进公共函数
 //   - 非法项（非数字 / 0 / 负数 / 超出 count）只跳过自身并打印一条警告，不影响同一行里其它合法编号；
 //     警告条数等于非法项条数、顺序按输入先后，与重构前逐项 continue 的行为逐字一致
 //
 // 返回值形态：全部非法或空输入时返回 nil 而不是空切片，调用方只做 len 判断并跳过本轮，
-// 两种形态在调用点完全等价，保留 `var indices []int` 的零值形态只为让「无有效编号」可被单测钉死
+// 两种形态在调用点完全等价，保留 `var indices []int` 的零值形态只为让「无有效编号」可被单测固定
 //
 // errOut 必须非 nil：三处调用点都传 cmd.ErrOrStderr()，警告属于交互诊断信息，
 // 必须与业务结果（stdout）分流，测试里传 io.Discard 或 buffer 即可

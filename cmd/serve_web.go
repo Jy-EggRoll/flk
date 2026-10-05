@@ -108,7 +108,7 @@ const (
 // sseHub 管理 SSE 客户端连接，用于广播变更事件
 //
 // lastRev 记录最近一次变更的 store 版本号：前端靠它判断「这次事件是不是我自己保存引起的」，
-// 从而避免自己写盘后触发一次多余的整表重载。版本号放在 hub 上而不是塞进 channel，
+// 从而避免自己写盘后触发一次多余的整表重载。版本号放在 hub 上而不是写进 channel，
 // 是因为 channel 只承担「有变更」这一信号，即便多次变更被合并成一次唤醒，
 // 客户端读到的也始终是最新版本，语义上更稳
 type sseHub struct {
@@ -252,9 +252,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// 启动文件变更监听（轮询方式，每秒检查一次文件的修改时间）
 	go watchStoreFile(hub, srvState.writeMu)
 
-	// 业务端点整体作为 API 交给 webui：页面入口、静态资源托管与三道护栏都由它负责，
-	// 这里只保留 /api/* 这层业务路由。把端点挂在 "/api/" 前缀下（而不是原来的裸 mux + 自己的
-	// 路径路由），意味着 flk 侧不再需要 "/" 与静态资源的路由与兜底 404，那部分已随 webui 上收
+	// 业务端点整体作为 API 交给 webui：页面入口、静态资源托管与 Host / token / Origin 三道校验都由它负责，
+	// 这里只保留 /api/* 这层业务路由。把端点挂在 "/api/" 前缀下（而不是原来直接挂在默认 mux 上、再自己写
+	// 路径路由），意味着 flk 侧不再需要 "/" 与静态资源的路由与默认 404，那部分已随 webui 上收
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/config", srvState.handleConfig)
 	mux.HandleFunc("/api/meta", srvState.handleMeta)
@@ -341,7 +341,7 @@ func watchStoreFile(hub *sseHub, writeMu *sync.Mutex) {
 		lastSize = size
 
 		// 文件有变化，重新加载并整体替换全局实例
-		// 直接 SetGlobal 换指针（而不是往旧实例里搬数据）：所有读写都已收口到带锁的访问器，
+		// 直接 SetGlobal 换指针（而不是往旧实例里搬数据）：所有读写都已统一到带锁的访问器，
 		// 不必再靠「保留同一个 Manager 指针」来维持调用方的一致性
 		writeMu.Lock()
 		newMgr, loadErr := store.LoadFromFile(store.StorePath)

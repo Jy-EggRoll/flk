@@ -51,7 +51,7 @@ var LANGUAGE_API = '/api/language';
    刻意不把 token 从地址栏清掉：用户明确选了「token 留在 URL 里」这种最简方案，刷新还能直接复用 */
 var TOKEN = new URLSearchParams(location.search).get('token') || '';
 
-/* apiFetch 是所有 API 请求的唯一出口：token 在这里统一塞进请求头，
+/* apiFetch 是所有 API 请求的唯一出口：token 在这里统一写进请求头，
    调用方不必各自记得这件事（漏一处就是一处静默 401）。
    用 Object.assign 复制一份 headers：调用方传进来的对象可能还在别处使用，就地改写会留下意外副作用 */
 function apiFetch(url, options) {
@@ -203,7 +203,7 @@ if (window.matchMedia) {
     }
   };
   if (themeMq.addEventListener) themeMq.addEventListener('change', onSystemThemeChange);
-  else if (themeMq.addListener) themeMq.addListener(onSystemThemeChange); /* 旧 Safari 兜底 */
+  else if (themeMq.addListener) themeMq.addListener(onSystemThemeChange); /* 旧 Safari 的回退接口 */
 }
 
 /* ---------- 路径过滤 ----------
@@ -373,7 +373,7 @@ function computeDiff() {
     var old = ((originData[seg.plat] || {})[seg.dev] || {})[seg.type] || [];
     var n = cur.length, m = old.length;
 
-    /* 贪心前后缀对齐：先吃掉完全相同的头部，再吃掉完全相同的尾部，
+    /* 贪心前后缀对齐：先去掉完全相同的头部，再去掉完全相同的尾部，
        剩下的未对齐区段才是「真正发生变化的区域」，这样单点修改不会被放大 */
     var i = 0;
     while (i < n && i < m && canonicalRow(seg.type, cur[i]) === canonicalRow(seg.type, old[i])) i++;
@@ -491,7 +491,7 @@ function renderPlatformTabs() {
 
 function renderDeviceTabs() {
   var devs = getDevices(currentPlat);
-  /* 同上：先兜底 currentDev，设备删除后页签高亮才不会指向不存在的设备 */
+  /* 同上：先取默认值 currentDev，设备删除后页签高亮才不会指向不存在的设备 */
   if (devs.indexOf(currentDev) < 0 && devs.length > 0) {
     currentDev = devs[0];
   }
@@ -866,10 +866,10 @@ function openRepairModal(targets, isAll) {
 
 /* 执行修复：POST /api/repair，然后把服务端返回的整段输出留在弹窗里直到用户关闭
    输出里既有删除计划（pterm 在非终端 writer 下会退化成纯文本）也有逐条结果，
-   用 pre 原样展示比塞进 3 秒自动消失的成功提示更实用 */
+   用 pre 原样展示比写进 3 秒自动消失的成功提示更实用 */
 async function doRepair() {
   var targets = repairTargets;
-  /* 单条模式下没有目标就什么都不做：目标只可能由 openRepairModal 写入，这里只是防御性兜底 */
+  /* 单条模式下没有目标就什么都不做：目标只可能由 openRepairModal 写入，这里只是防御性回退 */
   if (!repairAll && (!targets || targets.length === 0)) return;
   var body = repairAll
     ? { all: true }
@@ -1294,7 +1294,7 @@ async function loadConfig(force) {
     /* 这里刻意不再设置连接状态：绿点必须反映 SSE 的真实连接与否，
        由 connectSSE 的 onopen/onerror 独占负责，否则配置加载成功会造出一个假的「已连接」 */
     /* 配置加载完成后异步检测可用性，不阻塞主渲染；
-       这也使 SSE updated 触发的 loadConfig 自动带动状态刷新，形成自动刷新闭环 */
+       这也使 SSE updated 触发的 loadConfig 自动带动状态刷新，形成自动刷新的循环 */
     loadCheckStatus();
   } catch (err) {
     showError(trf('Failed to load the config: {msg}', {msg: err.message}));
@@ -1499,7 +1499,7 @@ function init() {
   });
 
   /* 先接 SSE 再拉配置：SSE 不能晚于首次加载建立，否则建立前发生的文件变更会被永久漏掉，
-     而 updated 事件万一早于首次加载到达，connectSSE 里对 data == null 的兜底会直接重载 */
+     而 updated 事件万一早于首次加载到达，connectSSE 里对 data == null 的回退会直接重载 */
   connectSSE();
   loadConfig();
 }

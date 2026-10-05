@@ -36,7 +36,7 @@ type RootConfig map[string]DeviceGroup
 //   - cmd/serve_web.go 的 GET /api/config：读序列化结果（ToJSON）
 //   - cmd/serve_web.go 的 GET /api/check → cmd/check.go 的 performCheck：遍历读取（Snapshot）
 //
-// 改造前 data 是裸的导出字段且无任何同步，只因写入内容是纯内存 JSON 覆盖、窗口是毫秒级才侥幸没炸；
+// 改造前 data 是直接暴露的导出字段且无任何同步，只因写入内容是纯内存 JSON 覆盖、窗口是毫秒级才侥幸没炸；
 // 一旦写入链路加入耗时操作（备份文件、等待用户确认），map 并发读写 panic 与丢更新就会成为常态
 //
 // 两条硬约束：
@@ -50,14 +50,14 @@ type Manager struct {
 // New 构造一个空 Manager，等价于此前的 &Manager{Data: make(RootConfig)}
 //
 // 之所以提供构造函数而不是让调用方写 &Manager{}：后者得到的是 nil data，
-// 虽然本包各出口都做了兜底，但「空表」才是明确的空清单语义，nil 只代表「尚未初始化」，
+// 虽然本包各出口都做了回退，但「空表」才是明确的空清单语义，nil 只代表「尚未初始化」，
 // 让调用方从构造期就拿到确定状态，后续都不必再猜
 func New() *Manager {
 	return &Manager{data: make(RootConfig)}
 }
 
-// rootConfigOrEmpty 把 nil 的 RootConfig 归一成空表，是本包「nil 不流出」的唯一收口点
-// 防的是两类问题：nil map 赋值 panic（assignment to entry in nil map），以及序列化出裸 null
+// rootConfigOrEmpty 把 nil 的 RootConfig 归一成空表，是本包「nil 不流出」的唯一收敛点
+// 防的是两类问题：nil map 赋值 panic（assignment to entry in nil map），以及序列化出 null
 // （json.MarshalIndent(nil) 得到 "null"，它不是对象，前端 /api/config 取属性会出错）
 // 潜在影响点：AddRecord / Replace / ToJSON / Save 都依赖它；新增任何读写 data 的出口都应先过这里，别再各写一份判空
 func rootConfigOrEmpty(rc RootConfig) RootConfig {
@@ -123,7 +123,7 @@ func CountEntries(rc RootConfig) int {
 
 // newManagerFromData 是 LoadFromFile 所有成功路径的统一出口，保证返回的 Manager 里 data 永不为 nil
 // 关键场景：文件内容为 JSON null 时 json.Unmarshal 会成功并把 RootConfig 留成 nil map，
-// 若直接把 data 塞进 Manager，调用方一 AddRecord 就 panic
+// 若直接把 data 写进 Manager，调用方一 AddRecord 就 panic
 // 潜在影响点：空文件、空对象、旧格式迁移结果都从这里出去，迁移分支也一并被覆盖
 func newManagerFromData(data RootConfig) *Manager {
 	return &Manager{data: rootConfigOrEmpty(data)}
@@ -140,7 +140,7 @@ func (m *Manager) Snapshot() RootConfig {
 	return cloneRootConfig(m.data)
 }
 
-// Replace 用 rc 整体替换当前清单，nil 归一成空表（语义同其他出口，避免裸 null 又从内存流回磁盘）
+// Replace 用 rc 整体替换当前清单，nil 归一成空表（语义同其他出口，避免 null 又从内存流回磁盘）
 //
 // 所有权约定：入参 rc 的所有权移交给 Manager，调用方在调用后不得再改动 rc（含其内层 map / 切片）
 // 当前唯一调用方是 serve 的 POST /api/config，它刚从 JSON 反序列化出 rc 且不留引用，因此不需要再复制一遍
@@ -175,7 +175,7 @@ func (m *Manager) AddRecord(device, linkType string, fields map[string]string) {
 
 	m.mu.Lock()
 
-	// 兜底：data 为 nil 时，下面的 m.data[platform] = ... 会 panic（assignment to entry in nil map）
+	// 回退：data 为 nil 时，下面的 m.data[platform] = ... 会 panic（assignment to entry in nil map）
 	// LoadFromFile / New 都已保证 data 非 nil，这里防的是本包内直接写 &Manager{} 的构造方式
 	// 潜在影响点：此处归一后 m.data 会被就地替换成空表，后续写入和序列化都走正常路径
 	m.data = rootConfigOrEmpty(m.data)
@@ -343,7 +343,7 @@ func InitStore(storePath string) error {
 func (m *Manager) Save(filePath string) error {
 	// 序列化在 Snapshot 出的私有副本上进行：读锁保证拿到的是某一时刻完整一致的清单，
 	// 随后的排序与 Marshal 都作用在这份副本上，既不需要长时间持锁，也不会为落盘而去改写内部顺序
-	// 潜在影响点：副本为 nil data 时同样归一成空表，否则会把裸 null 写进存储文件，
+	// 潜在影响点：副本为 nil data 时同样归一成空表，否则会把 null 写进存储文件，
 	// 下次启动读回又是 nil data，本缺陷会随磁盘文件在「读入 → 写出」之间来回传递，永远清除不掉
 	data := m.Snapshot()
 	sortRootConfig(data)
@@ -386,11 +386,11 @@ func LoadFromFile(filePath string) (*Manager, error) {
 	}
 
 	// 先尝试新格式（3 层：platform → device → []Entry）
-	// 内容为裸 null 时这里也会解析成功，data 仍是 nil，交由 newManagerFromData 归一成空表
+	// 内容为 null 时这里也会解析成功，data 仍是 nil，交由 newManagerFromData 归一成空表
 	var data RootConfig
 	if err := json.Unmarshal(b, &data); err == nil {
 		// 读入成功后记一条 Debug：条目数直接反映这份清单里到底有多少条链接记录
-		// data 为裸 null 时 Unmarshal 同样成功，CountEntries 对 nil 归零处理，不会 panic
+		// data 为 null 时 Unmarshal 同样成功，CountEntries 对 nil 归零处理，不会 panic
 		logger.Debug(l10n.T("Store loaded", nil), "path", expanded, "count", CountEntries(data))
 		return newManagerFromData(data), nil
 	}

@@ -2,7 +2,7 @@
 html,body { height: 100%; }
 
 /* ========== 设计令牌 ==========
-   颜色只在这里定义，组件样式一律引用 var(--*)，不允许再出现裸色值——
+   颜色只在这里定义，组件样式一律引用 var(--*)，不允许再直接写色值——
    这是暗色主题能「一份结构两套皮」的前提：切主题只换令牌，不动几十处组件规则
    强调色刻意用 orange-600（#ea580c）而不是改造前的 amber-600（#d97706）：
    后者偏黄，大面积铺开后观感发闷发土；前者色相更正、更干净，仍属同一个橙色品牌基因
@@ -123,7 +123,7 @@ body {
   font-size: 17px; font-weight: 700; letter-spacing: -.02em;
   display: flex; align-items: center; gap: 10px;
 }
-/* 品牌 mark：旋转小方块 + 光环，替代裸文字标题的单薄感 */
+/* 品牌 mark：旋转小方块 + 光环，替代纯文字标题的单薄感 */
 .header h1::before {
   content: ""; width: 10px; height: 10px; border-radius: 3px;
   background: #fff;
@@ -233,7 +233,7 @@ html[data-theme="dark"] .btn-add { color: #1c1008; }
 .main::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; }
 .main::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
 
-/* 小节标签：左侧强调短线 + 微大写，比裸灰字更有「章节」的层级感 */
+/* 小节标签：左侧强调短线 + 微大写，比纯灰字更有「章节」的层级感 */
 .section-label {
   font-size: 10.5px; font-weight: 700; color: var(--text-3);
   text-transform: uppercase; letter-spacing: .1em; margin-bottom: 7px;
@@ -250,7 +250,7 @@ html[data-theme="dark"] .btn-add { color: #1c1008; }
    尤其看不出哪里能点；选中项更亮（浅色=纯白、暗色=更亮的面）+ 品牌色描边，
    并保留顶部高亮条，那条琥珀刻线是选中态最抓眼的信号
    旧的「基线」（tab-bar 的 border-bottom）随之移除：按钮不再坐在一条线上，
-   窄屏换行成两行按钮也不会像两行裸文字那样难看 */
+   窄屏换行成两行按钮也不会像两行纯文字那样难看 */
 .tab-bar {
   display: flex; gap: 6px; flex-wrap: wrap;
   padding: 0 2px; margin-bottom: 16px;

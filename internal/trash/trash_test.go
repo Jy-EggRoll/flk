@@ -89,7 +89,7 @@ func TestMoveToTrash_Directory(t *testing.T) {
 	}
 }
 
-// TestMoveToTrash_CrossDeviceFallback 守住「rename 失败时降级为复制再删除」这条兜底
+// TestMoveToTrash_CrossDeviceFallback 守住「rename 失败时降级为复制再删除」这条回退路径
 //
 // 前因（用户实际报来的故障）：回收站根目录固定在用户家目录所在的卷（Windows 上即 C:），
 // 而被删文件可能在另一个卷（D:）或另一个挂载点，此时 os.Rename 必然失败。
@@ -98,7 +98,7 @@ func TestMoveToTrash_Directory(t *testing.T) {
 //
 // 手段是注入一个必定失败的 renameFunc，而不是真去找两块文件系统：
 // CI 容器里不一定有第二块可写文件系统，而这条逻辑必须在任何环境下都被覆盖。
-// 刻意用一个普通错误而不是 syscall.EXDEV：实现不按 errno 区分失败原因，任何 rename 失败都走同一条兜底
+// 刻意用一个普通错误而不是 syscall.EXDEV：实现不按 errno 区分失败原因，任何 rename 失败都走同一条回退路径
 //
 // 用目录（内含普通文件与符号链接）作为被测对象，覆盖递归复制这条最容易出错的分支；
 // 符号链接必须原样保留，一旦被跟随复制，删一个链接就会把指向的真实数据也搬进回收站
@@ -131,11 +131,11 @@ func TestMoveToTrash_CrossDeviceFallback(t *testing.T) {
 	}
 
 	if err := MoveToTrash(srcDir); err != nil {
-		t.Fatalf("跨设备兜底失败: %v", err)
+		t.Fatalf("跨设备回退失败: %v", err)
 	}
 
 	if _, err := os.Lstat(srcDir); !os.IsNotExist(err) {
-		t.Fatal("兜底成功后源目录应该已被移除")
+		t.Fatal("回退成功后源目录应该已被移除")
 	}
 
 	var trashDir string
@@ -174,7 +174,7 @@ func TestMoveToTrash_CrossDeviceFallback(t *testing.T) {
 	}
 }
 
-// TestMoveToTrash_RealCrossDevice 用真实的两块文件系统验证同一条兜底
+// TestMoveToTrash_RealCrossDevice 用真实的两块文件系统验证同一条回退路径
 //
 // 与上一条的区别：那条证明逻辑分支正确，这条证明在真实 EXDEV 下真的能跑通。
 // 探测方式是对两块目录之间做一次真实的 rename 探针——比比较设备号更可移植，
@@ -232,7 +232,7 @@ func TestMoveToTrash_RealCrossDevice(t *testing.T) {
 			return nil
 		})
 		if !found {
-			t.Fatal("跨设备兜底后回收站里应该有该文件")
+			t.Fatal("跨设备回退后回收站里应该有该文件")
 		}
 		return
 	}

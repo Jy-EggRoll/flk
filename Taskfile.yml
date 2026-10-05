@@ -20,7 +20,7 @@ vars:
   # 升级与日志那两块文案随 eggokit 发布（eggokit/locales），运行时由 internal/locales 叠加进来
   # --html 覆盖 cmd/ui 下的页面：WebUI 的译文内嵌在页面里，只有把它交给提取器，
   # 页面文案的漏译与失效译文才会被 l10n:check 拦住（否则只会静默回退英文）
-  # 注意拆分后的三文件布局：扫描器只收集 .html，因此 MSG 翻译表必须留在
+  # 注意分成三个文件后的布局：扫描器只收集 .html，因此 MSG 翻译表必须留在
   # config.html（不能搬去 app.js）；style.css 与 app.js 对该扫描器不可见，属预期
   # 与 internal/locales/locales.go 里的语言列表是一对，改动时要一起看
   L10N_ARGS: '--pkg github.com/jy-eggroll/eggokit/l10n --src cmd,internal --html cmd/ui --dir internal/locales'
@@ -53,8 +53,8 @@ tasks:
       - go mod tidy -diff
 
   # 只把磁盘上确实存在的文件交给 gofmt：git ls-files 读的是索引，会把「已删除但尚未暂存」
-  # 的文件一并列出，重构中途直接喂给 gofmt 会以 lstat 失败收场，报出来的却是「格式检查不过」——
-  # 一个与格式毫无关系的假失败（实测踩过：抽包删掉 34 个文件后 verify 就卡在这里）
+  # 的文件一并列出，重构中途直接交给 gofmt 会以 lstat 失败收场，报出来的却是「格式检查不过」——
+  # 一个与格式毫无关系的假失败（实测出现过：抽包删掉 34 个文件后 verify 就卡在这里）
   fmt:check:
     desc: Check Go source formatting
     cmds:
@@ -245,7 +245,7 @@ tasks:
   # NOTES_LANG 为空时**刻意不传 --lang**，让清单里的 releaseNotesLang(zh-CN) 生效，
   # 这样默认发布说明仍是中文，与迁移前的输出保持一致
   # 原始 shell 版本已删除：那版在 CHANGELOG 里找不到当前版本小节时会输出一片空白
-  # （首个正式版 Release 正文为空的根因），共享库版本改为输出点名文件的兜底提示
+  # （首个正式版 Release 正文为空的根因），共享库版本改为输出点名文件的默认提示
   changelog:
     desc: '生成发布更新日志并输出到 stdout（用法: task changelog VERSION=x.y.z [TYPE=release|dev] [NOTES_LANG=zh-CN|en]）'
     cmds:

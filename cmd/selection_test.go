@@ -137,7 +137,7 @@ func TestParseSelectionIndices(t *testing.T) {
 			var buf bytes.Buffer
 			got := parseSelectionIndices(tt.input, tt.count, &buf)
 
-			// DeepEqual 同时钉死内容、顺序与 nil 形态：全部非法时必须是 nil 而不是 []int{}
+			// DeepEqual 同时固定内容、顺序与 nil 形态：全部非法时必须是 nil 而不是 []int{}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("parseSelectionIndices(%q, %d) = %#v, 期望 %#v", tt.input, tt.count, got, tt.want)
 			}

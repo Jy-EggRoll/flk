@@ -51,7 +51,7 @@ func TestServeCmdRejectsExtraArgs(t *testing.T) {
 //
 // 回归背景：这四个 flag 原先是 serveCmd 的 PersistentFlags（因为真正干活的 serve config 是它的子命令），
 // 子命令并入后必须改用普通 Flags —— 语义上 serve 已无子命令，用持久化声明既名不副实，
-// 又会让帮助里的 Local Flags 段落错位。本用例同时钉住「没有遗漏的持久化残留」与「四个 flag 都在」
+// 又会让帮助里的 Local Flags 段落错位。本用例同时固定「没有遗漏的持久化残留」与「四个 flag 都在」
 func TestServeCmdFlagOwnership(t *testing.T) {
 	for _, name := range []string{"port", "host", "allow-host", "no-open"} {
 		if serveCmd.Flags().Lookup(name) == nil {

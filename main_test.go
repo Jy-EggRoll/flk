@@ -246,7 +246,7 @@ func TestCLIAuxiliaryCommands(t *testing.T) {
 // 同时它也守住了「语言确实生效」这一点：若 --lang 被丢弃而回退默认英文，
 // zh-CN 的输出会与 --lang en 完全相同，用例立即失败
 //
-// 根命令的场景同样必须覆盖，而它由另一处修复兜底：cobra 的 Find/stripFlags 在默认 help flag
+// 根命令的场景同样必须覆盖，而它由另一处修复保证：cobra 的 Find/stripFlags 在默认 help flag
 // 尚未注册时会把 --help/-h 误判成「需要取值的 flag」并吞掉下一个参数，随后根命令专属的
 // legacyArgs 直接报 unknown command；cmd/root.go 在执行前提前注册该 flag 即为修此问题
 // 两类缺陷的表现都是「帮助参数的位置改变结果」，因此放在同一个用例里逐条比对
@@ -767,7 +767,7 @@ func TestCLICreateNoTrashSwitch(t *testing.T) {
 // TestCLIUnlinkNoTrashRemovesLinkPermanently 验证 --no-trash 同样作用于 unlink：
 // 解除链接时旧的符号链接被真实删除，回收站内不再留有副本，而派生位置被替换为真实文件
 //
-// unlink 此前绕过 safeop 直接调用回收站，本用例守住「删除策略已收口到 safeop」这一约定
+// unlink 此前绕过 safeop 直接调用回收站，本用例守住「删除策略已集中在 safeop」这一约定
 func TestCLIUnlinkNoTrashRemovesLinkPermanently(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows 创建符号链接需要额外权限，跳过端到端建链断言")
@@ -877,9 +877,9 @@ func TestCLIConfigSubtreeContract(t *testing.T) {
 		t.Fatalf("show 应在 stderr 提示设置文件路径: %q", shown.stderr)
 	}
 
-	// 裸 flk config 等价于 show
+	// 直接执行 flk config 等价于 show
 	if bare := runCLIWithEnv(t, home, "config"); bare.stdout != shown.stdout {
-		t.Fatalf("裸 config 与 config show 输出不一致:\n%q\n%q", bare.stdout, shown.stdout)
+		t.Fatalf("直接执行 config 与 config show 输出不一致:\n%q\n%q", bare.stdout, shown.stdout)
 	}
 
 	// get 是业务叶子命令：遮盖 PersistentPreRunE 之后不应出现欢迎语，

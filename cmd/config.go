@@ -25,7 +25,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// configCmd 是 "flk config" 子树，裸执行等同于 show。
+// configCmd 是 "flk config" 子树，直接执行等同于 show。
 var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: l10n.T("Show and edit the settings", nil),
@@ -59,7 +59,7 @@ Run "flk config --help" for the list of available keys.`, nil),
 	},
 }
 
-// configShowCmd 与裸 "flk config" 等价，提供明确的 show 子命令。
+// configShowCmd 与直接执行 "flk config" 等价，提供明确的 show 子命令。
 var configShowCmd = &cobra.Command{
 	Use:   "show",
 	Short: l10n.T("Show the current settings", nil),
@@ -77,7 +77,7 @@ var configPathCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		// 走裸 fmt 而非 pterm：路径经常被脚本直接取用
+		// 走 fmt 直接输出而非 pterm：路径经常被脚本直接取用
 		fmt.Fprintln(cmd.OutOrStdout(), path)
 		return nil
 	},
@@ -384,8 +384,8 @@ func levelTag(level config.Level) string {
 	return "[warning]"
 }
 
-// printConfigValue 以脚本友好的形式打印设置值：标量裸值、列表每行一项、空列表不输出。
-// 全程走裸 fmt，不经 pterm 着色
+// printConfigValue 以脚本友好的形式打印设置值：标量直接输出值、列表每行一项、空列表不输出。
+// 全程走 fmt 直接输出，不经 pterm 着色
 func printConfigValue(cmd *cobra.Command, value any) {
 	switch list := value.(type) {
 	case []string:

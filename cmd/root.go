@@ -268,7 +268,7 @@ func Execute() int {
 	relocalizeCommands()
 
 	// 提前把根命令的默认 --help/-h 注册进 flag 集，修的是「根命令上 --help 写在 --lang 之前直接失败」：
-	// cobra 的 Find → stripFlags 判断某个 flag 会不会吃掉下一个参数，依据是它有没有 NoOptDefVal；
+	// cobra 的 Find → stripFlags 判断某个 flag 会不会消费下一个参数，依据是它有没有 NoOptDefVal；
 	// 而默认 help flag 平时要等到 execute() 阶段才注册（Find 之后），此时它还不存在，
 	// 于是 `flk --help --lang zh-CN` 里的 --lang 被当成 --help 的取值吞掉，剩下的 "zh-CN"
 	// 被当作子命令名，最终由根命令专属的 legacyArgs 报 unknown command 并非零退出

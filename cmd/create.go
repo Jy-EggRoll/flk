@@ -46,8 +46,8 @@ func init() {
 // 抽取理由：symlink、hardlink、copy 三处曾各写一份逐字相同的闭包，唯一差异只有 resultType 常量
 // 三份副本一旦需要改动失败契约（例如补充字段或调整标记顺序）就必须同步三处，极易漏改
 // 参数 cmd 与 format 由调用方在命令入口解析后传入，闭包只负责在失败时产出唯一的结构化结果
-// 潜在影响点：闭包内先补 cause 再渲染结果，cause 为 nil 时用 errors.New(message) 兜底
-// 这个兜底顺序不能颠倒，否则 renderCreateResult 会收到 nil 而丢掉根层区分已渲染错误的标记
+// 潜在影响点：闭包内先补 cause 再渲染结果，cause 为 nil 时用 errors.New(message) 作为回退
+// 这个回退顺序不能颠倒，否则 renderCreateResult 会收到 nil 而丢掉根层区分已渲染错误的标记
 func newCreateFailure(cmd *cobra.Command, format output.OutputFormat, resultType string) func(message string, cause error) error {
 	return func(message string, cause error) error {
 		if cause == nil {
@@ -129,7 +129,7 @@ func renderCreateCancellation(cmd *cobra.Command, format output.OutputFormat, re
 
 // persistCreateRecord 只负责把已经完成的文件操作登记到根生命周期初始化好的全局 store
 // Manager.AddRecord 当前是纯内存操作且无 error 返回；nil manager 是其唯一可预先识别的失败
-// （Manager 内部的清单数据由 store 包统一保证非 nil，AddRecord 自己也会兜底归一，因此这里不再判 data）
+// （Manager 内部的清单数据由 store 包统一保证非 nil，AddRecord 自己也会归一，因此这里不再判 data）
 // Save 错误则原样上抛
 func persistCreateRecord(device, linkType string, fields map[string]string) error {
 	manager := store.Global()

@@ -181,7 +181,7 @@ func TestBackfillSourceIfMissingRejectsSelfReference(t *testing.T) {
 	}
 }
 
-// TestCopyOverlapGuardMessageDirection 钉死拒绝文案的「方向」，防止再次写反
+// TestCopyOverlapGuardMessageDirection 固定拒绝文案的「方向」，防止再次写反
 //
 // 起因：文案曾经写成 "Refusing to copy {{.Dst}} into {{.Src}}"，而命中的形态是
 // IsSubPath(src, dst)（dst 位于 src 内部）、复制方向是 src -> dst，于是用户看到的是

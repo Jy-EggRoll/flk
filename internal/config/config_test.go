@@ -365,7 +365,7 @@ func TestSetLanguageWritesDefaultPath(t *testing.T) {
 // 回归背景：写入走「同目录临时文件 + rename」实现原子落盘，而 rename 替换的是**路径上的那个名字**。
 // 用户若把设置文件链进自己的配置仓库（与 flk-store.json 同一种用法），直接按链接路径写入
 // 会把链接本身换成普通文件，仓库侧与 ~/.config 下的入口从此脱钩——这个破坏是静默的，
-// 直到下次同步才会发现两边各写各的，因此用测试把契约钉死
+// 直到下次同步才会发现两边各写各的，因此用测试把契约固定
 func TestSetKeyAtFollowsSymlink(t *testing.T) {
 	repoDir := t.TempDir()
 	realPath := filepath.Join(repoDir, "flk-config.json")
@@ -584,7 +584,7 @@ func TestGetAtFallsBackToDefaultAndRejectsUnknownKey(t *testing.T) {
 	}
 }
 
-// TestSetKeyAtRejectsUnknownKey 验证写入未知键被拒绝而不是往文件里塞死键
+// TestSetKeyAtRejectsUnknownKey 验证写入未知键被拒绝，而不是往文件里写一个永远读不到的键
 func TestSetKeyAtRejectsUnknownKey(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "flk-config.json")
 	if err := SetKeyAt(path, "nosuchkey", "x"); !errors.Is(err, ErrUnknownKey) {

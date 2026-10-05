@@ -113,7 +113,7 @@ func RunFix(cmd *cobra.Command, args []string) error {
 			result := invalidResults[idx]
 			// 逐条修复的三段日志：开始（Debug）→ 成功（Info）或失败（Warn）
 			// 放在这个循环而不是 repairResult 内部：repairResult 有多个错误返回点，在它内部逐点补日志会把
-			// 「一条记录一次结果」拆散；而循环这里本就在按「每条」迭代，天然是日志的正确粒度
+			// 「一条记录一次结果」分散到多处；而循环这里本就在按「每条」迭代，天然是日志的正确粒度
 			// 字段统一走 recordLogArgs（type/device/from,to），与 unlink、serve 的审计口径一致
 			logger.Debug(l10n.T("Repairing link", nil), recordLogArgs(result)...)
 			if err := repairResult(result, idx, skipConfirm, errOut); err != nil {
@@ -170,7 +170,7 @@ func RunFix(cmd *cobra.Command, args []string) error {
 				continue
 			}
 
-			// 移除所选记录：匹配键构造、store 判空与「空匹配键不得误删」的保护全部收口在 removeTrackedRecord
+			// 移除所选记录：匹配键构造、store 判空与「空匹配键不得误删」的保护全部集中在 removeTrackedRecord
 			// 落盘仍保持重构前「一批一次」的粒度（saveTrackedStore），因此写盘次数与成功/失败文案都不变
 			// 注意：重构前此处直接使用 mgr，缺少 nil 判断；改走共享函数后，极端的 nil store 场景由 panic 变为安全跳过
 			for _, idx := range indices {
@@ -258,7 +258,7 @@ func repairResult(result output.CheckResult, idx int, skipConfirm bool, errorOut
 		}
 
 		// 源（real）缺失时，若链接位置（fake）恰好是一份真实文件/目录（而非悬空/正确的符号链接），
-		// 则先把它回填为权威副本，再重建符号链接，避免直接判死导致数据无法挽救
+		// 则先把它回填为权威副本，再重建符号链接，避免直接判定为不可用导致数据无法挽救
 		if err := backfillSourceIfMissing(expandedReal, expandedFake, "real", "fake"); err != nil {
 			return err
 		}

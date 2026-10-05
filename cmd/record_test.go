@@ -23,7 +23,7 @@ import (
 // 返回临时存储文件路径（位于 t.TempDir()，用例结束由 testing 框架自动清理）
 // 关键点：先备份旧的全局实例 / StorePath，再用 t.Cleanup 还原，
 // 保证用例之间互不影响，也不会把测试数据写进用户真实配置
-// 全局实例的读写一律走 store.SetGlobal / store.Global：裸变量已被删除，这正是并发安全的落点
+// 全局实例的读写一律走 store.SetGlobal / store.Global：直接暴露的全局变量已被删除，这正是并发安全的落点
 func withTempTrackedStore(t *testing.T, data store.RootConfig) string {
 	t.Helper()
 

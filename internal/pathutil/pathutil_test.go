@@ -755,7 +755,7 @@ func TestCheckCopyPaths(t *testing.T) {
 
 	dir := filepath.Join(base, "repo")
 	// 与 dir 前缀相似但不是其后代的兄弟目录：字符串前缀比较会把 /a/bc 误判为在 /a/b 内部，
-	// 这里就是专门用来钉死那个错误口径的
+	// 这里就是专门用来证明那个错误口径站不住的
 	sibling := filepath.Join(base, "repo2")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatalf("创建目录失败: %v", err)

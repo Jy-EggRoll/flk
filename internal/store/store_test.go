@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-// 本文件是 internal/store 的首个测试文件，负责钉住「链接清单持久化」这一核心数据层的契约
+// 本文件是 internal/store 的首个测试文件，负责固定「链接清单持久化」这一核心数据层的契约
 // 所有用例都遵守两条隔离红线：
 //  1. 落盘一律走 t.TempDir，绝不读写真实 ~/.config/flk/flk-store.json 或家目录下的任何文件
 //  2. 需要触碰全局实例的用例（InitStore）必须先用 preserveGlobal 记录原值并 t.Cleanup 还原
@@ -100,7 +100,7 @@ func findEntry(entries []Entry, key, value string) Entry {
 
 // preserveGlobal 记录包级全局实例的原值并在用例结束时还原
 // InitStore 会替换全局实例，若不还原会污染同包其它用例（Go 默认串行执行同一包的测试）；
-// 赋值与读取都走带锁的访问器，避免测试自己成为裸变量竞态的制造者
+// 赋值与读取都走带锁的访问器，避免测试自己成为无保护变量竞态的制造者
 func preserveGlobal(t *testing.T) {
 	t.Helper()
 	original := Global()
@@ -351,7 +351,7 @@ func TestRemoveMatchingEntryRemovesFirstMatch(t *testing.T) {
 }
 
 // TestRemoveMatchingEntryMatchesSubset 验证传入 Entry 只需包含参与匹配的字段（子集匹配语义）
-// 调用方（cmd/fix.go、cmd/unlink.go）按类型只传 2 个字段，这里钉住「未列出的字段不参与比较」
+// 调用方（cmd/fix.go、cmd/unlink.go）按类型只传 2 个字段，这里用断言固定「未列出的字段不参与比较」
 func TestRemoveMatchingEntryMatchesSubset(t *testing.T) {
 	const device = "device-subset"
 
@@ -628,7 +628,7 @@ func TestLoadFromFileEmptyFile(t *testing.T) {
 }
 
 // TestLoadFromFileEmptyObject 验证内容为 {} 的文件同样得到可安全写入的空 manager
-// {} 是正常的空对象路径，与 0 字节文件、裸 null 三条入口最终都归一成非 nil 的空清单
+// {} 是正常的空对象路径，与 0 字节文件、null 三条入口最终都归一成非 nil 的空清单
 // （null 那条入口另由 TestLoadFromFileNullContentYieldsUsableManager 覆盖）
 func TestLoadFromFileEmptyObject(t *testing.T) {
 	path := writeStoreFile(t, "{}")
@@ -745,7 +745,7 @@ func TestLoadFromFileMigratesLegacyFormat(t *testing.T) {
 	}
 	// 落盘内容是排序过的（Save 只在 Snapshot 出的私有副本上排序，内存仍保持迁移时的插入顺序），
 	// 因此比较前用同一个 sortRootConfig 把两侧归一成同一顺序，只校验内容集合是否一致
-	// 顺序差异本身由 TestToJSONIsDeterministicAndSorted 单独钉住
+	// 顺序差异本身由 TestToJSONIsDeterministicAndSorted 单独固定
 	sortRootConfig(decoded)
 	inMemory := m.Snapshot()
 	sortRootConfig(inMemory)
@@ -822,7 +822,7 @@ func TestLoadFromFileRejectsUnparsableJSON(t *testing.T) {
 // TestLoadFromFileNullContentYieldsUsableManager 验证内容为 null 的文件被归一成可用空清单，而不是 nil 内部清单
 // 已修复的隐患：json.Unmarshal("null") 对 map 会成功并把 RootConfig 留成 nil map，
 // 旧实现于是返回 Manager{Data: nil} 且不报错，调用方一 AddRecord 就 panic（assignment to entry in nil map）
-// 现在 LoadFromFile 的成功路径统一经 newManagerFromData 收口，null 与 0 字节 / {} 得到同样的空清单
+// 现在 LoadFromFile 的成功路径统一收敛到 newManagerFromData，null 与 0 字节 / {} 得到同样的空清单
 func TestLoadFromFileNullContentYieldsUsableManager(t *testing.T) {
 	path := writeStoreFile(t, "null")
 
@@ -834,7 +834,7 @@ func TestLoadFromFileNullContentYieldsUsableManager(t *testing.T) {
 		t.Fatal("LoadFromFile 不应返回 nil manager")
 	}
 	// 内部 data 已不导出，改用 Snapshot 观察：空清单必须是长度 0 的空表而不是会引发 panic 的 nil
-	// 写入可用性由 TestAddRecordAfterNullLoadDoesNotPanic 直接覆盖，这里只钉住只读形态
+	// 写入可用性由 TestAddRecordAfterNullLoadDoesNotPanic 直接覆盖，这里只固定只读形态
 	if snapshot := m.Snapshot(); len(snapshot) != 0 {
 		t.Fatalf("null 内容归一后应是空清单，实际 %#v", snapshot)
 	}
@@ -873,7 +873,7 @@ func TestAddRecordAfterNullLoadDoesNotPanic(t *testing.T) {
 
 // TestNilDataManagerIsUsable 验证内部清单为 nil 的 Manager 也能安全读序列化与写入
 // 内部清单字段已不导出，包外再也构造不出这种状态；用例保留它是因为 AddRecord / ToJSON / Snapshot 三条出口
-// 各自都留了兜底，兜底在防：nil map 赋值 panic，以及序列化出裸 null（前端 /api/config 按对象处理，null 取属性会出错）
+// 各自都留了回退，回退在防：nil map 赋值 panic，以及序列化出 null（前端 /api/config 按对象处理，null 取属性会出错）
 func TestNilDataManagerIsUsable(t *testing.T) {
 	m := &Manager{}
 
@@ -881,7 +881,7 @@ func TestNilDataManagerIsUsable(t *testing.T) {
 		t.Fatalf("nil 清单的 ToJSON = %q，期望 %q", got, "{}")
 	}
 	// ToJSON 只允许在 Snapshot 出的私有副本上归一化与排序：一旦写回内部，就等于在只读锁内改写内部状态，
-	// 并发读到的条目顺序会随序列化时机漂移。这里直读内部字段（单协程用例，刻意不取锁）来钉住这一点
+	// 并发读到的条目顺序会随序列化时机漂移。这里直读内部字段（单协程用例，刻意不取锁）来固定这一点
 	if m.data != nil {
 		t.Fatalf("ToJSON 不应就地改写内部清单，实际被改成 %#v", m.data)
 	}
@@ -894,7 +894,7 @@ func TestNilDataManagerIsUsable(t *testing.T) {
 	}
 }
 
-// TestNilDataManagerSaveWritesEmptyObject 验证内部清单为 nil 的 Save 写出 {} 而不是裸 null
+// TestNilDataManagerSaveWritesEmptyObject 验证内部清单为 nil 的 Save 写出 {} 而不是 null
 // 否则缺陷会随着磁盘文件在「读入 → 写出」之间循环，每次启动都重新制造一份 null 清单
 func TestNilDataManagerSaveWritesEmptyObject(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "flk-store.json")
@@ -998,7 +998,7 @@ func TestToJSONIsDeterministicAndSorted(t *testing.T) {
 }
 
 // TestInitStoreMissingFileStartsEmpty 验证存储文件不存在时 InitStore 建立空清单且不报错
-// 同时钉住当前契约：初始化阶段不会预先创建文件（首次真正写入时才由 Save 落盘）
+// 同时固定当前契约：初始化阶段不会预先创建文件（首次真正写入时才由 Save 落盘）
 func TestInitStoreMissingFileStartsEmpty(t *testing.T) {
 	preserveGlobal(t)
 

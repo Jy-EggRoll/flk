@@ -75,7 +75,7 @@ func TestScanLangFlagIsOrderIndependent(t *testing.T) {
 	}
 }
 
-// TestChooseLanguagePrecedence 锁定取值优先级：--lang/-l > 设置文件 language 字段 > 空串（交由 l10n 兜底）
+// TestChooseLanguagePrecedence 锁定取值优先级：--lang/-l > 设置文件 language 字段 > 空串（交由 l10n 回退处理）
 //
 // 环境变量 FLK_LANG 已**彻底移除**，下面刻意保留两条"设了环境变量也必须无效"的用例：
 // 少了它们，日后有人图省事再往 chooseLanguage 里加回一次 os.Getenv，
@@ -271,7 +271,7 @@ func TestLocalizeTreeTranslatesPersistentFlags(t *testing.T) {
 	// 再走一遍 localizeTree，所有说明必须逐字不变
 	// 这条断言正面回答「同一 flag 会不会被重复翻译」：新版实现是"先按英文快照还原、再翻译"，
 	// 而快照里存的是英文源串，因此第二次遍历的结果与第一次必然逐字相同；
-	// 若将来有人在遍历里塞进非幂等操作（例如把当前译文再当一次源串），这里会立刻变红
+	// 若将来有人在遍历里放进非幂等操作（例如把当前译文再当一次源串），这里会立刻变红
 	before := make(map[string]string)
 	for _, item := range translated {
 		before[item.name] = item.flag.Usage

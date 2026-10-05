@@ -203,7 +203,7 @@ func RemoveWithConfirm(path string, opts RemoveOptions) ([]string, error) {
 
 // Delete 是本项目唯一的「路径删除实现」，统一决策「假删除」与「真实删除」两条路径
 //
-// 设计意图（为什么收口到这里）：
+// 设计意图（为什么集中到这里）：
 //
 //	此前回收站调用分散在 safeop 与 cmd/unlink 两处，各自直接调用 trash.MoveToTrash，
 //	一旦要引入第二条删除策略，就必须在每个调用点重复判断，容易漏改并造成行为不一致。

@@ -166,7 +166,7 @@ func (t *treeTexts) remember(cmd *cobra.Command) {
 // --store-path/--work-dir）与 serve 的 --host/-p 恰恰都是这么声明的，
 // 于是它们的说明始终停留在英文源串，用户在 zh-CN 下看到的是中英混排的帮助
 func localizeTree(cmd *cobra.Command, texts *treeTexts) {
-	// 未传快照时兜底新建：调用方漏传只会让"可逆"退化成"当次可用"，
+	// 未传快照时回退为新建：调用方漏传只会让"可逆"退化成"当次可用"，
 	// 而不是 panic——这条路径实际不可达，保留它只为让误用不至于崩在用户面前
 	if texts == nil {
 		texts = newTreeTexts()

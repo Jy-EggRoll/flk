@@ -1,11 +1,11 @@
 package cmd
 
 /*
-本文件承载 WebUI 的全部 HTTP 端点实现，从 cmd/serve_web.go 的 runServe 中拆出
+本文件承载 WebUI 的全部 HTTP 端点实现，从 cmd/serve_web.go 的 runServe 中分出来
 
 背景：runServe 此前把 8 个端点的闭包逐个内联在函数体里，导致它长达 550 余行、
 以「启动服务」为名却混着全部业务逻辑，既难读也难单独测试；
-拆出后 runServe 只负责组网与启动，端点逻辑集中在 serveServer 的方法上
+分出来之后 runServe 只负责组网与启动，端点逻辑集中在 serveServer 的方法上
 
 serveServer 是这些端点的接收者：端点之间唯一共享的状态就是 hub 与三把锁，
 把它们收进一个结构体，既明确了「这些状态随本次服务实例存活」的边界，
@@ -34,7 +34,7 @@ import (
 // serveServer 持有 WebUI 各端点共享的状态，由 runServe 在每次启动服务时构造一个实例
 //
 // 为什么把 hub 与三把锁收在这里、而不是继续用 runServe 里的局部变量加闭包捕获：
-// 拆出端点方法后，这些共享状态需要一个显式的承载者；同时它们的生命周期与「本次服务实例」
+// 分出端点方法后，这些共享状态需要一个显式的承载者；同时它们的生命周期与「本次服务实例」
 // 严格一致这一点，也因此从「靠闭包捕获」变成了结构体字段上的明文约束
 type serveServer struct {
 	// hub 是 SSE 广播中心，/api/config、/api/repair、/api/unlink、/api/language 都靠它通知其它页面，
@@ -81,7 +81,7 @@ func (s *serveServer) handleConfig(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		w.Header().Set("Content-Type", "application/json")
-		// Global() 内部加锁读取全局实例，避免与轮询协程的 SetGlobal 竞争同一个裸指针
+		// Global() 内部加锁读取全局实例，避免与轮询协程的 SetGlobal 竞争同一个无保护的指针
 		mgr := store.Global()
 		if mgr == nil {
 			w.Write([]byte("{}"))
@@ -525,7 +525,7 @@ func (s *serveServer) handleEvents(w http.ResponseWriter, r *http.Request) {
 			return
 		case event := <-ch:
 			// 事件负载带上 rev，前端据此区分本页保存与外部修改
-			// map[string]string 的 json.Marshal 不会失败，下面的 "{}" 只是防御性兜底；
+			// map[string]string 的 json.Marshal 不会失败，下面的 "{}" 只是防御性回退；
 			// 真走到那里，前端会因 rev 为空而把它当成「本页保存」忽略，反而吞掉一次真实的外部变更
 			payload, err := json.Marshal(map[string]string{"rev": s.hub.currentRev()})
 			if err != nil {

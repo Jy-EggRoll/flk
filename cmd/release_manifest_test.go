@@ -6,7 +6,7 @@ import (
 	"github.com/jy-eggroll/eggokit/release"
 )
 
-// TestReleaseManifestMatchesSupportedPlatforms 钉住「发布清单」与「升级器已知平台」这两份定义完全一致
+// TestReleaseManifestMatchesSupportedPlatforms 固定「发布清单」与「升级器已知平台」这两份定义完全一致
 //
 // 回归背景：迁移后「有哪些平台有产物」这一事实同时存在于两处——仓库根的 release.json（驱动构建，
 // 由 eggokit 的 buildall 读取）与 cmd/upgrade_target.go 的 supportedPlatforms（驱动升级器挑资产）
@@ -42,7 +42,7 @@ func TestReleaseManifestMatchesSupportedPlatforms(t *testing.T) {
 	}
 
 	// 资产名一致性：清单推导出的产物名必须与 Go 侧 flkAssetName 逐字相同（含 windows 的 .exe）
-	// 二者分叉的后果是最难排查的一类——「发布了但升级器认不出资产」，因此这条单独钉死
+	// 二者分叉的后果是最难排查的一类——「发布了但升级器认不出资产」，因此这条单独固定
 	for _, p := range m.Platforms {
 		want := m.AssetName(p)
 		got, ok := flkAssetName(p.OS, p.Arch)

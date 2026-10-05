@@ -28,7 +28,7 @@ import (
 var ErrInvalidValue = errors.New("config: invalid value")
 
 // Kind 描述设置项的取值类型。
-// 它决定 get 的输出形态（标量裸值 / 列表每行一项）与体检时的类型检查
+// 它决定 get 的输出形态（标量直接输出值 / 列表每行一项）与体检时的类型检查
 type Kind string
 
 const (
@@ -154,7 +154,7 @@ func (s Setting) effective(raw map[string]any) any {
 //
 // 为什么丢弃空串：白名单里的空主机名不存在（eggokit/webui 的 normalizeHost 会把空串归一成空串并跳过），
 // 留着它只会让用户误以为配置已经生效。
-// 注意这里刻意不做"归一化"（不去端口、不转小写）：那是 webui 护栏的职责，且它同时作用于请求侧与允许侧，
+// 注意这里刻意不做"归一化"（不去端口、不转小写）：那是 webui 校验的职责，且它同时作用于请求侧与允许侧，
 // 在配置解析阶段提前归一反而会引入第二份可能漂移的实现
 func stringList(v any) ([]string, bool) {
 	items, ok := v.([]any)
@@ -223,7 +223,7 @@ func parseLogLevel(s string) (any, error) {
 	return strings.ToLower(v), nil
 }
 
-// ValueText 把配置值（JSON 解码后的形态，或 Parse 产出的形态）转成裸文本，
+// ValueText 把配置值（JSON 解码后的形态，或 Parse 产出的形态）转成纯文本，
 // 去掉 JSON 的引号与类型包装。
 //
 // 有两个用途：validate 里复用 Setting.Parse 校验文件中的取值（Parse 接收字符串），

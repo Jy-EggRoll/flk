@@ -52,9 +52,9 @@ var renameFunc = os.Rename
 //
 // 两种搬运方式，优先用代价小的那种：
 //  1. os.Rename：同文件系统内瞬时完成，不产生额外磁盘占用
-//  2. 复制 → 删除源：rename 失败时的兜底。回收站根目录固定在用户家目录所在卷（Windows 上即 C:），
+//  2. 复制 → 删除源：rename 失败时的回退路径。回收站根目录固定在用户家目录所在卷（Windows 上即 C:），
 //     而被删文件可能在另一个卷（D:）或另一个挂载点，此时 rename 必然失败（跨设备）。
-//     这条兜底让「假删除」在所有卷上都能成立，而不是只有家目录所在卷可用
+//     这条回退路径让「假删除」在所有卷上都能成立，而不是只有家目录所在卷可用
 //
 // 源不存在时返回 *os.PathError（由调用方按需容错）
 func MoveToTrash(path string) error {
@@ -85,7 +85,7 @@ func MoveToTrash(path string) error {
 	}
 
 	// 不区分 rename 失败的具体原因：跨设备、目标所在卷只读等等都会走到这里，
-	// 而兜底动作（复制再删除）对「源与目标不同设备」这一最常见情形是唯一可行的做法，
+	// 而回退动作（复制再删除）对「源与目标不同设备」这一最常见情形是唯一可行的做法，
 	// 对其他原因也只是多一次注定失败的尝试，代价远小于为每种 errno 维护一份平台分支
 	logger.Debug(l10n.T("Rename failed; falling back to copying into the trash", nil), "from", absPath, "to", dest, "error", renameErr)
 

@@ -19,7 +19,7 @@
 //   - config.go（本文件）：Config 结构体、加载与默认值补全、语言专用入口
 //
 // 为什么不引入 viper：语言必须在 cobra 解析命令行之前确定（--help 不执行 PersistentPreRunE），
-// 这条路径上只需要裸 JSON 读取一个字段；另外 viper 的 WriteConfig 走 AllSettings() 一次性落盘，
+// 这条路径上只需要直接读 JSON 一个字段；另外 viper 的 WriteConfig 走 AllSettings() 一次性落盘，
 // 无法表达"把某个键删掉"（而 reset 的默认模式正是删键）。读全量、写单键因此留在本包自己实现
 //
 // 与 l10n 的关系：写入失败的错误会经 /api/language 原样回显在网页上（"保存失败: ..."），
@@ -114,7 +114,7 @@ func LoadLanguageAt(path string) (string, error) {
 // SetLanguage 把语言写进默认路径的设置文件，供 WebUI 切换语言时持久化。
 //
 // 它只是 SetKey("language", ...) 的具名入口，单独留一个名字是因为调用点
-// （cmd/serve_web.go 的 /api/language）讲的是"语言要落盘"这件事，而不是"往配置里塞一个键"。
+// （cmd/serve_web.go 的 /api/language）讲的是"语言要落盘"这件事，而不是"往配置里写一个键"。
 // 空语言由注册表的解析器拒绝，写路径本身不再重复判空
 func SetLanguage(lang string) error {
 	parsed, err := parseLanguage(lang)

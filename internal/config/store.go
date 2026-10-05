@@ -1,4 +1,4 @@
-// store.go 负责设置文件的原始读写，本包对设置文件的 I/O 都收口在这里。
+// store.go 负责设置文件的原始读写，本包对设置文件的 I/O 都集中在这里。
 //
 // 读**容错**、写**单键**，这是两条路径的分工：
 //   - 读：ReadRawAt / Load / LoadLanguage（键统一小写，容错解析，尽可能多读出内容）
@@ -167,8 +167,8 @@ func SetKey(key string, value any) error {
 
 // SetKeyAt 写入单个设置项，保留文件里的其他键（含未知键）。
 //
-// 键必须是注册表里的项：传进来一个拼错的键名却照写不误，等于往文件里塞了一个
-// 永远读不到的死键，用户还会以为设置生效了。因此未知键一律返回 ErrUnknownKey，
+// 键必须是注册表里的项：传进来一个拼错的键名却照写不误，等于往文件里写了一个
+// 永远读不到的键，用户还会以为设置生效了。因此未知键一律返回 ErrUnknownKey，
 // 命令层据此给出指向 flk config --help 的提示
 func SetKeyAt(path, key string, value any) error {
 	s, ok := Lookup(key)

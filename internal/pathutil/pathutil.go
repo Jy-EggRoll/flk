@@ -265,7 +265,7 @@ func IsSubPath(parent, child string) bool {
 		return false
 	}
 
-	// rel 为 "." 表示同一路径（SamePath 已拦下，这里是跨平台大小写差异下的兜底）；
+	// rel 为 "." 表示同一路径（SamePath 已拦下，这里是跨平台大小写差异下的回退）；
 	// rel 恰好为 ".." 或以 ".." + 分隔符 开头，说明 child 在 parent 之外
 	if rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 		return false
@@ -388,7 +388,7 @@ func newCopySubPathError(src, dst string) error {
 // 不必自己再拼一遍 SamePath/IsSubPath（那正是「同一份口径写两遍」的典型来源）
 //
 // 参数顺序与 Copy 一致（src 在前、dst 在后），刻意不提供 (dst, src) 变体：
-// 项目里 CopyFile(dst, src) 与 CopyDir(src, dst) 顺序相反已经是个历史坑，
+// 项目里 CopyFile(dst, src) 与 CopyDir(src, dst) 顺序相反已经是个历史遗留问题，
 // 新增 API 一律对齐对外的 Copy，避免又多一个需要记住的方向
 //
 // 命中口径（两条，都只做纯字符串判断，既不检查路径是否存在、也不解析符号链接）：

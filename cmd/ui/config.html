@@ -10,7 +10,7 @@
      用 data URI 而不是文件请求，两个收益：不产生 /favicon.ico 的 404 噪声（控制台零报错的前提），
      二进制里也不用多嵌一个图标文件；浏览器标签页因此带上品牌印记 -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%237c2d12'/%3E%3Cstop offset='.55' stop-color='%23c2410c'/%3E%3Cstop offset='1' stop-color='%23e86a10'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect x='9' y='9' width='14' height='14' rx='3.5' fill='url(%23g)' transform='rotate(45 16 16)'/%3E%3C/svg%3E">
-<!-- 样式与逻辑拆分在同目录的 style.css / app.js：本文件只保留「标记 + 翻译表 + 首帧引导」
+<!-- 样式与逻辑分别在 style.css / app.js 里：本文件只保留「标记 + 翻译表 + 首帧引导」
      （MSG 表必须留在 .html 里——l10n 扫描器只认 HTML 中的 var MSG，见 Taskfile 的 L10N_ARGS 注释） -->
 <link rel="stylesheet" href="/style.css">
   <script>
