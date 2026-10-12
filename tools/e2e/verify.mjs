@@ -30,6 +30,12 @@
  *      POST /api/config 的响应，先 route.fetch() 把请求真正发出去（服务端此刻就写盘），
  *      再卡住 fulfil 不放行，等窗口内的输入做完才放行。固定 sleep 造窗口会与 slowMo
  *      （每个动作 +350ms）抢时间，窗口长度不可控，必然 flaky
+ *  10. 提示与自动重检各有一条「不得干扰用户」的体验约束，X14 / X15 就是它们的判据：
+ *      X14 要求提示是固定定位，因此它出现时 #main 与表格的几何（top/left/width/height）
+ *      必须逐字段不变，页面里也不许再留 #success / #error 这两个旧结构；
+ *      X15 要求自动重检（每 5 秒一次）在用户持续输入时让位——判定「输入框还是同一个 DOM 节点」
+ *      靠给节点打一个 expando 标记（重建即丢失），比「看起来没跳」这种肉眼判断可判定得多；
+ *      同时必须验证停手后刷新会补上，否则「让位」可能退化成永久停摆
  *
  * 用法（--binary 与产物目录 --root 都是必填，缺了直接报参数错误并以退出码 2 结束）：
  *   node verify.mjs --binary=build/flk --root=build/e2e
@@ -801,7 +807,7 @@ async function main() {
     })
 
     /* ================= B4 ================= */
-    await check('B4', '点 #saveBtn 后：saveActions 隐藏、成功提示出现、磁盘文件确实已更新', async () => {
+    await check('B4', '点 #saveBtn 后：saveActions 隐藏、成功通知出现、磁盘文件确实已更新', async () => {
       await resetAndOpen()
       const newValue = `${markerA}.saved`
       const rows = await readRows(page)
@@ -812,26 +818,28 @@ async function main() {
       await input.fill(newValue)
       await requireVisible(page, '#saveBtn', '保存按钮')
       await page.locator('#saveBtn').click()
-      // 先抓成功提示再等 #saveActions 隐藏：旧实现的成功提示只显示 3 秒（showSuccess 里 setTimeout 3000），
-      // 若顺序反过来，慢一点的机器上可能刚好把提示等没了，把「提示已消失」误判成「没出提示」
-      let successVisible = false
-      let successText = ''
+      // 先抓成功通知再等 #saveActions 隐藏：通知只显示 3.2 秒（app.js 的 TOAST_MS.success），
+      // 若顺序反过来，慢一点的机器上可能刚好把它等没了，把「已经消失」误判成「没出现过」
+      let toastVisible = false
+      let toastText = ''
       try {
         await waitUntil(
           async () => {
-            successVisible = await page.locator('#success').isVisible()
-            successText = ((await page.locator('#success').textContent()) ?? '').trim()
-            return successVisible && successText !== ''
+            const toast = page.locator('.toast-success .toast-msg').first()
+            toastVisible = await toast.isVisible()
+            toastText = ((await toast.textContent()) ?? '').trim()
+            return toastVisible && toastText !== ''
           },
           6000,
-          '保存后出现成功提示（#success 可见且非空）',
+          '保存后出现成功通知（.toast-success 可见且非空）',
           150,
         )
       } catch (error) {
         throw new Error(
-          `${error.message}——已观察到的最后状态：#success isVisible=${successVisible}，文本=${JSON.stringify(successText)}`,
+          `${error.message}——已观察到的最后状态：.toast-success isVisible=${toastVisible}，文本=${JSON.stringify(toastText)}`,
         )
       }
+      expect(toastText === '保存成功', `期望：成功通知文本为「保存成功」；实际=${JSON.stringify(toastText)}`)
       await waitUntil(
         async () => (await page.locator('#saveActions').isVisible()) === false,
         8000,
@@ -2002,6 +2010,185 @@ async function main() {
       await page.locator('#unlinkCloseBtn').click()
       await waitUntil(async () => (await page.locator('#unlinkModal').isVisible()) === false, 6000, '点 Close 后解除弹窗隐藏')
     })
+
+    /* ================= X14 ================= */
+    await check(
+      'X14',
+      '附加：提示改成右下角通知后，出现时不得挪动页面内容（#main 与表格原地不动，且页面里不再有 #success / #error）',
+      async () => {
+        await resetAndOpen()
+        // 旧结构若还留在页面里，「不占文档流」就只是伪证：先确认承载提示的两个旧元素已被彻底移除
+        const legacy = await page.evaluate(() => ({
+          success: document.querySelectorAll('#success').length,
+          error: document.querySelectorAll('#error').length,
+        }))
+        expect(
+          legacy.success === 0 && legacy.error === 0,
+          `期望：旧的文档流提示条 #success / #error 已从页面移除；实际：#success=${legacy.success}，#error=${legacy.error}`,
+        )
+
+        const rows = await readRows(page)
+        const rowIndex = await findRowIndexByField(page, 'real', markerA, rows)
+        expect(rowIndex >= 0, `期望：存在 real=${markerA} 的目标行；实际：找不到，实际取值=${JSON.stringify(await fieldValues(page, 'real'))}`)
+        const input = page.locator(`tbody tr[data-idx="${rowIndex}"] input[data-key="real"]`)
+        expect((await input.count()) === 1, `期望：存在 input.cell-input[data-key=real]；实际：匹配数=${await input.count()}`)
+        await input.fill(`${markerA}.x14`)
+        await requireVisible(page, '#saveBtn', '保存按钮')
+
+        /**
+         * 取三处几何作比对：主区顶边（旧提示条就插在它上方，是布局偏移最直接的受力点）、
+         * 表格卡片、首行。三者任一被推开都说明提示占用了文档流
+         */
+        const geometry = async () =>
+          await page.evaluate(() => {
+            const rect = (selector) => {
+              const el = document.querySelector(selector)
+              return el === null ? null : el.getBoundingClientRect().toJSON()
+            }
+            return { main: rect('#main'), wrap: rect('.table-wrap'), row: rect('tbody tr') }
+          })
+        const before = await geometry()
+        await page.locator('#saveBtn').click()
+        await waitUntil(async () => await page.locator('.toast-success').first().isVisible(), 6000, '保存后成功通知出现', 100)
+        const after = await geometry()
+
+        for (const [label, key] of [['#main', 'main'], ['.table-wrap', 'wrap'], ['首行', 'row']]) {
+          expect(
+            before[key] !== null && after[key] !== null,
+            `期望：${label} 在保存前后都存在；实际：前=${JSON.stringify(before[key])}，后=${JSON.stringify(after[key])}`,
+          )
+          for (const field of ['top', 'left', 'width', 'height']) {
+            const delta = Math.abs(after[key][field] - before[key][field])
+            expect(
+              delta < 0.5,
+              `期望：${label} 的 ${field} 在通知出现前后不变（提示不得把页面内容推开）；实际：前=${before[key][field]}，后=${after[key][field]}，差=${delta}`,
+            )
+          }
+        }
+
+        // 通知自身必须是固定定位：这既是它「不占文档流」的实现机制，也是上面那条几何断言的前提
+        const position = await page.evaluate(() => getComputedStyle(document.querySelector('#toastStack')).position)
+        expect(position === 'fixed', `期望：#toastStack 使用 fixed 定位；实际=${JSON.stringify(position)}`)
+        report.note(`X14 几何：保存前=${JSON.stringify(before)}；通知可见时=${JSON.stringify(after)}`)
+      },
+    )
+
+    /* ================= X15 ================= */
+    await check(
+      'X15.1',
+      '附加：页面放着不动时链接状态自动重检（12 秒窗口内至少再来 2 次 /api/check，页脚检测时间随之前进）',
+      async () => {
+        await resetAndOpen()
+        await waitUntil(
+          async () => (((await page.locator('#checkInfo').textContent()) ?? '').includes('检测时间')),
+          12000,
+          '首次可用性检测完成',
+          200,
+        )
+        const checkInfoBefore = ((await page.locator('#checkInfo').textContent()) ?? '').trim()
+
+        // 监听挂上后必须摘掉：page 是整场共用的，残留监听会污染后面断言里的请求计数
+        let requests = 0
+        const onRequest = (request) => {
+          if (request.url().includes('/api/check')) requests += 1
+        }
+        page.on('request', onRequest)
+        try {
+          await sleep(12000)
+        } finally {
+          page.off('request', onRequest)
+        }
+
+        const checkInfoAfter = ((await page.locator('#checkInfo').textContent()) ?? '').trim()
+        report.note(
+          `X15.1 12 秒窗口内 /api/check 请求数=${requests}（全程没有任何手动点击）；页脚：前=${JSON.stringify(checkInfoBefore)}，后=${JSON.stringify(checkInfoAfter)}`,
+        )
+        expect(
+          requests >= 2,
+          `期望：无手动操作时 12 秒内至少自动重检 2 次（间隔 5 秒）；实际=${requests} 次`,
+        )
+        expect(
+          checkInfoAfter !== checkInfoBefore,
+          `期望：自动重检后页脚检测时间随之前进；实际：前=${JSON.stringify(checkInfoBefore)}，后=${JSON.stringify(checkInfoAfter)}`,
+        )
+      },
+    )
+
+    await check(
+      'X15.2',
+      '附加：用户持续输入期间自动重检让位（输入框 DOM 不被重建、已敲入的字符一个不丢），停手后立刻补上',
+      async () => {
+        await resetAndOpen()
+        await waitUntil(
+          async () => (((await page.locator('#checkInfo').textContent()) ?? '').includes('检测时间')),
+          12000,
+          '首次可用性检测完成',
+          200,
+        )
+        const checkInfoBefore = ((await page.locator('#checkInfo').textContent()) ?? '').trim()
+
+        const rows = await readRows(page)
+        const rowIndex = await findRowIndexByField(page, 'real', markerA, rows)
+        expect(rowIndex >= 0, `期望：存在 real=${markerA} 的目标行；实际：找不到，实际取值=${JSON.stringify(await fieldValues(page, 'real'))}`)
+        const selector = `tbody tr[data-idx="${rowIndex}"] input[data-key="real"]`
+        const input = page.locator(selector)
+        expect((await input.count()) === 1, `期望：存在 input.cell-input[data-key=real]；实际：匹配数=${await input.count()}`)
+
+        const originalValue = await input.inputValue()
+        await input.click()
+        await input.press('End')
+        // 给这个 DOM 节点打一个只有它自己才有的标记：表格一旦被重建，标记会随旧节点一起消失，
+        // 于是「元素还是同一个」这件事有了可判定的证据，而不只是「看起来没跳」
+        await page.evaluate((sel) => {
+          document.querySelector(sel).__e2eKept = true
+        }, selector)
+
+        // 输入窗口刻意跨过至少一个 5 秒定时点：每 400ms 敲一个字符，敲满 8 秒
+        const typingMs = 8000
+        const startedAt = Date.now()
+        let typedChars = 0
+        let lostAfterMs = null
+        while (Date.now() - startedAt < typingMs) {
+          await page.keyboard.type('x')
+          typedChars += 1
+          const kept = await page.evaluate((sel) => {
+            const el = document.querySelector(sel)
+            return el !== null && el.__e2eKept === true
+          }, selector)
+          if (!kept) {
+            lostAfterMs = Date.now() - startedAt
+            break
+          }
+          await sleep(400)
+        }
+        expect(
+          lostAfterMs === null,
+          `期望：持续输入 ${typingMs}ms 期间（覆盖至少一个 5 秒定时点）表格不被重建，输入框始终是同一个 DOM 节点；实际：第 ${lostAfterMs}ms 的输入之后它被替换了`,
+        )
+
+        const valueAfterTyping = await input.inputValue()
+        expect(
+          valueAfterTyping === originalValue + 'x'.repeat(typedChars),
+          `期望：已敲入的 ${typedChars} 个字符全部保留；实际值=${JSON.stringify(valueAfterTyping)}，期望值=${JSON.stringify(originalValue + 'x'.repeat(typedChars))}`,
+        )
+        report.note(`X15.2 持续输入 ${typedChars} 个字符（每 400ms 一个、共 ${typingMs}ms），DOM 未被重建，输入内容完整`)
+
+        // 停手之后刷新必须补上：让位只是推迟，不是永久停摆
+        await waitUntil(
+          async () => {
+            const kept = await page.evaluate((sel) => {
+              const el = document.querySelector(sel)
+              return el !== null && el.__e2eKept === true
+            }, selector)
+            const text = ((await page.locator('#checkInfo').textContent()) ?? '').trim()
+            return kept === false && text !== checkInfoBefore
+          },
+          15000,
+          '停手后自动重检补上（表格被重建且页脚检测时间前进）',
+          300,
+        )
+      },
+    )
   } catch (error) {
     report.log(`\n！！现场准备阶段失败：${error.message}`)
     setupFailed = true
