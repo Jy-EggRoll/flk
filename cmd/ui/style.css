@@ -197,16 +197,46 @@ html[data-theme="dark"] .btn-add { color: #1c1008; }
 .lang-select:hover { background: #fff; box-shadow: var(--shadow-sm); }
 .lang-select:disabled { opacity: .45; cursor: not-allowed; }
 
-/* ========== 消息与提示条 ========== */
-.msg-bar { flex-shrink: 0; max-width: 1100px; margin: 0 auto; width: 100%; padding: 14px 28px 0; }
-.error-msg {
-  background: var(--danger-bg); border: 1px solid var(--danger-border); border-left: 3px solid var(--danger);
-  color: var(--danger); padding: 10px 16px; border-radius: var(--radius); font-size: 13.5px; display: none; margin-bottom: 8px;
+/* ========== 通知弹框 ==========
+   改造前这里是两条占据文档流的提示条（.msg-bar 里的 #error / #success）：
+   display:none → block 会把下方整个表格推下去、收起时再弹回来，是页面里最显眼的布局偏移。
+   现在统一改成固定定位的通知弹框，出现、消失、堆叠都只发生在自己这一层，页面内容原地不动。
+   层级刻意高于 .modal-overlay（1000）：弹窗开着时，用户照样要看得到保存与修复的结果 */
+.toast-stack {
+  position: fixed; right: 20px; bottom: 20px; z-index: 2000;
+  display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
+  /* 容器只占内容大小且不吃鼠标事件，否则右下角那片空白会挡住底下的按钮 */
+  pointer-events: none;
+  max-width: min(380px, calc(100vw - 40px));
 }
-.success-msg {
-  background: var(--success-bg); border: 1px solid var(--success-border); border-left: 3px solid var(--success);
-  color: var(--success); padding: 10px 16px; border-radius: var(--radius); font-size: 13.5px; display: none; margin-bottom: 8px;
+.toast {
+  pointer-events: auto;
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 11px 10px 11px 13px;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  font-size: 13px; line-height: 1.45;
+  /* 报错里常带完整路径：长串必须能断行，否则卡片会被撑出视口 */
+  overflow-wrap: anywhere;
+  animation: toastIn .18s ease;
 }
+/* 语义只由颜色表达，而且只落在左侧那枚描边图标上：卡片本身保持中性面，
+   不铺语义底色、也不加左侧粗色条——「色条 + 淡彩底 + 大圆角」是最容易显得模板化的组合 */
+.toast-icon { flex-shrink: 0; width: 15px; height: 15px; margin-top: 1px; color: var(--text-3); }
+.toast-icon svg { display: block; width: 100%; height: 100%; }
+.toast-success .toast-icon { color: var(--success); }
+.toast-error .toast-icon { color: var(--danger); }
+.toast-msg { flex: 1; min-width: 0; }
+.toast-close {
+  flex-shrink: 0; border: none; background: transparent; color: var(--text-3);
+  font-size: 16px; line-height: 1; padding: 0 2px; cursor: pointer;
+  font-family: inherit; transition: color .14s ease;
+}
+.toast-close:hover { color: var(--text); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+/* 用户声明「减少动态效果」时不做位移与淡入：这类设置针对的正是这种自动冒出来的动静 */
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
 
 /* 未保存改动区 — 与 Re-check 同排，无改动时整体隐藏 */
 #saveActions { display: flex; align-items: center; gap: 9px; }
@@ -388,6 +418,8 @@ tr.drag-over td { border-top: none; }
 }
 .path-info { font-size: 11.5px; color: var(--text-3); }
 .meta-info { font-size: 11.5px; color: var(--text-3); display: flex; gap: 16px; flex-wrap: wrap; }
+/* 检测时间每 5 秒随自动刷新改写一次，等宽数字避免这段文字在页脚里左右抖动 */
+#checkInfo { font-variant-numeric: tabular-nums; }
 
 /* Add-bar below table */
 .add-bar { padding: 10px 12px; border-top: 1px solid var(--surface-3); }
@@ -550,7 +582,8 @@ html[data-theme="dark"] .modal-overlay { background: rgba(0, 0, 0, .6); }
   .header { padding: 10px 14px; }
   .header h1 { font-size: 15.5px; }
   .header-right { gap: 8px; }
-  .msg-bar { padding: 10px 12px 0; }
+  /* 通知贴边距离与页面内边距对齐：移动端本来就窄，再留 20px 显得浪费 */
+  .toast-stack { right: 12px; bottom: 12px; max-width: calc(100vw - 24px); }
   .main { padding: 16px 12px 22px; }
   .footer { padding: 10px 12px 14px; }
   .filter-bar { justify-content: stretch; }

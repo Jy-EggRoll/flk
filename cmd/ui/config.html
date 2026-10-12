@@ -75,11 +75,6 @@
   <button id="conflictKeepBtn" class="btn btn-sm btn-save" data-i18n="Keep my changes"></button>
 </div>
 
-<div class="msg-bar">
-  <div id="error" class="error-msg"></div>
-  <div id="success" class="success-msg"></div>
-</div>
-
 <div class="main" id="main">
   <div id="loading" style="text-align:center;padding:60px 0;color:#a8a29e;" data-i18n="Loading…">Loading…</div>
   <div id="panel" class="hidden">
@@ -215,6 +210,13 @@
     </div>
   </div>
 </div>
+
+<!-- 通知弹框的挂载点：成功与失败都从这里弹出（外观与层级见 style.css 的 .toast-stack）。
+     容器常驻，卡片由 showToast 动态增删；它固定在视口右下角、不占文档流，
+     因此无论有没有内容，都不会把下方的表格推来推去——这正是它取代旧提示条的原因。
+     刻意不在容器上再挂 aria-live：卡片自身带 role=status / role=alert，
+     两层实时区域会让读屏软件把同一句话播报两次 -->
+<div id="toastStack" class="toast-stack"></div>
 
 <script>
 /* ---------- i18n ----------

@@ -91,8 +91,7 @@ var TYPE_NAMES = ['symlink', 'hardlink', 'copy'];
 var statusDot     = document.getElementById('statusDot');
 var statusText    = document.getElementById('statusText');
 var langSelect    = document.getElementById('langSelect');
-var errorDiv      = document.getElementById('error');
-var successDiv    = document.getElementById('success');
+var toastStack    = document.getElementById('toastStack');
 var fileInfo      = document.getElementById('fileInfo');
 var checkInfoEl   = document.getElementById('checkInfo');
 var updateInfo    = document.getElementById('updateInfo');
@@ -273,16 +272,65 @@ function setOnline(online) {
   statusText.textContent = online ? tr('Connected') : tr('Disconnected');
 }
 
-function showError(msg) {
-  errorDiv.textContent = msg; errorDiv.style.display = 'block';
+/* ---------- 通知弹框 ----------
+   成功与失败共用右下角这一个堆叠区（外观见 style.css 的 .toast-stack）。
+   改造前它们是两条插在文档流里的提示条，出现时把下方整个表格推下去、消失时再弹回来；
+   现在改为往固定的容器里增删卡片，页面内容一动不动。
+   showSuccess / showError 这两个入口名与调用方式保持不变：调用点关心的是「要提示什么」，
+   不该关心提示以什么形态呈现 */
+var TOAST_MS = { success: 3200, error: 6500 }; /* 失败信息通常更长，留出读完的时间 */
+var TOAST_MAX = 4; /* 同屏上限：连续失败时不至于铺满整屏，超出就挤掉最早的一条 */
+
+/* 通知图标：描边风格的内联 SVG，与页头那几个图标的画法一致（stroke-width 2、fill none、currentColor），
+   颜色由 css 的 .toast-success / .toast-error 决定，这里只提供形状 */
+var TOAST_ICON = {
+  success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
+};
+
+function showToast(msg, kind) {
+  var card = document.createElement('div');
+  card.className = 'toast toast-' + kind;
+  /* 失败用 alert（立即播报），成功用 status（有空再播）——让读屏软件按轻重缓急处理 */
+  card.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+
+  /* 图标可以走 innerHTML：它是上面的固定常量，不含任何用户数据；
+     而文案那边一律用 textContent——错误信息里带路径与各种特殊字符，绝不能当作标记解析 */
+  var icon = document.createElement('span');
+  icon.className = 'toast-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.innerHTML = TOAST_ICON[kind] || '';
+  card.appendChild(icon);
+
+  var text = document.createElement('div');
+  text.className = 'toast-msg';
+  text.textContent = msg;
+  card.appendChild(text);
+
+  var closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'toast-close';
+  closeBtn.textContent = '×';
+  closeBtn.setAttribute('aria-label', tr('Close'));
+  closeBtn.setAttribute('title', tr('Close'));
+  closeBtn.addEventListener('click', function () { dismissToast(card); });
+  card.appendChild(closeBtn);
+
+  toastStack.appendChild(card);
+  while (toastStack.children.length > TOAST_MAX) dismissToast(toastStack.firstElementChild);
+
+  /* 到点自动收起。手动提前关掉的卡片，这个定时器到点后会被 dismissToast 判为已移除而跳过；
+     不为它维护一张「定时器句柄表」——那点垃圾回收的收益换不来多一份状态 */
+  setTimeout(function () { dismissToast(card); }, TOAST_MS[kind] || TOAST_MS.success);
 }
 
-function hideError() { errorDiv.style.display = 'none'; }
-
-function showSuccess(msg) {
-  successDiv.textContent = msg; successDiv.style.display = 'block';
-  setTimeout(function () { successDiv.style.display = 'none'; }, 3000);
+function dismissToast(card) {
+  if (card && card.parentNode) card.parentNode.removeChild(card);
 }
+
+function showError(msg) { showToast(msg, 'error'); }
+
+function showSuccess(msg) { showToast(msg, 'success'); }
 
 /* ---------- Data access helpers ---------- */
 function ensurePath(plat, dev) {
@@ -567,7 +615,9 @@ function restoreFocus(snap) {
   if (!snap) return;
   var el = tableBody.querySelector('tr[data-idx="' + snap.idx + '"] .cell-input[data-key="' + snap.key + '"]');
   if (!el) return; /* 原焦点行可能已被删除，此时无需恢复 */
-  el.focus();
+  /* preventScroll：恢复焦点不等于把视口拉回这一行。用户可能已经滚到别处去看状态列，
+     浏览器默认的「聚焦即滚动到可见」会把他拽回去；自动刷新每 5 秒一次，这种跳动会非常明显 */
+  el.focus({ preventScroll: true });
   try {
     el.setSelectionRange(snap.start, snap.end);
   } catch (_) {
@@ -741,9 +791,19 @@ function healthBadge(entry) {
 
 /* 调用 /api/check 全量检测当前平台，完成后刷新状态列
    检测涉及文件系统操作可能较慢，异步执行不阻塞主渲染；
-   renderTable 自带焦点恢复，所以即使用户正在输入也不会丢光标 */
-async function loadCheckStatus() {
-  checkInfoEl.textContent = tr('Checking…');
+   renderTable 自带焦点恢复，所以即使用户正在输入也不会丢光标。
+
+   silent 为真表示这次检测由自动轮询发起（见下方「链接状态自动刷新」），
+   它与手动点 Re-check 只差两处反馈：不把页脚改写成「检测中…」、失败时不弹通知。
+   间隔是秒级的，这两处若照旧会变成持续闪动与重复弹框，反而盖住真正该看的失败原因；
+   失败本身仍如实写进页脚 */
+async function loadCheckStatus(silent) {
+  /* 同一时刻只允许一轮检测在跑：自动轮询与 SSE 触发的检测完全可能撞在一起，
+     叠加请求不会更快，还会让先回来的旧结果覆盖后回来的新结果 */
+  if (checkInFlight) return;
+  checkInFlight = true;
+
+  if (!silent) checkInfoEl.textContent = tr('Checking…');
   try {
     var resp = await apiFetch(CHECK_API);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -762,8 +822,76 @@ async function loadCheckStatus() {
        而它列出的路径可能早已变化，属于用过期数据做破坏性操作 */
     checkResults = [];
     checkInfoEl.textContent = trf('Availability check failed: {msg}', {msg: err.message});
+    if (!silent) showError(trf('Availability check failed: {msg}', {msg: err.message}));
+  } finally {
+    /* 放在 finally 里而不是末尾：检测函数中途抛错也要放开闸门，
+       否则一次异常会让自动刷新从此永久停摆 */
+    checkInFlight = false;
   }
   renderTable();
+}
+
+/* ---------- 链接状态自动刷新 ----------
+   页面开着不动时，磁盘上的链接可能被终端或别的标签页改坏、修好，而清单文件本身没变
+   （SSE 的 updated 因此不会来）。此前只有手动点 Re-check 才会重新检测，
+   页面会长期停在过期的徽标上。这里按固定间隔跑一次 /api/check，
+   实测单次开销在毫秒级（本机 28 条记录、HTTP 往返 0.8–2ms），5 秒的间隔对磁盘与 CPU 可以忽略；
+   记录若指向网络挂载或已休眠的磁盘，单次检测会明显变慢，那时把这个常量调大即可 */
+var AUTO_CHECK_MS = 5000;
+
+/* 重建表格前的静默期：检测完成会调用 renderTable()，而它会重建整个 tbody。
+   输入法正在组字、正在拖拽换序时重建，会直接打断用户手上这一次操作，
+   因此最近这段时间内有过键鼠或输入法动作，就跳过本轮。
+   只看「焦点在输入框」是不够的：点一下不输入也会长期占着焦点，状态就再也不刷新了 */
+var INPUT_QUIET_MS = 1500;
+
+var checkInFlight  = false; /* 上一轮检测还没回来 */
+var autoCheckTimer = null;  /* 间隔定时器句柄，非空即表示已启动 */
+var lastActivityAt = 0;     /* 最近一次键鼠或输入法动作的时间戳 */
+var imeComposing   = false; /* 输入法正在组字中 */
+
+function markActivity() { lastActivityAt = Date.now(); }
+
+/* 键鼠与输入法活动统一记在 document 上（捕获阶段）：不必逐个输入框去挂，
+   而且即使某个处理函数阻断了冒泡，这里照样收得到 */
+document.addEventListener('keydown', markActivity, true);
+document.addEventListener('input', markActivity, true);
+document.addEventListener('pointerdown', markActivity, true);
+document.addEventListener('compositionstart', function () { imeComposing = true; markActivity(); }, true);
+document.addEventListener('compositionend', function () { imeComposing = false; markActivity(); }, true);
+
+/* 此刻重建表格会不会打断用户 */
+function userIsBusy() {
+  if (imeComposing) return true;
+  /* 拖拽换序必须单独判：拖拽期间不产生键鼠事件，静默期一过就会误判成「用户已停手」，
+     而此时重建 tbody 会让浏览器直接取消这次拖拽 */
+  if (dragSrcIdx >= 0) return true;
+  return Date.now() - lastActivityAt < INPUT_QUIET_MS;
+}
+
+/* 请求一次自动检测，凡是被跳过的都由「下一次 tick」或「拖拽结束 / 标签页切回」补上——
+   补一次拿到的就是那一刻的最新结果，因此不必记录跳过了几轮 */
+function requestAutoCheck() {
+  if (!data) return; /* 首次加载尚未完成：那次加载自己会检测一次，这里不必抢跑 */
+  if (userIsBusy()) return;
+  loadCheckStatus(true);
+}
+
+/* 启动间隔刷新，并顺带挂上「切回标签页立刻补一次」的监听。
+   反复调用没有副作用：SSE 触发的每次配置重载都会走到这里，定时器只允许存在一个 */
+function startAutoCheck() {
+  if (autoCheckTimer !== null) return;
+  autoCheckTimer = setInterval(function () {
+    /* 标签页不可见时不扫磁盘：用户看不到徽标，扫了也没人看；切回来时立刻补上。
+       「上一轮检测还没回来」由 loadCheckStatus 自己拦，这里不重复判一次 */
+    if (document.hidden) return;
+    requestAutoCheck();
+  }, AUTO_CHECK_MS);
+
+  /* 刚切回来的人正等着看最新状态，不该再等满一个间隔 */
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) requestAutoCheck();
+  });
 }
 
 /* ---------- 一键修复 ----------
@@ -1082,6 +1210,8 @@ function onDragEnd(e) {
   if (tr) tr.classList.remove('dragging');
   tableBody.querySelectorAll('tr').forEach(function (t) { t.classList.remove('drag-over'); });
   dragSrcIdx = -1;
+  /* 拖拽期间被跳过的自动检测在这里补上：刚拖完这行，用户多半正想看最新的状态列 */
+  requestAutoCheck();
 }
 
 /* ---------- Add entry ---------- */
@@ -1290,12 +1420,14 @@ async function loadConfig(force) {
     loading.classList.add('hidden');
     panel.classList.remove('hidden');
     renderAll();
-    hideError();
     /* 这里刻意不再设置连接状态：绿点必须反映 SSE 的真实连接与否，
        由 connectSSE 的 onopen/onerror 独占负责，否则配置加载成功会造出一个假的「已连接」 */
     /* 配置加载完成后异步检测可用性，不阻塞主渲染；
-       这也使 SSE updated 触发的 loadConfig 自动带动状态刷新，形成自动刷新的循环 */
+       这也使 SSE updated 触发的 loadConfig 自动带动状态刷新 */
     loadCheckStatus();
+    /* 随后启动间隔刷新（幂等，重复调用只会挂一个定时器）：
+       页面从此不必手动点 Re-check，也能跟上磁盘上链接的变化 */
+    startAutoCheck();
   } catch (err) {
     showError(trf('Failed to load the config: {msg}', {msg: err.message}));
   }
@@ -1304,7 +1436,6 @@ async function loadConfig(force) {
 async function saveConfig() {
   saveBtn.disabled = true;
   saveBtn.textContent = tr('Saving…');
-  hideError();
   /* 服务端在写响应体之前就广播了 SSE，而页面要等响应回来才知道本次写盘的 rev：
      这段窗口里若把 rev 变化当作「页面外被修改」，自己保存也会弹出冲突提示条。
      置位 saving 期间只暂存 rev、不弹条，等响应回来再比对 */
@@ -1410,7 +1541,9 @@ function connectSSE() {
      这里只需要重跑一次可用性检测把徽标刷新，不需要重载配置，也不会弹冲突提示条 */
   es.addEventListener('repaired', function () {
     if (!data) return;          /* 首次加载尚未完成，随后那次 loadConfig 会自带一次检测 */
-    loadCheckStatus();
+    /* 走自动检测这条路径（而不是直接 loadCheckStatus）：修链多半由终端或另一个标签页发起，
+       属于后台变化，不该在用户正组字或拖拽时抢着重建表格 */
+    requestAutoCheck();
   });
   /* 语言事件：服务端语言已切换（可能是另一个标签页触发的），整页重载以对齐
      页面文案、注入的语言与命令树文案。本页自己发起的那次切换会先 reload，
@@ -1457,7 +1590,10 @@ function init() {
   langSelect.value = LANG;
   langSelect.addEventListener('change', function () { switchLanguage(langSelect.value); });
 
-  recheckBtn.addEventListener('click', loadCheckStatus);
+  /* 手动检测，因此不传 silent：要显示「检测中…」，失败也要弹通知。
+     刻意包一层而不是直接写 loadCheckStatus：事件对象会被当成 silent 参数传进去，
+     手动点击反而变成静默模式 */
+  recheckBtn.addEventListener('click', function () { loadCheckStatus(); });
   saveBtn.addEventListener('click', saveConfig);
 
   /* 主题切换：点选即生效并持久化；初始高亮由 applyI18N 后的 syncThemeButtons 补上
