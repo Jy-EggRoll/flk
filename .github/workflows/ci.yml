@@ -10,12 +10,13 @@ on:
             - "**"
 
 # 权限刻意保留在此处而不再写进可复用工作流：可复用工作流拿到的令牌权限以调用方为上限，
-# 这里维持只读，与其下的两个任务所需完全一致（校验与上传产物都不需要写权限）
+# 这里维持只读，与 verify 和 build 所需完全一致（校验与上传普通产物都不需要写权限）。
+# 唯一需要写权限的 alpha 任务在任务级另给，说明见该任务
 permissions:
     contents: read
 
 jobs:
-    # PR 只做验证不构建，反馈更快；跨平台编译问题由推送触发的 build 任务负责发现
+    # PR 只做验证不构建，反馈更快；跨平台编译问题由推送任务的构建负责发现
     # 具体工作（checkout / setup / verify）全部委托给 eggokit 的可复用工作流，本文件只保留触发条件与权限
     verify:
         if: github.event_name == 'pull_request'
@@ -25,9 +26,32 @@ jobs:
             app: flk
             mode: verify-only
 
-    # 推送时验证并构建全部平台，产物保留下来，使任意分支都能直接下载二进制做实测
+    # 主分支推送走滚动预发布：每次推送都覆盖同一个固定标签的 Release，供 flk upgrade --alpha 使用。
+    # 这里不再另外上传一份普通产物，因为滚动预发布本身就是主分支最新的可下载构建，
+    # 同时保留两份只会让“哪一份才是主分支最新”变得难以判断，也多占一份存储。
+    # 分支判定用仓库的默认分支名而不是写死 main，改动默认分支时不需要同步改这里
+    alpha:
+        if: github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
+        # 权限写在本任务而不是文件顶部：创建或覆盖 Release 需要写权限，而被复用的工作流
+        # 拿到的令牌权限以调用方为上限，沿用顶部的只读权限会在上传阶段被拒绝。
+        # 放到任务级可以只给这一个任务放权，verify 与其余分支的构建仍然只读
+        permissions:
+            contents: write
+        uses: Jy-EggRoll/eggokit/.github/workflows/go-release.yml@main
+        with:
+            mode: prerelease
+            app: flk
+            # 固定标签使主分支的每次构建都落在同一份 Release 上，命令行据此按提交号判断新旧
+            release_tag: alpha
+            # 滚动预发布没有可比较的版本号，版本标识改用提交号
+            version_source: commit
+            artifact_prefix: flk-
+            # 保留期与分支产物一致：滚动预发布随时会被下一次推送覆盖，留久了没有意义
+            retention_days: 3
+
+    # 非默认分支推送时验证并构建全部平台，产物保留下来，使任意分支都能直接下载二进制做实测
     build:
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref_name != github.event.repository.default_branch
         uses: Jy-EggRoll/eggokit/.github/workflows/go-release.yml@main
         with:
             app: flk

@@ -25,6 +25,7 @@ import (
 
 	"github.com/jy-eggroll/eggokit/l10n"
 	"github.com/jy-eggroll/eggokit/logger"
+	"github.com/jy-eggroll/eggokit/upgradecli"
 	"github.com/jy-eggroll/flk/internal/config"
 	"github.com/jy-eggroll/flk/internal/output"
 	"github.com/jy-eggroll/flk/internal/pathutil"
@@ -146,7 +147,7 @@ func (s *serveServer) handleMeta(w http.ResponseWriter, r *http.Request) {
 		"storePath": normalizedPath,
 		"rev":       storeRev(),
 		"version":   Version,
-		"platform":  platformLabel(),
+		"platform":  upgradecli.PlatformLabel(),
 		// noTrash 告知前端「服务启动时带了 --no-trash」：解除弹窗据此把「真实删除」
 		// 复选框置为勾选且禁用（见 cmd/ui/app.js 的 openUnlinkModal），
 		// 否则用户会看到一个可以取消、而取消后仍会被服务端当成永久删除的开关。
