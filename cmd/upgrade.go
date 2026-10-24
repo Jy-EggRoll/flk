@@ -1,126 +1,35 @@
 package cmd
 
 import (
-	"fmt"
-
-	"github.com/jy-eggroll/eggokit/l10n"
 	"github.com/jy-eggroll/eggokit/updater"
+	"github.com/jy-eggroll/eggokit/upgradecli"
 	"github.com/spf13/cobra"
 )
 
-var upgradeCmd = &cobra.Command{
-	Use:     "upgrade",
-	Aliases: []string{"update", "up"},
-	Short:   l10n.T("Check for and upgrade to the latest version", nil),
-	Long:    l10n.T("Check for and upgrade flk to the latest version", nil),
-	RunE:    runUpgrade,
-}
+// upgradeCmd 只是把 flk 的发布目标与本项目的界面接到共享升级命令上。
+//
+// 命令的 flag 语义、通道选择（stable / dev / alpha）、提示文案与确认时机全部来自
+// eggokit/upgradecli：这套流程原本在 flk 与 ggt 各写一份，改一处文案要改好几遍，
+// 通道行为也容易只在一边更新。flk 自身剩下的差异只有三项——发布目标（见 upgrade_target.go）、
+// 输出界面（pterm）与全局 --yes 开关，因此这里只注入这三项。
+var upgradeCmd = upgradecli.NewCommand(upgradecli.Options{
+	// Program 只出现在面向用户的文案里（例如“重启 flk 后生效”）
+	Program: "flk",
+	Target:  flkTarget,
+	// 版本与构建时间由发布构建通过链接参数注入，必须是取值函数而不是此刻的字符串，
+	// 否则本地开发构建的占位值会被提前固定下来
+	Version:   func() string { return Version },
+	BuildTime: func() string { return BuildTime },
+	// 升级过程的状态与确认一律写 stderr：stdout 只承载业务数据，
+	// 与 flk 其它命令的输出约定一致；用命令的流而不是 os.Stderr，测试才能替换输出目标
+	Reporter: func(cmd *cobra.Command) updater.Reporter {
+		return &ptermReporter{writer: cmd.ErrOrStderr()}
+	},
+	// --yes/-y 是 flk 的全局持久参数，共享命令不注册同名 flag（会与全局定义冲突），
+	// 这里只把全局开关的当前取值转交过去
+	AssumeYes: func() bool { return assumeYes },
+})
 
 func init() {
-	upgradeCmd.Flags().Bool("check", false, l10n.T("Only check the version, do not upgrade", nil))
-	upgradeCmd.Flags().Bool("force", false, l10n.T("Force upgrade", nil))
-	upgradeCmd.Flags().Bool("dev", false, l10n.T("Check for development versions", nil))
 	rootCmd.AddCommand(upgradeCmd)
-}
-
-// runUpgrade 完成版本检查、用户确认与升级执行
-// 所有用户可见输出都写入命令的 stderr，业务失败只返回带上下文的错误交由根命令统一打印一次，
-// 命令内部绝不调用 os.Exit，以免绕过统一的错误渲染与退出码边界
-func runUpgrade(cmd *cobra.Command, args []string) error {
-	errOut := cmd.ErrOrStderr()
-
-	// GetBool 读取 flag 的真实布尔值，避免 --check=false 这类显式 false 被 Flags().Changed 误判为启用；
-	// 任一读取失败都必须沿 RunE 返回，不能以零值继续执行而掩盖命令定义或测试注入错误
-	checkOnly, err := cmd.Flags().GetBool("check")
-	if err != nil {
-		return fmt.Errorf("%s: %w", l10n.T("Failed to read the --check argument", nil), err)
-	}
-	forceUpdate, err := cmd.Flags().GetBool("force")
-	if err != nil {
-		return fmt.Errorf("%s: %w", l10n.T("Failed to read the --force argument", nil), err)
-	}
-	checkDev, err := cmd.Flags().GetBool("dev")
-	if err != nil {
-		return fmt.Errorf("%s: %w", l10n.T("Failed to read the --dev argument", nil), err)
-	}
-
-	channel := updater.ChannelStable
-	channelLabel := l10n.T("stable", nil)
-	if checkDev {
-		channel = updater.ChannelDev
-		channelLabel = l10n.T("dev", nil)
-	}
-
-	// reporter 承接升级器的全部输出，令牌查找结果被升级器与下面的提示共用，只会真正查找一次
-	reporter := &ptermReporter{writer: errOut}
-	tokenProvider := updater.EnvTokenProvider("")
-
-	// 升级器只接收注入的仓库坐标、资产规则与界面，不感知 flk 的任何发布约定
-	upgrader, err := updater.New(updater.Config{
-		Owner:         upstreamOwner,
-		Repo:          upstreamRepo,
-		AssetName:     flkAssetName,
-		Reporter:      reporter,
-		TokenProvider: tokenProvider,
-		ProxyPrefix:   downloadProxyPrefix,
-		UserAgent:     "flk-updater",
-	})
-	if err != nil {
-		return fmt.Errorf("%s: %w", l10n.T("Failed to initialize the upgrader", nil), err)
-	}
-
-	// 平台标签与 flk version 共用同一实现，保证两处展示的名字永远一致
-	platform := platformLabel()
-
-	reporter.Info("%s", l10n.T("Checking for updates ({{.Channel}})...", map[string]any{"Channel": channelLabel}))
-	reporter.Info("%s", l10n.T("Current platform: {{.Platform}}", map[string]any{"Platform": platform}))
-
-	// 令牌状态提示属于 flk 的运维建议而非升级器职责，因此留在命令层；
-	// 只在缺失时提示，配置正确的用户无需被无关信息打扰
-	if tokenProvider() == "" {
-		reporter.Info("%s", l10n.T("No GitHub token configured; API requests are subject to anonymous rate limits. Set GITHUB_TOKEN to raise the quota", nil))
-	}
-
-	info, err := upgrader.Check(Version, BuildTime, channel)
-	if err != nil {
-		return fmt.Errorf("%s: %w", l10n.T("Failed to check for updates", nil), err)
-	}
-	if info == nil {
-		reporter.Success("%s", l10n.T("Already on the latest version", nil))
-		return nil
-	}
-
-	reporter.Info("%s", l10n.T("Current version: {{.Version}} (build: {{.Build}})", map[string]any{"Version": info.CurrentVersion, "Build": info.CurrentBuildTime}))
-	if info.CurrentComparable {
-		reporter.Info("%s", l10n.T("Latest version: {{.Version}}", map[string]any{"Version": info.LatestVersion}))
-	} else {
-		// 本地版本无法比较时不能宣称"最新"：这里给出的只是通道内的最高版本，
-		// 是否比本地构建新需要用户自行判断
-		reporter.Info("%s", l10n.T("Highest version in the {{.Channel}} channel: {{.Version}}", map[string]any{"Channel": channelLabel, "Version": info.LatestVersion}))
-	}
-
-	if checkOnly {
-		return nil
-	}
-
-	if !forceUpdate {
-		confirmed, confirmErr := reporter.Confirm(l10n.T("Upgrade to {{.Version}}?", map[string]any{"Version": info.LatestVersion}))
-		if confirmErr != nil {
-			return fmt.Errorf("%s: %w", l10n.T("Failed to read the upgrade confirmation", nil), confirmErr)
-		}
-		if !confirmed {
-			reporter.Info("%s", l10n.T("Upgrade cancelled", nil))
-			return nil
-		}
-	}
-
-	reporter.Info("%s", l10n.T("Starting upgrade...", nil))
-	if err := upgrader.Apply(info); err != nil {
-		return fmt.Errorf("%s: %w", l10n.T("Upgrade failed", nil), err)
-	}
-
-	// 替换完成后当前进程仍运行旧版本，必须明确告知用户何时生效，
-	// 避免用户在当前会话中反复执行命令却看不到版本变化
-	reporter.Success("%s", l10n.T("Upgrade complete; it takes effect after restarting flk", nil))
-	return nil
 }
