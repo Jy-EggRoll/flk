@@ -3,7 +3,7 @@ module github.com/jy-eggroll/flk
 go 1.26.0
 
 require (
-	github.com/jy-eggroll/eggokit v0.6.4
+	github.com/jy-eggroll/eggokit v0.7.0
 	github.com/pterm/pterm v0.12.83
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
@@ -25,5 +25,3 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/text v0.42.0 // indirect
 )
-
-replace github.com/jy-eggroll/eggokit => /home/eggroll/GitRepo/eggokit // 临时：eggokit ui 包尚未发布，集成时改为正式版本
